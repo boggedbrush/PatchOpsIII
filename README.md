@@ -76,7 +76,7 @@ PatchOpsIII is a modding utility for **Call of Duty: Black Ops III** that simpli
 
 ## VirusTotal Scan
 
-The latest VirusTotal scan shows a detection rate of **7/72**. You can review the detailed report [here](https://www.virustotal.com/gui/file/9e3c5faad8fe8f459ec254ef9d1570a31b9c0433d90b7f52298dace445fced52).
+The latest VirusTotal scan shows a detection rate of **7/71**. You can review the detailed report [here](https://www.virustotal.com/gui/file/dcb513ebe42d737b6647e92939d98cdaceed06031c363e19ca2bf674cb4e7874).
 
 ---
 
