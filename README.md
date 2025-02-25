@@ -23,6 +23,8 @@ PatchOpsIII is a modding utility for **Call of Duty: Black Ops III** that simpli
 
 ---
 
+![{9BAEFD91-221E-402A-8D1B-14676D179B9D}](https://github.com/user-attachments/assets/857e3460-98b4-45c7-bc4e-cd1fcdfef9fb)
+
 ## Prerequisites
 
 - **Call of Duty: Black Ops III**  
