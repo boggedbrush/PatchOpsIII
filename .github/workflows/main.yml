@@ -1,0 +1,75 @@
+name: Build, Sign, and Scan Executable
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-sign:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+        shell: cmd
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.8.1
+        with:
+          cosign-release: 'v2.4.3'
+
+      - name: Build Executable with PyInstaller
+        run: |
+          REM Optionally activate your virtual environment if present
+          if exist env\Scripts\activate (
+            call env\Scripts\activate
+          )
+          REM Clean previous builds
+          if exist dist rmdir /S /Q dist
+          if exist build rmdir /S /Q build
+          if exist PatchOpsIII.spec del PatchOpsIII.spec
+          REM Build the executable using PyInstaller
+          python -m PyInstaller --onefile --noconsole --name PatchOpsIII --add-data "presets.json;." --add-data "PatchOpsIII.ico;." --icon=PatchOpsIII.ico --clean --noupx main.py
+        shell: cmd
+
+      - name: Sign and Scan Executable if It Exists
+        run: |
+          if not exist dist\PatchOpsIII.exe (
+            echo Executable not found – skipping signing.
+            exit 0
+          )
+          echo Executable found. Proceeding with signing.
+          REM Set non-interactive mode for cosign
+          set COSIGN_EXPERIMENTAL=1
+          REM Authenticate with cosign (using an empty client-secret here)
+          cosign login --issuer https://oauth2.sigstore.dev/auth --client-id sigstore --client-secret ""
+          REM Sign the executable (automatically confirms with -y)
+          cosign sign-blob -y dist\PatchOpsIII.exe
+          echo Cosign signing completed!
+          REM Calculate SHA256 hash using PowerShell and write to hash.log
+          powershell -NoProfile -Command "(Get-FileHash -Algorithm SHA256 -Path 'dist\PatchOpsIII.exe').Hash" > hash.log
+          echo Contents of hash.log:
+          type hash.log
+          REM Read the hash from file into FILE_HASH variable
+          set /p FILE_HASH=<hash.log
+          if defined FILE_HASH (
+            echo SHA256 hash calculated: %FILE_HASH%
+            set "VT_URL=https://www.virustotal.com/gui/file/%FILE_HASH%"
+            echo VirusTotal scan URL:
+            echo %VT_URL%
+          ) else (
+            echo Failed to calculate SHA256 hash.
+          )
+          REM Upload executable to VirusTotal for scanning (ensure vt CLI is available)
+          vt scan file dist\PatchOpsIII.exe --wait --open
+        shell: cmd
