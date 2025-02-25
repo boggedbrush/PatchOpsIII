@@ -4,6 +4,9 @@
 # Virtual environment
 /env/
 
+# Mod Files:
+/BO3 Mod Files/
+
 # Log files
 *.log
 
