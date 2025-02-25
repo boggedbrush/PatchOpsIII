@@ -1,14 +1,23 @@
 # Python bytecode caches
 /__pycache__/
 
-# Virtual environment
-/env/
-
 # Mod Files:
 /BO3 Mod Files/
 
-# Log files
+# Build folder:
+/build/
+
+# Virtual environment
+/env/
+
+# Build exe:
+*.bat
+
+# Log files:
 *.log
 
-# Executable files
+# Executable files:
 *.exe
+
+# Spec Files:
+*.spec
