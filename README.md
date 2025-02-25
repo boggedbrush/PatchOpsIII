@@ -3,6 +3,11 @@
 PatchOpsIII is a modding utility for **Call of Duty: Black Ops III** that simplifies tweaking graphics settings, installing performance patches, and customizing your in-game experience. Developed by **boggedbrush**, this tool offers a friendly interface built with PySide6.
 
 ---
+# Wiki
+
+Before you start using the application, please take a look at the Wiki for setup instructions and configuration details. You can either click the Wiki page at the top of the GitHub repo or visit this link.
+
+---
 
 ## Features
 
