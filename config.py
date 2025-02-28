@@ -2,12 +2,13 @@
 import os
 import re
 import json
-import platform
 import stat
 from PySide6.QtWidgets import (
     QMessageBox, QWidget, QGroupBox, QVBoxLayout, QHBoxLayout, QLabel,
-    QComboBox, QPushButton, QFormLayout, QCheckBox, QSpinBox, QLineEdit
+    QComboBox, QPushButton, QFormLayout, QCheckBox, QSpinBox, QLineEdit,
+    QSizePolicy, QRadioButton, QButtonGroup
 )
+from PySide6.QtCore import Qt
 from utils import write_log
 
 def set_config_value(game_dir, key, value, comment, log_widget):
@@ -15,8 +16,12 @@ def set_config_value(game_dir, key, value, comment, log_widget):
     pattern = rf'^\s*{re.escape(key)}\s*='
     replacement = f'{key} = "{value}" // {comment}'
     try:
-        update_config_values(config_path, {pattern: replacement},
-                             f"Set {key} to {value}.", log_widget)
+        update_config_values(
+            config_path,
+            {pattern: replacement},
+            f"Set {key} to {value}.",
+            log_widget
+        )
     except Exception as e:
         write_log(f"Error setting {key}: {e}", "Error", log_widget)
 
@@ -40,8 +45,10 @@ def update_config_values(config_path, changes, success_message, log_widget, supp
             if not suppress_output:
                 write_log(success_message, "Success", log_widget)
         except PermissionError:
-            QMessageBox.critical(None, "Permission Error",
-                                 f"Cannot write to {config_path}.\nPlease run as administrator.")
+            QMessageBox.critical(
+                None, "Permission Error",
+                f"Cannot write to {config_path}.\nPlease run as administrator."
+            )
         except Exception as e:
             write_log(f"Error updating config: {e}", "Error", log_widget)
     else:
@@ -110,7 +117,12 @@ def apply_preset(game_dir, preset_name, log_widget, presets_dict):
     if "BackbufferCount" in preset and preset["BackbufferCount"][0] == "3":
         pattern = r'^\s*Vsync\s*='
         changes[pattern] = 'Vsync = "1" // Enabled with triple-buffered V-sync'
-    update_config_values(config_path, changes, f"Applied preset '{preset_name}'.", log_widget)
+    update_config_values(
+        config_path,
+        changes,
+        f"Applied preset '{preset_name}'.",
+        log_widget
+    )
 
 def check_essential_status(game_dir):
     status = {}
@@ -118,18 +130,37 @@ def check_essential_status(game_dir):
     if os.path.exists(config_path):
         with open(config_path, "r") as f:
             content = f.read()
-        status["max_fps"] = int(re.search(r'MaxFPS\s*=\s*"([^"]+)"', content).group(1)) if re.search(r'MaxFPS\s*=\s*"([^"]+)"', content) else 165
-        status["fov"] = int(re.search(r'FOV\s*=\s*"([^"]+)"', content).group(1)) if re.search(r'FOV\s*=\s*"([^"]+)"', content) else 80
-        status["display_mode"] = int(re.search(r'FullScreenMode\s*=\s*"([^"]+)"', content).group(1)) if re.search(r'FullScreenMode\s*=\s*"([^"]+)"', content) else 1
-        status["resolution"] = re.search(r'WindowSize\s*=\s*"([^"]+)"', content).group(1) if re.search(r'WindowSize\s*=\s*"([^"]+)"', content) else "2560x1440"
-        status["refresh_rate"] = int(re.search(r'RefreshRate\s*=\s*"([^"]+)"', content).group(1)) if re.search(r'RefreshRate\s*=\s*"([^"]+)"', content) else 165
-        status["vsync"] = (re.search(r'Vsync\s*=\s*"([^"]+)"', content).group(1) == "1") if re.search(r'Vsync\s*=\s*"([^"]+)"', content) else True
-        status["draw_fps"] = (re.search(r'DrawFPS\s*=\s*"([^"]+)"', content).group(1) == "1") if re.search(r'DrawFPS\s*=\s*"([^"]+)"', content) else False
+        match = re.search(r'MaxFPS\s*=\s*"([^"]+)"', content)
+        status["max_fps"] = int(match.group(1)) if match else 165
+
+        match = re.search(r'FOV\s*=\s*"([^"]+)"', content)
+        status["fov"] = int(match.group(1)) if match else 80
+
+        match = re.search(r'FullScreenMode\s*=\s*"([^"]+)"', content)
+        status["display_mode"] = int(match.group(1)) if match else 1
+
+        match = re.search(r'WindowSize\s*=\s*"([^"]+)"', content)
+        status["resolution"] = match.group(1) if match else "2560x1440"
+
+        match = re.search(r'RefreshRate\s*=\s*"([^"]+)"', content)
+        status["refresh_rate"] = float(match.group(1)) if match else 165
+
+        match = re.search(r'Vsync\s*=\s*"([^"]+)"', content)
+        status["vsync"] = (match.group(1) == "1") if match else True
+
+        match = re.search(r'DrawFPS\s*=\s*"([^"]+)"', content)
+        status["draw_fps"] = (match.group(1) == "1") if match else False
+
         status["all_settings"] = bool(re.search(r'RestrictGraphicsOptions\s*=\s*"0"', content))
         status["smooth"] = bool(re.search(r'SmoothFramerate\s*=\s*"1"', content))
-        status["vram"] = bool(re.search(r'VideoMemory\s*=\s*"1"', content) and re.search(r'StreamMinResident\s*=\s*"0"', content))
-        status["latency"] = int(re.search(r'MaxFrameLatency\s*=\s*"(\d)"', content).group(1)) if re.search(r'MaxFrameLatency\s*=\s*"(\d)"', content) else 1
+        status["vram"] = bool(re.search(r'VideoMemory\s*=\s*"1"', content)
+                              and re.search(r'StreamMinResident\s*=\s*"0"', content))
+
+        match = re.search(r'MaxFrameLatency\s*=\s*"(\d)"', content)
+        status["latency"] = int(match.group(1)) if match else 1
+
         status["reduce_cpu"] = bool(re.search(r'SerializeRender\s*=\s*"2"', content))
+
         video_dir = os.path.join(game_dir, "video")
         intro_bak = os.path.join(video_dir, "BO3_Global_Logo_LogoSequence.mkv.bak")
         status["skip_intro"] = os.path.exists(intro_bak)
@@ -152,8 +183,9 @@ def check_essential_status(game_dir):
     return status
 
 class GraphicsSettingsWidget(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, dxvk_widget=None, parent=None):
         super().__init__(parent)
+        self.dxvk_widget = dxvk_widget  # Reference to the DXVK widget
         self.game_dir = None
         self.log_widget = None
         self.preset_dict = {}
@@ -161,115 +193,114 @@ class GraphicsSettingsWidget(QWidget):
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
-        # Presets section
+        # ================= Graphics Presets =================
         presets_group = QGroupBox("Graphics Presets")
         presets_layout = QHBoxLayout(presets_group)
         presets_layout.addWidget(QLabel("Select Preset:"))
+
         self.preset_combo = QComboBox()
         self.preset_combo.addItems(["Quality", "Balanced", "Performance", "Ultra Performance", "Custom"])
         presets_layout.addWidget(self.preset_combo)
+
         self.apply_preset_btn = QPushButton("Apply Preset")
         self.apply_preset_btn.clicked.connect(self.apply_preset_clicked)
         presets_layout.addWidget(self.apply_preset_btn)
-        main_layout.addWidget(presets_group)
 
-        # Graphics settings section
+        if self.dxvk_widget:
+            self.dxvk_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            presets_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            top_row_layout = QHBoxLayout()
+            top_row_layout.addWidget(self.dxvk_widget)
+            top_row_layout.addWidget(presets_group)
+            main_layout.addLayout(top_row_layout)
+        else:
+            main_layout.addWidget(presets_group)
+
+        # ================= Graphics Settings Section =================
         settings_group = QGroupBox("Graphics Settings")
         settings_layout = QVBoxLayout(settings_group)
 
-        basic_box = QGroupBox("Basic Settings")
-        basic_form = QFormLayout(basic_box)
-        self.skip_intro_cb = QCheckBox("Skip Intro Video")
-        self.skip_intro_cb.stateChanged.connect(self.skip_intro_changed)
-        basic_form.addRow(self.skip_intro_cb)
+        settings_form = QFormLayout()
+
+        # Create horizontal layout for checkboxes
+        checkbox_layout = QHBoxLayout()
+        self.vsync_cb = QCheckBox("Enable V-Sync")
+        self.vsync_cb.stateChanged.connect(self.vsync_changed)
+        self.draw_fps_cb = QCheckBox("Show FPS Counter")
+        self.draw_fps_cb.stateChanged.connect(self.draw_fps_changed)
+        checkbox_layout.addWidget(self.vsync_cb)
+        checkbox_layout.addWidget(self.draw_fps_cb)
+        checkbox_layout.addStretch()
+        settings_form.addRow(checkbox_layout)
+
         self.fps_limiter_spin = QSpinBox()
         self.fps_limiter_spin.setRange(0, 1000)
         self.fps_limiter_spin.setValue(165)
         self.fps_limiter_spin.valueChanged.connect(self.fps_limiter_changed)
-        basic_form.addRow("FPS Limiter (0=Unlimited):", self.fps_limiter_spin)
+        settings_form.addRow("FPS Limiter (0=Unlimited):", self.fps_limiter_spin)
+
         self.fov_spin = QSpinBox()
         self.fov_spin.setRange(65, 120)
         self.fov_spin.setValue(80)
         self.fov_spin.valueChanged.connect(self.fov_changed)
-        basic_form.addRow("FOV:", self.fov_spin)
+        settings_form.addRow("FOV:", self.fov_spin)
+
         self.display_mode_combo = QComboBox()
         self.display_mode_combo.addItems(["Windowed", "Fullscreen", "Fullscreen Windowed"])
         self.display_mode_combo.currentIndexChanged.connect(self.display_mode_changed)
-        basic_form.addRow("Display Mode:", self.display_mode_combo)
+        settings_form.addRow("Display Mode:", self.display_mode_combo)
+
         self.resolution_edit = QLineEdit("2560x1440")
         self.resolution_edit.editingFinished.connect(self.resolution_changed)
-        basic_form.addRow("Resolution:", self.resolution_edit)
+        settings_form.addRow("Resolution:", self.resolution_edit)
+
         self.refresh_rate_spin = QSpinBox()
         self.refresh_rate_spin.setRange(1, 240)
         self.refresh_rate_spin.setValue(165)
         self.refresh_rate_spin.valueChanged.connect(self.refresh_rate_changed)
-        basic_form.addRow("Refresh Rate:", self.refresh_rate_spin)
+        settings_form.addRow("Refresh Rate:", self.refresh_rate_spin)
+
         self.render_res_spin = QSpinBox()
         self.render_res_spin.setRange(50, 200)
         self.render_res_spin.setSingleStep(10)
         self.render_res_spin.setValue(100)
         self.render_res_spin.valueChanged.connect(self.render_res_percent_changed)
-        basic_form.addRow("Render Res %:", self.render_res_spin)
-        self.vsync_cb = QCheckBox("Enable V-Sync")
-        self.vsync_cb.stateChanged.connect(self.vsync_changed)
-        basic_form.addRow(self.vsync_cb)
-        self.draw_fps_cb = QCheckBox("Show FPS Counter")
-        self.draw_fps_cb.stateChanged.connect(self.draw_fps_changed)
-        basic_form.addRow(self.draw_fps_cb)
-        settings_layout.addWidget(basic_box)
+        settings_form.addRow("Render Res %:", self.render_res_spin)
 
-        adv_box = QGroupBox("Advanced Settings")
-        adv_form = QFormLayout(adv_box)
-        self.smooth_cb = QCheckBox("Smooth Framerate")
-        self.smooth_cb.stateChanged.connect(self.smooth_changed)
-        adv_form.addRow(self.smooth_cb)
-        self.vram_cb = QCheckBox("Use Full VRAM")
-        self.vram_cb.stateChanged.connect(self.vram_changed)
-        adv_form.addRow(self.vram_cb)
-        self.latency_spin = QSpinBox()
-        self.latency_spin.setRange(0, 4)
-        self.latency_spin.setValue(1)
-        self.latency_spin.valueChanged.connect(self.latency_changed)
-        adv_form.addRow("Lower Latency (0-4):", self.latency_spin)
-        self.reduce_cpu_cb = QCheckBox("Reduce CPU Usage")
-        self.reduce_cpu_cb.stateChanged.connect(self.reduce_cpu_changed)
-        adv_form.addRow(self.reduce_cpu_cb)
-        self.reduce_stutter_cb = QCheckBox("Reduce Stuttering")
-        self.reduce_stutter_cb.stateChanged.connect(self.reduce_stutter_changed)
-        adv_form.addRow(self.reduce_stutter_cb)
-        self.all_settings_cb = QCheckBox("Unlock All Graphics Options")
-        self.all_settings_cb.stateChanged.connect(self.all_settings_changed)
-        adv_form.addRow(self.all_settings_cb)
-        self.lock_config_cb = QCheckBox("Lock config.ini (read-only)")
-        self.lock_config_cb.stateChanged.connect(self.lock_config_changed)
-        adv_form.addRow(self.lock_config_cb)
-        settings_layout.addWidget(adv_box)
+        settings_layout.addLayout(settings_form)
         main_layout.addWidget(settings_group)
 
     def set_game_directory(self, game_dir):
         self.game_dir = game_dir
         json_path = os.path.join(os.path.dirname(__file__), "presets.json")
         loaded = load_presets_from_json(json_path)
-        # If no presets file is loaded, default to an empty dictionary.
         self.preset_dict = loaded if loaded else {}
+
         self.preset_combo.clear()
         for preset_name in self.preset_dict.keys():
             self.preset_combo.addItem(preset_name)
+
         if not self.game_dir or not os.path.exists(self.game_dir):
             write_log(f"Game directory does not exist: {self.game_dir}", "Error", self.log_widget)
             return
+
         config_path = os.path.join(self.game_dir, "players", "config.ini")
         if os.path.exists(config_path) and not os.access(config_path, os.W_OK):
             set_config_readonly(self.game_dir, False, self.log_widget)
+
         self.initialize_status()
 
     def set_log_widget(self, log_widget):
         self.log_widget = log_widget
 
     def initialize_status(self):
+        if not self.game_dir:
+            return
         status = check_essential_status(self.game_dir)
-        self.skip_intro_cb.setChecked(status.get("skip_intro", False))
+
         self.fps_limiter_spin.setValue(status.get("max_fps", 165))
         self.fov_spin.setValue(status.get("fov", 80))
         self.display_mode_combo.setCurrentIndex(status.get("display_mode", 1))
@@ -277,58 +308,22 @@ class GraphicsSettingsWidget(QWidget):
         self.refresh_rate_spin.setValue(status.get("refresh_rate", 165))
         self.vsync_cb.setChecked(status.get("vsync", True))
         self.draw_fps_cb.setChecked(status.get("draw_fps", False))
-        self.all_settings_cb.setChecked(status.get("all_settings", False))
-        self.smooth_cb.setChecked(status.get("smooth", False))
-        self.vram_cb.setChecked(status.get("vram", False))
-        self.latency_spin.setValue(status.get("latency", 1))
-        dll_bak = os.path.join(self.game_dir, "d3dcompiler_46.dll.bak")
-        self.reduce_stutter_cb.setChecked(os.path.exists(dll_bak))
-        config_path = os.path.join(self.game_dir, "players", "config.ini")
-        if os.path.exists(config_path):
-            self.lock_config_cb.setChecked(not os.access(config_path, os.W_OK))
-        else:
-            self.lock_config_cb.setChecked(False)
 
     def apply_preset_clicked(self):
         if not self.game_dir or not os.path.exists(self.game_dir):
             write_log(f"Game directory does not exist: {self.game_dir}", "Error", self.log_widget)
             return
-        if self.lock_config_cb.isChecked():
+        if self.log_widget and hasattr(self, 'lock_config_cb') and self.lock_config_cb.isChecked():
             set_config_readonly(self.game_dir, False, self.log_widget)
+
         preset_name = self.preset_combo.currentText()
         apply_preset(self.game_dir, preset_name, self.log_widget, self.preset_dict)
         write_log(f"Applied preset '{preset_name}'.", "Success", self.log_widget)
-        if self.lock_config_cb.isChecked():
-            set_config_readonly(self.game_dir, True, self.log_widget)
-        self.initialize_status()
 
-    def skip_intro_changed(self):
-        video_dir = os.path.join(self.game_dir, "video")
-        intro_file = os.path.join(video_dir, "BO3_Global_Logo_LogoSequence.mkv")
-        intro_file_bak = intro_file + ".bak"
-        if not os.path.exists(video_dir):
-            write_log("Video directory not found.", "Warning", self.log_widget)
-            return
-        if self.skip_intro_cb.isChecked():
-            if os.path.exists(intro_file):
-                try:
-                    os.rename(intro_file, intro_file_bak)
-                    write_log("Intro video skipped.", "Success", self.log_widget)
-                except Exception as e:
-                    write_log(f"Failed to rename intro video file: {e}", "Error", self.log_widget)
-            elif os.path.exists(intro_file_bak):
-                write_log("Intro video already skipped.", "Success", self.log_widget)
-            else:
-                write_log("Intro video file not found.", "Warning", self.log_widget)
-        else:
-            if os.path.exists(intro_file_bak):
-                try:
-                    os.rename(intro_file_bak, intro_file)
-                    write_log("Intro video restored.", "Success", self.log_widget)
-                except Exception as e:
-                    write_log(f"Failed to restore intro video file: {e}", "Error", self.log_widget)
-            else:
-                write_log("Backup intro video file not found.", "Warning", self.log_widget)
+        if self.log_widget and hasattr(self, 'lock_config_cb') and self.lock_config_cb.isChecked():
+            set_config_readonly(self.game_dir, True, self.log_widget)
+
+        self.initialize_status()
 
     def fps_limiter_changed(self):
         set_config_value(self.game_dir, "MaxFPS", str(self.fps_limiter_spin.value()), "0 to 1000", self.log_widget)
@@ -338,18 +333,35 @@ class GraphicsSettingsWidget(QWidget):
 
     def display_mode_changed(self):
         mode_index = self.display_mode_combo.currentIndex()
-        set_config_value(self.game_dir, "FullScreenMode", str(mode_index),
-                         "0=Windowed,1=Fullscreen,2=Fullscreen Windowed", self.log_widget)
+        set_config_value(
+            self.game_dir,
+            "FullScreenMode",
+            str(mode_index),
+            "0=Windowed,1=Fullscreen,2=Fullscreen Windowed",
+            self.log_widget
+        )
 
     def resolution_changed(self):
         res = self.resolution_edit.text().strip()
         set_config_value(self.game_dir, "WindowSize", res, "any text", self.log_widget)
 
     def refresh_rate_changed(self):
-        set_config_value(self.game_dir, "RefreshRate", str(self.refresh_rate_spin.value()), "1 to 240", self.log_widget)
+        set_config_value(
+            self.game_dir,
+            "RefreshRate",
+            str(self.refresh_rate_spin.value()),
+            "1 to 240",
+            self.log_widget
+        )
 
     def render_res_percent_changed(self):
-        set_config_value(self.game_dir, "ResolutionPercent", str(self.render_res_spin.value()), "50 to 200", self.log_widget)
+        set_config_value(
+            self.game_dir,
+            "ResolutionPercent",
+            str(self.render_res_spin.value()),
+            "50 to 200",
+            self.log_widget
+        )
 
     def vsync_changed(self):
         val = "1" if self.vsync_cb.isChecked() else "0"
@@ -359,9 +371,83 @@ class GraphicsSettingsWidget(QWidget):
         val = "1" if self.draw_fps_cb.isChecked() else "0"
         set_config_value(self.game_dir, "DrawFPS", val, "0 or 1", self.log_widget)
 
-    def all_settings_changed(self):
-        val = "0" if self.all_settings_cb.isChecked() else "1"
-        set_config_value(self.game_dir, "RestrictGraphicsOptions", val, "0 or 1", self.log_widget)
+# ================= Advanced Settings Widget =================
+class AdvancedSettingsWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.game_dir = None
+        self.log_widget = None
+        self.init_ui()
+
+    def load_settings(self):
+        """Load settings from config.ini and update UI elements"""
+        if not self.game_dir:
+            return
+            
+        status = check_essential_status(self.game_dir)
+        
+        # Update UI elements with loaded settings
+        self.smooth_cb.setChecked(status.get("smooth", False))
+        self.vram_cb.setChecked(status.get("vram", False))
+        self.latency_spin.setValue(status.get("latency", 1))
+        self.reduce_cpu_cb.setChecked(status.get("reduce_cpu", False))
+        
+        # Check if all graphics options are unlocked
+        self.all_settings_cb.setChecked(status.get("all_settings", False))
+        
+        # Check config file read-only status
+        config_path = os.path.join(self.game_dir, "players", "config.ini")
+        if os.path.exists(config_path):
+            self.lock_config_cb.setChecked(not os.access(config_path, os.W_OK))
+
+    def refresh_settings(self):
+        """Refresh all advanced settings from the current game directory"""
+        if self.game_dir:
+            self.load_settings()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        adv_box = QGroupBox("Advanced Settings")
+        adv_form = QFormLayout(adv_box)
+
+        self.smooth_cb = QCheckBox("Smooth Framerate (Enables the smoothframe rate option)")
+        self.smooth_cb.stateChanged.connect(self.smooth_changed)
+        adv_form.addRow(self.smooth_cb)
+
+        self.vram_cb = QCheckBox("Use Full VRAM (Forces the game to use the full amount of VRAM)")
+        self.vram_cb.stateChanged.connect(self.vram_changed)
+        adv_form.addRow(self.vram_cb)
+
+        self.latency_spin = QSpinBox()
+        self.latency_spin.setRange(0, 4)
+        self.latency_spin.setValue(1)
+        self.latency_spin.valueChanged.connect(self.latency_changed)
+        adv_form.addRow("Lower Latency (0-4, determines the number of frames to queue before rendering):", self.latency_spin)
+
+        self.reduce_cpu_cb = QCheckBox("Reduce CPU Usage (Changes the SerializeRender option, only recommended for weak CPUs)")
+        self.reduce_cpu_cb.stateChanged.connect(self.reduce_cpu_changed)
+        adv_form.addRow(self.reduce_cpu_cb)
+
+        self.all_settings_cb = QCheckBox("Unlock All Graphics Options (Allows all graphics options to be changed)")
+        self.all_settings_cb.stateChanged.connect(self.all_settings_changed)
+        adv_form.addRow(self.all_settings_cb)
+
+        self.lock_config_cb = QCheckBox("Lock config.ini (read-only mode, prevents changes to the config file)")
+        self.lock_config_cb.stateChanged.connect(self.lock_config_changed)
+        adv_form.addRow(self.lock_config_cb)
+
+        layout.addWidget(adv_box)
+
+    def set_game_directory(self, game_dir):
+        self.game_dir = game_dir
+        if self.game_dir:
+            self.load_settings()  # Changed from refresh_settings() to load_settings()
+        config_path = os.path.join(game_dir, "players", "config.ini")
+        if os.path.exists(config_path):
+            self.lock_config_cb.setChecked(not os.access(config_path, os.W_OK))
+
+    def set_log_widget(self, log_widget):
+        self.log_widget = log_widget
 
     def smooth_changed(self):
         val = "1" if self.smooth_cb.isChecked() else "0"
@@ -389,8 +475,9 @@ class GraphicsSettingsWidget(QWidget):
         val = "2" if self.reduce_cpu_cb.isChecked() else "0"
         set_config_value(self.game_dir, "SerializeRender", val, "0 to 2", self.log_widget)
 
-    def reduce_stutter_changed(self):
-        toggle_stuttering_setting(self.game_dir, self.reduce_stutter_cb.isChecked(), self.log_widget)
+    def all_settings_changed(self):
+        val = "0" if self.all_settings_cb.isChecked() else "1"
+        set_config_value(self.game_dir, "RestrictGraphicsOptions", val, "0 or 1", self.log_widget)
 
     def lock_config_changed(self):
         if self.lock_config_cb.isChecked():

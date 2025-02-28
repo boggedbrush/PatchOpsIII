@@ -7,8 +7,11 @@
 # Build folder:
 /build/
 
-# Virtual environment
+# Virtual environment:
 /env/
+
+# pyinstaller:
+/pyinstaller/
 
 # Build exe:
 *.bat
@@ -19,5 +22,11 @@
 # Executable files:
 *.exe
 
-# Spec Files:
+# Spec files:
 *.spec
+
+# text files:
+*.txt
+
+# vdf files:
+*.vdf

@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 import os, shutil, tarfile, requests, sys
 from urllib.parse import urlsplit
-from PySide6.QtWidgets import QMessageBox, QWidget, QGroupBox, QHBoxLayout, QPushButton, QLabel, QVBoxLayout
+from PySide6.QtWidgets import QMessageBox, QWidget, QGroupBox, QHBoxLayout, QPushButton, QLabel, QVBoxLayout, QSizePolicy
+from PySide6.QtCore import Qt, QEvent
 from utils import write_log
 
 # ---------- DXVK Helper Functions (unchanged) ----------
@@ -55,6 +56,14 @@ def manage_dxvk_async(game_dir, action, log_widget, mod_files_dir):
                     write_log(f"Removed '{f}'.", "Success", log_widget)
                 except Exception:
                     write_log(f"Failed to remove '{f}'.", "Error", log_widget)
+            # Remove dxvk.conf if it exists
+            conf_path = os.path.join(game_dir, "dxvk.conf")
+            if os.path.exists(conf_path):
+                try:
+                    os.remove(conf_path)
+                    write_log("Removed dxvk.conf.", "Success", log_widget)
+                except Exception:
+                    write_log("Failed to remove dxvk.conf.", "Error", log_widget)
             write_log("DXVK-GPLAsync has been uninstalled.", "Success", log_widget)
         else:
             write_log("DXVK-GPLAsync is not installed.", "Info", log_widget)
@@ -98,7 +107,12 @@ def manage_dxvk_async(game_dir, action, log_widget, mod_files_dir):
             try:
                 shutil.copy(os.path.join(dxvk_win64_dir, "dxgi.dll"), game_dir)
                 shutil.copy(os.path.join(dxvk_win64_dir, "d3d11.dll"), game_dir)
-                write_log("DXVK-GPLAsync installed successfully.", "Success", log_widget)
+                # Write dxvk.conf with async and GPL async cache enabled
+                conf_path = os.path.join(game_dir, "dxvk.conf")
+                with open(conf_path, "w") as conf_file:
+                    conf_file.write("dxvk.enableAsync=true\n")
+                    conf_file.write("dxvk.gplAsyncCache=true\n")
+                write_log("DXVK-GPLAsync installed successfully with dxvk.conf configured.", "Success", log_widget)
             except Exception:
                 write_log("Error installing DXVK-GPLAsync. Antivirus or permissions may be blocking files.", "Error", log_widget)
         else:
@@ -106,33 +120,58 @@ def manage_dxvk_async(game_dir, action, log_widget, mod_files_dir):
 
 # ---------- DXVK GUI Widget ----------
 
-DARK_CONTROL_COLOR = "#2D2D30"
-LIGHT_FORE_COLOR = "#FFFFFF"
-
 class DXVKWidget(QWidget):
     def __init__(self, mod_files_dir, parent=None):
-        super().__init__(parent)   # Correct: use parent, not mod_files_dir
+        super().__init__(parent)
         self.mod_files_dir = mod_files_dir
         self.game_dir = None
         self.log_widget = None
+        self.group = QGroupBox("DXVK-GPLAsync Management")
+        self.group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.init_ui()
+        self.update_theme()
+
+    @property
+    def groupbox(self):
+        return self.group
 
     def init_ui(self):
         self.group = QGroupBox("DXVK-GPLAsync Management")
         layout = QHBoxLayout(self.group)
+        # Match T7 Patch margins/spacing:
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(5)
         self.install_btn = QPushButton("Install DXVK-GPLAsync")
-        self.install_btn.setStyleSheet(f"background-color: {DARK_CONTROL_COLOR}; color: {LIGHT_FORE_COLOR};")
         self.install_btn.clicked.connect(lambda: self.manage_dxvk("Install"))
         self.uninstall_btn = QPushButton("Uninstall DXVK-GPLAsync")
-        self.uninstall_btn.setStyleSheet(f"background-color: {DARK_CONTROL_COLOR}; color: {LIGHT_FORE_COLOR};")
         self.uninstall_btn.clicked.connect(lambda: self.manage_dxvk("Uninstall"))
         self.status_label = QLabel("")
-        self.status_label.setStyleSheet("color: " + LIGHT_FORE_COLOR + ";")
         layout.addWidget(self.install_btn)
         layout.addWidget(self.uninstall_btn)
         layout.addWidget(self.status_label)
         main_layout = QVBoxLayout(self)
         main_layout.addWidget(self.group)
+
+    def update_theme(self):
+        is_dark = self.palette().window().color().lightness() < 128
+        if (is_dark):
+            control_color = "#2D2D30"
+            fore_color = "#FFFFFF"
+        else:
+            control_color = "#F0F0F0"
+            fore_color = "#000000"
+
+        # Update button styles
+        for btn in [self.install_btn, self.uninstall_btn]:
+            btn.setStyleSheet(f"background-color: {control_color}; color: {fore_color};")
+
+        # Update label style
+        self.status_label.setStyleSheet(f"color: {fore_color};")
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.Type.PaletteChange:
+            self.update_theme()
+        super().changeEvent(event)
 
     def set_game_directory(self, game_dir):
         self.game_dir = game_dir
@@ -157,4 +196,3 @@ class DXVKWidget(QWidget):
         manage_dxvk_async(self.game_dir, action, self.log_widget, self.mod_files_dir)
         self.update_status()
 
-# (End of dxvk_manager.py)
