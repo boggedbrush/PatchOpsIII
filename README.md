@@ -1,6 +1,6 @@
 # PatchOpsIII
 
-PatchOpsIII is a modding utility for **Call of Duty: Black Ops III** that simplifies tweaking graphics settings, installing performance patches, and customizing your in-game experience. Developed by **boggedbrush**, this tool offers a friendly interface built with PySide6.
+PatchOpsIII (v1.0.2) is a modding utility for **Call of Duty: Black Ops III** that simplifies tweaking graphics settings, installing performance patches, and customizing your in-game experience. Developed by **boggedbrush**, this tool offers a friendly interface built with PySide6.
 
 ---
 # Wiki
@@ -11,11 +11,25 @@ Before you start using the application, please take a look at the Wiki for setup
 
 ## Features
 
+- **Enhanced GUI with Tabs:**  
+  Organized interface with Mods, Graphics, and Advanced tabs for better navigation.
+
 - **Graphics Settings Manager:**  
   Adjust FPS limiter, FOV, resolution, and more. Easily apply presets from a JSON file to optimize visuals or performance.
 
+- **Quality of Life Features:**
+  - Skip all intro videos
+  - Support for Play Offline mode
+  - Integration with All-around Enhancement Lite and Ultimate Experience Mod
+  - Clickable help buttons for additional information
+
 - **T7 Patch Management:**  
-  Install/update the T7 Patch to customize your gamertag (with optional color codes) and adjust game settings. Automatically handles Windows Defender exclusions and administrative rights.
+  Install/update the T7 Patch with enhanced features:
+  - LPC Installation support
+  - Network password configuration
+  - Friends Only Mode toggle
+  - Uninstall capability
+  - Customizable gamertag with color codes
 
 - **DXVK-GPLAsync Manager:**  
   Install or uninstall DXVK-GPLAsync to reduce stuttering via async shader compilation.
@@ -43,8 +57,10 @@ Before you start using the application, please take a look at the Wiki for setup
 
 ## Installation
 
-1. **Clone the Repository:**
-
+1. **Download the Latest Release:**
+   Download [PatchOpsIII v1.0.2](https://github.com/boggedbrush/PatchOpsIII/releases/download/1.0.2/PatchOpsIII.exe)
+   
+   Or clone the repository:
    ```bash
    git clone https://github.com/boggedbrush/PatchOpsIII.git
    cd PatchOpsIII
@@ -81,7 +97,12 @@ Before you start using the application, please take a look at the Wiki for setup
 
 ## VirusTotal Scan
 
-The latest VirusTotal scan shows a detection rate of **7/71**. You can review the detailed report [here](https://www.virustotal.com/gui/file/dcb513ebe42d737b6647e92939d98cdaceed06031c363e19ca2bf674cb4e7874).
+The latest VirusTotal scan shows improved compatibility with antivirus software. Review the detailed report [here](https://www.virustotal.com/gui/file/622afd122d4f8e539c90efb33aae0ee2a4fda9c999795200b1ea7d9d2e8b55e2/summary).
+
+## Known Issues
+
+- All-around Enhancement Mod (full version) may have compatibility issues with launch options
+- Launch options feature is still under testing and may not work for all users
 
 ---
 
