@@ -1,6 +1,6 @@
 # PatchOpsIII
 
-PatchOpsIII (v1.0.2) is a modding utility for **Call of Duty: Black Ops III** that simplifies tweaking graphics settings, installing performance patches, and customizing your in-game experience. Developed by **boggedbrush**, this tool offers a friendly interface built with PySide6.
+PatchOpsIII is a modding utility for **Call of Duty: Black Ops III** that simplifies tweaking graphics settings, installing performance patches, and customizing your in-game experience. Developed by **boggedbrush**, this tool offers a friendly interface built with PySide6.
 
 ---
 # Wiki
