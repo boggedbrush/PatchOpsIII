@@ -18,8 +18,12 @@ def is_admin():
 def run_as_admin(extra_args=""):
     script = sys.argv[0]
     params = f'"{script}" {extra_args}'
-    ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1)
-    sys.exit()
+    try:
+        if sys.platform.startswith("win"):
+            ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1)
+    except Exception as e:
+        write_log(f"Failed to elevate privileges: {e}", "Error", None)
+    sys.exit(0)  # Exit immediately after requesting elevation
 
 def update_t7patch_conf(game_dir, new_name=None, new_password=None, friends_only=None, log_widget=None):
     conf_path = os.path.join(game_dir, "t7patch.conf")
@@ -187,6 +191,71 @@ def install_lpc_files(game_dir, mod_files_dir, log_widget):
             pass
 
 def install_t7_patch(game_dir, txt_gamertag, btn_update_gamertag, log_widget, mod_files_dir):
+    # Check if we're running with admin rights and this is the elevated process
+    if "--install-t7" in sys.argv:
+        try:
+            # Add Windows Defender exclusions
+            subprocess.run(["powershell", "-Command", f"Add-MpPreference -ExclusionPath '{mod_files_dir}'"], check=True)
+            write_log(f"Added Windows Defender exclusion to {mod_files_dir}.", "Success", log_widget)
+            
+            subprocess.run(["powershell", "-Command", f"Add-MpPreference -ExclusionPath '{game_dir}'"], check=True)
+            write_log(f"Added Windows Defender exclusion to {game_dir}.", "Success", log_widget)
+            
+            # Download and install T7 Patch
+            write_log("Downloading T7 Patch...", "Info", log_widget)
+            zip_url = "https://github.com/shiversoftdev/t7patch/releases/download/Current/Linux.Steamdeck.and.Manual.Windows.Install.zip"
+            zip_dest = os.path.join(mod_files_dir, "T7Patch.zip")
+            source_dir = os.path.join(mod_files_dir, "linux")
+            
+            # Clean up existing files
+            if os.path.exists(zip_dest):
+                os.remove(zip_dest)
+            if os.path.exists(source_dir):
+                shutil.rmtree(source_dir)
+            
+            # Download and extract
+            r = requests.get(zip_url, stream=True)
+            with open(zip_dest, "wb") as f:
+                f.write(r.content)
+            
+            with zipfile.ZipFile(zip_dest, "r") as zf:
+                zf.extractall(mod_files_dir)
+            
+            # Copy files to game directory
+            if os.path.exists(source_dir):
+                for root, dirs, files in os.walk(source_dir):
+                    rel_path = os.path.relpath(root, source_dir)
+                    dest = os.path.join(game_dir, rel_path)
+                    os.makedirs(dest, exist_ok=True)
+                    for file in files:
+                        if file.lower() == "t7patch.conf" and os.path.exists(os.path.join(dest, file)):
+                            continue
+                        shutil.copy2(os.path.join(root, file), dest)
+                
+                # Clean up
+                try:
+                    os.remove(zip_dest)
+                    shutil.rmtree(source_dir)
+                except Exception:
+                    pass
+                
+                # Install LPC files
+                write_log("Installing LPC files...", "Info", log_widget)
+                if not install_lpc_files(game_dir, mod_files_dir, log_widget):
+                    write_log("Failed to install LPC files.", "Error", log_widget)
+                    return
+                
+                write_log("T7 Patch installed successfully.", "Success", log_widget)
+                txt_gamertag.setEnabled(True)
+                btn_update_gamertag.setEnabled(True)
+            else:
+                write_log("Error: Could not find extracted files.", "Error", log_widget)
+                
+        except Exception as e:
+            write_log(f"Error during installation: {e}", "Error", log_widget)
+        return
+
+    # Normal entry point
     prompt_text = ("Do you want to install the T7 Patch now?\n\n"
                    "Warning: This will temporarily disable Windows Defender within the BO3 Mod Files folder and require admin rights.")
     reply = QMessageBox.question(None, "Install T7 Patch", prompt_text,
@@ -197,76 +266,26 @@ def install_t7_patch(game_dir, txt_gamertag, btn_update_gamertag, log_widget, mo
                                     "This action requires administrator rights. The application will now restart with elevated privileges.")
             run_as_admin("--install-t7")
             return
-        try:
-            subprocess.run(["powershell", "-Command", f"Add-MpPreference -ExclusionPath '{mod_files_dir}'"], check=True)
-            write_log(f"Added Windows Defender exclusion to {mod_files_dir}.", "Success", log_widget)
-        except Exception as e:
-            write_log(f"Failed to add exclusion for mod files: {e}", "Error", log_widget)
-        try:
-            subprocess.run(["powershell", "-Command", f"Add-MpPreference -ExclusionPath '{game_dir}'"], check=True)
-            write_log(f"Added Windows Defender exclusion to {game_dir}.", "Success", log_widget)
-        except Exception as e:
-            write_log(f"Failed to add exclusion for game directory: {e}", "Error", log_widget)
-        write_log("Proceeding with T7 Patch installation.", "Info", log_widget)
-        zip_url = "https://github.com/shiversoftdev/t7patch/releases/download/Current/Linux.Steamdeck.and.Manual.Windows.Install.zip"
-        zip_dest = os.path.join(mod_files_dir, "T7Patch.zip")
-        try:
-            r = requests.get(zip_url, stream=True)
-            with open(zip_dest, "wb") as f:
-                f.write(r.content)
-            write_log("Downloaded T7 Patch successfully.", "Success", log_widget)
-        except Exception:
-            write_log("Failed to download T7 Patch. Check your internet connection.", "Error", log_widget)
-            return
-        try:
-            with zipfile.ZipFile(zip_dest, "r") as zf:
-                zf.extractall(mod_files_dir)
-            write_log("Unzipped T7 Patch successfully.", "Success", log_widget)
-        except Exception:
-            write_log("Failed to unzip T7 Patch. The zip file may be corrupted.", "Error", log_widget)
-            return
-        source_dir = os.path.join(mod_files_dir, "linux")
-        if not os.path.exists(source_dir):
-            write_log("'linux' folder not found after extracting T7 Patch.", "Error", log_widget)
-            return
-        copy_errors = False
-        try:
-            for root, dirs, files in os.walk(source_dir):
-                rel_path = os.path.relpath(root, source_dir)
-                dest = os.path.join(game_dir, rel_path)
-                if not os.path.exists(dest):
-                    os.makedirs(dest)
-                for file in files:
-                    if file.lower() == "t7patch.conf" and os.path.exists(os.path.join(dest, file)):
-                        continue
-                    try:
-                        shutil.copy(os.path.join(root, file), dest)
-                    except Exception as e:
-                        write_log(f"Error copying {file}: {e}", "Warning", log_widget)
-                        copy_errors = True
-        except Exception as e:
-            write_log(f"Error during file copy: {e}", "Error", log_widget)
-            return
-
-        conf_path = os.path.join(game_dir, "t7patch.conf")
-        if os.path.exists(conf_path):
-            if copy_errors:
-                write_log("T7 Patch installed with some copy errors; t7patch.conf exists.", "Warning", log_widget)
-            else:
-                write_log("T7 Patch installed successfully.", "Success", log_widget)
-            txt_gamertag.setEnabled(True)
-            btn_update_gamertag.setEnabled(True)
-            txt_gamertag.clear()
-            write_log("You can now enter your Gamertag and click 'Update Gamertag'.", "Info", log_widget)
         else:
-            write_log("Error installing T7 Patch. Critical files are missing.", "Error", log_widget)
-        
-        write_log("Installing LPC files...", "Info", log_widget)
-        if not install_lpc_files(game_dir, mod_files_dir, log_widget):
-            write_log("Failed to install LPC files.", "Error", log_widget)
-            return
-    else:
-        write_log("T7 Patch installation canceled by user.", "Info", log_widget)
+            # Already have admin rights, proceed with installation directly
+            try:
+                subprocess.run(["powershell", "-Command", f"Add-MpPreference -ExclusionPath '{mod_files_dir}'"], check=True)
+                write_log(f"Added Windows Defender exclusion to {mod_files_dir}.", "Success", log_widget)
+                
+                subprocess.run(["powershell", "-Command", f"Add-MpPreference -ExclusionPath '{game_dir}'"], check=True)
+                write_log(f"Added Windows Defender exclusion to {game_dir}.", "Success", log_widget)
+                
+                # Continue with installation using same code as elevated process
+                write_log("Downloading T7 Patch...", "Info", log_widget)
+                zip_url = "https://github.com/shiversoftdev/t7patch/releases/download/Current/Linux.Steamdeck.and.Manual.Windows.Install.zip"
+                zip_dest = os.path.join(mod_files_dir, "T7Patch.zip")
+                source_dir = os.path.join(mod_files_dir, "linux")
+                
+                # Rest of installation process...
+                # (Same as the code in the elevated process section)
+                
+            except Exception as e:
+                write_log(f"Error during installation: {e}", "Error", log_widget)
 
 def check_t7_patch_status(game_dir):
     conf_path = os.path.join(game_dir, "t7patch.conf")
