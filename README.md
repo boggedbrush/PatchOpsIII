@@ -42,8 +42,9 @@ Before you start using the application, please take a look at the Wiki for setup
 
 ---
 
-![{9BAEFD91-221E-402A-8D1B-14676D179B9D}](https://github.com/user-attachments/assets/857e3460-98b4-45c7-bc4e-cd1fcdfef9fb)
+![{515ACE88-F353-4916-8E55-09E377784B04}](https://github.com/user-attachments/assets/a79e7273-4274-4a43-8d4d-e81a12cbd1ff)
 
+---
 ## Prerequisites
 
 - **Call of Duty: Black Ops III**  
