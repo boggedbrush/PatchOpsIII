@@ -1,17 +1,22 @@
 # Python bytecode caches
-/__pycache__/
+Stable/__pycache__/
+Testing/__pycache__/
 
 # Mod Files:
-/BO3 Mod Files/
+Stable/BO3 Mod Files/
+Testing/BO3 Mod Files/
 
 # Build folder:
-/build/
+Stable/build/
+Testing/build/
 
 # Virtual environment:
-/env/
+Stable/env/
+Testing/env/
 
 # pyinstaller:
-/pyinstaller/
+Stable/pyinstaller/
+Testing/pyinstaller/
 
 # Build exe:
 *.bat
