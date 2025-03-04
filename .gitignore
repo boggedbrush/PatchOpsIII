@@ -10,6 +10,10 @@ Testing/BO3 Mod Files/
 Stable/build/
 Testing/build/
 
+# Dist folder:
+Stable/dist/
+Testing/dist/
+
 # Virtual environment:
 Stable/env/
 Testing/env/
@@ -18,8 +22,9 @@ Testing/env/
 Stable/pyinstaller/
 Testing/pyinstaller/
 
-# Build exe:
+# Build files:
 *.bat
+*.sh
 
 # Log files:
 *.log
