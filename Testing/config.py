@@ -414,9 +414,18 @@ class AdvancedSettingsWidget(QWidget):
         self.smooth_cb.stateChanged.connect(self.smooth_changed)
         adv_form.addRow(self.smooth_cb)
 
-        self.vram_cb = QCheckBox("Use Full VRAM (Forces the game to use the full amount of VRAM)")
+        # VRAM settings
+        self.vram_cb = QCheckBox("Set VRAM Usage (Enables the VideoMemory and StreamMinResident options)")
         self.vram_cb.stateChanged.connect(self.vram_changed)
         adv_form.addRow(self.vram_cb)
+
+        # New spin box for limited VRAM percentage
+        self.vram_limit_spin = QSpinBox()
+        self.vram_limit_spin.setRange(75, 100)
+        self.vram_limit_spin.setValue(75)
+        self.vram_limit_spin.setEnabled(False)
+        self.vram_limit_spin.valueChanged.connect(self.vram_limit_changed)
+        adv_form.addRow("Set VRAM target to (%):", self.vram_limit_spin)
 
         self.latency_spin = QSpinBox()
         self.latency_spin.setRange(0, 4)
@@ -456,17 +465,27 @@ class AdvancedSettingsWidget(QWidget):
     def vram_changed(self):
         config_path = os.path.join(self.game_dir, "players", "config.ini")
         if self.vram_cb.isChecked():
+            # When checked, limited VRAM is enabled:
+            self.vram_limit_spin.setEnabled(True)
+            self.vram_limit_changed()  # Apply limited percentage setting.
+        else:
+            # When unchecked, full VRAM usage is enabled:
+            self.vram_limit_spin.setEnabled(False)
             pattern_replacements = {
                 r'^\s*VideoMemory\s*=': 'VideoMemory = "1" // 0.75 to 1',
                 r'^\s*StreamMinResident\s*=': 'StreamMinResident = "0" // 0 or 1',
             }
             update_config_values(config_path, pattern_replacements, "Enabled full VRAM usage.", self.log_widget)
-        else:
-            pattern_replacements = {
-                r'^\s*VideoMemory\s*=': 'VideoMemory = "0.75" // 0.75 to 1',
-                r'^\s*StreamMinResident\s*=': 'StreamMinResident = "1" // 0 or 1',
-            }
-            update_config_values(config_path, pattern_replacements, "Reverted VRAM usage.", self.log_widget)
+
+    def vram_limit_changed(self):
+        config_path = os.path.join(self.game_dir, "players", "config.ini")
+        percentage = self.vram_limit_spin.value()
+        decimal_value = percentage / 100.0
+        pattern_replacements = {
+            r'^\s*VideoMemory\s*=': f'VideoMemory = "{decimal_value}" // 0.75 to 1',
+            r'^\s*StreamMinResident\s*=': 'StreamMinResident = "1" // 0 or 1',
+        }
+        update_config_values(config_path, pattern_replacements, f"Limited VRAM usage set to {percentage}%.", self.log_widget)
 
     def latency_changed(self):
         set_config_value(self.game_dir, "MaxFrameLatency", str(self.latency_spin.value()), "0 to 4", self.log_widget)

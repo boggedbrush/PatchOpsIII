@@ -7,6 +7,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal, Qt, QEvent
 from utils import write_log
 
+# Add module-level flag
+defender_warning_logged = False
+
 # === Core T7 Patch functions (unchanged) ===
 
 def is_admin():
@@ -197,18 +200,51 @@ def install_lpc_files(game_dir, mod_files_dir, log_widget):
         except Exception:
             pass
 
+def check_defender_available():
+    """Check if Windows Defender is available and active"""
+    try:
+        result = subprocess.run(
+            ["powershell", "-Command", "Get-MpComputerStatus"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return "AntivirusEnabled" in result.stdout and "True" in result.stdout
+    except subprocess.CalledProcessError:
+        return False
+
+def add_defender_exclusion(path, log_widget):
+    """Safely add a Windows Defender exclusion with proper error handling"""
+    global defender_warning_logged
+    if not check_defender_available():
+        if not defender_warning_logged:
+            write_log("Windows Defender is not active or accessible.", "Warning", log_widget)
+            write_log("If you are using another anti-virus, then you will have to exclude the game folder manually.", "Warning", log_widget)
+            defender_warning_logged = True
+        return False
+    
+    try:
+        subprocess.run(
+            ["powershell", "-Command", f"Add-MpPreference -ExclusionPath '{path}'"],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        write_log(f"Added Windows Defender exclusion to {path}.", "Success", log_widget)
+        return True
+    except subprocess.CalledProcessError as e:
+        write_log(f"Could not add Windows Defender exclusion for {path}. This is normal if using a different antivirus.", "Warning", log_widget)
+        return False
+
 def install_t7_patch(game_dir, txt_gamertag, btn_update_gamertag, log_widget, mod_files_dir):
     # Check if we're running with admin rights and this is the elevated process
     if "--install-t7" in sys.argv:
         try:
             if sys.platform.startswith("win"):
-                # Add Windows Defender exclusions on Windows
-                subprocess.run(["powershell", "-Command", f"Add-MpPreference -ExclusionPath '{mod_files_dir}'"], check=True)
-                write_log(f"Added Windows Defender exclusion to {mod_files_dir}.", "Success", log_widget)
-                subprocess.run(["powershell", "-Command", f"Add-MpPreference -ExclusionPath '{game_dir}'"], check=True)
-                write_log(f"Added Windows Defender exclusion to {game_dir}.", "Success", log_widget)
+                # Add Windows Defender exclusions on Windows with proper error handling
+                add_defender_exclusion(mod_files_dir, log_widget)
+                add_defender_exclusion(game_dir, log_widget)
             else:
-                # Linux: skip antivirus exclusion but warn the user
                 write_log("Linux detected. Skipping antivirus exclusion. Please add an exclusion in your antivirus settings if needed.", "Warning", log_widget)
             
             # Download and install T7 Patch
@@ -272,7 +308,7 @@ def install_t7_patch(game_dir, txt_gamertag, btn_update_gamertag, log_widget, mo
 
     # Normal entry point
     prompt_text = ("Do you want to install the T7 Patch now?\n\n"
-                   "On Windows, this will temporarily disable Windows Defender within the BO3 Mod Files folder and require admin rights.\n"
+                   "On Windows, this will attempt to add Windows Defender exclusions for the required folders.\n"
                    "On Linux, the antivirus exclusion step will be skipped. Please ensure your antivirus has an exclusion for the mod files if needed.")
     reply = QMessageBox.question(None, "Install T7 Patch", prompt_text,
                                  QMessageBox.Yes | QMessageBox.No)
@@ -284,10 +320,8 @@ def install_t7_patch(game_dir, txt_gamertag, btn_update_gamertag, log_widget, mo
             return
         else:
             if sys.platform.startswith("win"):
-                subprocess.run(["powershell", "-Command", f"Add-MpPreference -ExclusionPath '{mod_files_dir}'"], check=True)
-                write_log(f"Added Windows Defender exclusion to {mod_files_dir}.", "Success", log_widget)
-                subprocess.run(["powershell", "-Command", f"Add-MpPreference -ExclusionPath '{game_dir}'"], check=True)
-                write_log(f"Added Windows Defender exclusion to {game_dir}.", "Success", log_widget)
+                add_defender_exclusion(mod_files_dir, log_widget)
+                add_defender_exclusion(game_dir, log_widget)
             else:
                 write_log("Linux detected. Skipping antivirus exclusion. Please add an exclusion in your antivirus settings if needed.", "Warning", log_widget)
             

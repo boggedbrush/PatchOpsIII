@@ -136,7 +136,7 @@ def open_steam(log_widget):
                              stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL)
         else:
-            # Check if Steam is already running
+            # Linux logic only
             was_running = (subprocess.call(["pgrep", "-x", "steam"],
                                            stdout=subprocess.DEVNULL) == 0)
             if was_running:
@@ -144,51 +144,46 @@ def open_steam(log_widget):
                 subprocess.call(["pkill", "-x", "steam"],
                                 stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL)
-                time.sleep(2)  # Allow time for Steam to shut down
+                time.sleep(2)
 
             write_log("Setting launch options...", "Info", log_widget)
-            # (Place here any code that sets your launch options.)
-            
-            write_log("Opening Steam...", "Info", log_widget)
             subprocess.Popen(["xdg-open", "steam://"],
                              stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL)
-            # Fallback: if xdg-open fails and 'steam' exists, launch it directly.
             if subprocess.call(["which", "steam"],
                                stdout=subprocess.DEVNULL) == 0:
                 subprocess.Popen(["steam"],
                                  stdout=subprocess.DEVNULL,
                                  stderr=subprocess.DEVNULL)
-        
-        # Poll for a stable Steam process
-        max_wait = 15      # maximum total wait time (seconds)
-        poll_interval = 0.5  # poll every 0.5 seconds
-        stable_duration = 2  # require Steam to be present for 2 consecutive seconds
-        elapsed = 0
-        stable_time = 0
 
-        while elapsed < max_wait:
-            if subprocess.call(["pgrep", "-x", "steam"],
-                               stdout=subprocess.DEVNULL) == 0:
-                stable_time += poll_interval
-                if stable_time >= stable_duration:
-                    break
+            # Polling for a stable Steam process on Linux
+            max_wait = 15
+            poll_interval = 0.5
+            stable_duration = 2
+            elapsed = 0
+            stable_time = 0
+
+            while elapsed < max_wait:
+                if subprocess.call(["pgrep", "-x", "steam"],
+                                   stdout=subprocess.DEVNULL) == 0:
+                    stable_time += poll_interval
+                    if stable_time >= stable_duration:
+                        break
+                else:
+                    if stable_time > 0:
+                        subprocess.Popen(["xdg-open", "steam://"],
+                                         stdout=subprocess.DEVNULL,
+                                         stderr=subprocess.DEVNULL)
+                    stable_time = 0
+                time.sleep(poll_interval)
+                elapsed += poll_interval
+
+            # Final check for Linux
+            if stable_time >= stable_duration and subprocess.call(["pgrep", "-x", "steam"],
+                                                                stdout=subprocess.DEVNULL) == 0:
+                write_log("Steam launched successfully", "Success", log_widget)
             else:
-                if stable_time > 0:
-                    # Try launching again if it vanished after being detected.
-                    subprocess.Popen(["xdg-open", "steam://"],
-                                     stdout=subprocess.DEVNULL,
-                                     stderr=subprocess.DEVNULL)
-                stable_time = 0
-            time.sleep(poll_interval)
-            elapsed += poll_interval
-
-        # Final check: ensure Steam is running stably.
-        if stable_time >= stable_duration and subprocess.call(["pgrep", "-x", "steam"],
-                                                            stdout=subprocess.DEVNULL) == 0:
-            write_log("Steam launched successfully", "Success", log_widget)
-        else:
-            write_log("Steam did not launch successfully", "Error", log_widget)
+                write_log("Steam did not launch successfully", "Error", log_widget)
     except Exception as e:
         write_log(f"Failed to open Steam: {e}", "Error", log_widget)
         write_log("Please start Steam manually", "Info", log_widget)
@@ -215,36 +210,44 @@ def set_launch_options(user_id, app_id, launch_options, log_widget):
             apps[app_id] = {}
         current_options = apps[app_id].get("LaunchOptions", "")
         
-        # Parse existing options
-        wine_override = 'WINEDLLOVERRIDES="dsound=n,b"'
-        command_marker = "%command%"
-        fs_game_pattern = r'\+set fs_game \w+'
+        # Remove any existing fs_game commands from the current options
+        current_options_clean = re.sub(r'\+set\s+fs_game\s+\w+', '', current_options).strip()
         
-        # Keep WINE override if it exists and we're not explicitly setting it
-        if wine_override in current_options and wine_override not in launch_options:
-            launch_options = f"{wine_override} {command_marker} {launch_options}"
-        
-        # If we're adding WINE override, remove any existing one
-        elif wine_override in launch_options and wine_override in current_options:
-            current_options = current_options.replace(wine_override, "").strip()
-        
-        # Keep existing options that aren't fs_game or WINE related
-        current_parts = [opt for opt in current_options.split() 
-                        if opt != wine_override 
-                        and opt != command_marker 
-                        and not re.match(fs_game_pattern, opt)]
-        
-        # Combine options, ensuring no duplicates
-        if current_parts:
-            final_options = " ".join(filter(None, [
-                wine_override if wine_override in launch_options else "",
-                command_marker if command_marker in launch_options else "",
-                " ".join(current_parts),
-                launch_options.replace(wine_override, "").replace(command_marker, "").strip()
-            ])).strip()
+        # Handle WINE overrides only on Linux
+        if platform.system() == "Linux":
+            wine_override = 'WINEDLLOVERRIDES="dsound=n,b"'
+            command_marker = "%command%"
+            
+            # Keep WINE override if it exists and we're not explicitly setting it
+            if wine_override in current_options and wine_override not in launch_options:
+                wine_override_present = True
+            else:
+                wine_override_present = False
+                current_options_clean = current_options_clean.replace(wine_override, "").replace(command_marker, "").strip()
         else:
-            final_options = launch_options
+            wine_override = ""
+            command_marker = ""
+            wine_override_present = False
 
+        # Combine options
+        final_parts = []
+        if wine_override_present:
+            final_parts.append(wine_override)
+            final_parts.append(command_marker)
+        elif platform.system() == "Linux" and wine_override in launch_options:
+            final_parts.extend([wine_override, command_marker])
+        
+        if current_options_clean:
+            final_parts.append(current_options_clean)
+            
+        if launch_options:
+            clean_launch_options = launch_options
+            if platform.system() == "Linux":
+                clean_launch_options = clean_launch_options.replace(wine_override, "").replace(command_marker, "")
+            final_parts.append(clean_launch_options.strip())
+
+        final_options = " ".join(filter(None, final_parts)).strip()
+        
         apps[app_id]["LaunchOptions"] = final_options
         
         write_log(f"Setting launch options to: {final_options}", "Info", log_widget)
@@ -488,7 +491,7 @@ class QualityOfLifeWidget(QWidget):
 
         # Get current launch options to preserve T7Patch settings
         user_id = find_steam_user_id()
-        if user_id:
+        if user_id and platform.system() == "Linux":  # Only check for WINE overrides on Linux
             config_path = os.path.join(steam_userdata_path, user_id, "config", "localconfig.vdf")
             if os.path.exists(config_path):
                 try:
