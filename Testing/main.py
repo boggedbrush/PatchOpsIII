@@ -119,13 +119,9 @@ def close_steam(log_widget):
             subprocess.run(["taskkill", "/F", "/IM", "steam.exe"], check=True)
         elif system == "Linux":
             subprocess.run(["pkill", "steam"], check=True)
-        time.sleep(2)
+        time.sleep(5)
     except subprocess.CalledProcessError as e:
         write_log(f"Failed to close Steam: {e}", "Error", log_widget)
-
-import time
-import subprocess
-import platform
 
 def open_steam(log_widget):
     system = platform.system()
@@ -136,7 +132,7 @@ def open_steam(log_widget):
                              stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL)
         else:
-            # Linux logic only
+            # Check if Steam is already running
             was_running = (subprocess.call(["pgrep", "-x", "steam"],
                                            stdout=subprocess.DEVNULL) == 0)
             if was_running:
@@ -144,46 +140,51 @@ def open_steam(log_widget):
                 subprocess.call(["pkill", "-x", "steam"],
                                 stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL)
-                time.sleep(2)
+                time.sleep(2)  # Allow time for Steam to shut down
 
             write_log("Setting launch options...", "Info", log_widget)
+            # (Place here any code that sets your launch options.)
+            
+            write_log("Opening Steam...", "Info", log_widget)
             subprocess.Popen(["xdg-open", "steam://"],
                              stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL)
+            # Fallback: if xdg-open fails and 'steam' exists, launch it directly.
             if subprocess.call(["which", "steam"],
                                stdout=subprocess.DEVNULL) == 0:
                 subprocess.Popen(["steam"],
                                  stdout=subprocess.DEVNULL,
                                  stderr=subprocess.DEVNULL)
+        
+        # Poll for a stable Steam process
+        max_wait = 15      # maximum total wait time (seconds)
+        poll_interval = 0.5  # poll every 0.5 seconds
+        stable_duration = 2  # require Steam to be present for 2 consecutive seconds
+        elapsed = 0
+        stable_time = 0
 
-            # Polling for a stable Steam process on Linux
-            max_wait = 15
-            poll_interval = 0.5
-            stable_duration = 2
-            elapsed = 0
-            stable_time = 0
-
-            while elapsed < max_wait:
-                if subprocess.call(["pgrep", "-x", "steam"],
-                                   stdout=subprocess.DEVNULL) == 0:
-                    stable_time += poll_interval
-                    if stable_time >= stable_duration:
-                        break
-                else:
-                    if stable_time > 0:
-                        subprocess.Popen(["xdg-open", "steam://"],
-                                         stdout=subprocess.DEVNULL,
-                                         stderr=subprocess.DEVNULL)
-                    stable_time = 0
-                time.sleep(poll_interval)
-                elapsed += poll_interval
-
-            # Final check for Linux
-            if stable_time >= stable_duration and subprocess.call(["pgrep", "-x", "steam"],
-                                                                stdout=subprocess.DEVNULL) == 0:
-                write_log("Steam launched successfully", "Success", log_widget)
+        while elapsed < max_wait:
+            if subprocess.call(["pgrep", "-x", "steam"],
+                               stdout=subprocess.DEVNULL) == 0:
+                stable_time += poll_interval
+                if stable_time >= stable_duration:
+                    break
             else:
-                write_log("Steam did not launch successfully", "Error", log_widget)
+                if stable_time > 0:
+                    # Try launching again if it vanished after being detected.
+                    subprocess.Popen(["xdg-open", "steam://"],
+                                     stdout=subprocess.DEVNULL,
+                                     stderr=subprocess.DEVNULL)
+                stable_time = 0
+            time.sleep(poll_interval)
+            elapsed += poll_interval
+
+        # Final check: ensure Steam is running stably.
+        if stable_time >= stable_duration and subprocess.call(["pgrep", "-x", "steam"],
+                                                            stdout=subprocess.DEVNULL) == 0:
+            write_log("Steam launched successfully", "Success", log_widget)
+        else:
+            write_log("Steam did not launch successfully", "Error", log_widget)
     except Exception as e:
         write_log(f"Failed to open Steam: {e}", "Error", log_widget)
         write_log("Please start Steam manually", "Info", log_widget)
@@ -210,44 +211,38 @@ def set_launch_options(user_id, app_id, launch_options, log_widget):
             apps[app_id] = {}
         current_options = apps[app_id].get("LaunchOptions", "")
         
-        # Remove any existing fs_game commands from the current options
-        current_options_clean = re.sub(r'\+set\s+fs_game\s+\w+', '', current_options).strip()
+        # Parse existing options
+        wine_override = 'WINEDLLOVERRIDES="dsound=n,b"'
+        command_marker = "%command%"
+        fs_game_pattern = r'\+set fs_game \S+'
         
-        # Handle WINE overrides only on Linux
-        if platform.system() == "Linux":
-            wine_override = 'WINEDLLOVERRIDES="dsound=n,b"'
-            command_marker = "%command%"
-            
-            # Keep WINE override if it exists and we're not explicitly setting it
-            if wine_override in current_options and wine_override not in launch_options:
-                wine_override_present = True
-            else:
-                wine_override_present = False
-                current_options_clean = current_options_clean.replace(wine_override, "").replace(command_marker, "").strip()
+        # Keep WINE override if it exists and we're not explicitly setting it
+        if wine_override in current_options and wine_override not in launch_options:
+            launch_options = f"{wine_override} {command_marker} {launch_options}"
+        
+        # If we're adding WINE override, remove any existing one
+        elif wine_override in launch_options and wine_override in current_options:
+            current_options = current_options.replace(wine_override, "").strip()
+        
+        # Remove any existing fs_game parameters
+        current_options = re.sub(fs_game_pattern, '', current_options).strip()
+        
+        # Keep existing options that aren't fs_game or WINE related
+        current_parts = [opt for opt in current_options.split() 
+                        if opt != wine_override 
+                        and opt != command_marker]
+        
+        # Combine options, ensuring no duplicates
+        if current_parts:
+            final_options = " ".join(filter(None, [
+                wine_override if wine_override in launch_options else "",
+                command_marker if command_marker in launch_options else "",
+                " ".join(current_parts),
+                launch_options.replace(wine_override, "").replace(command_marker, "").strip()
+            ])).strip()
         else:
-            wine_override = ""
-            command_marker = ""
-            wine_override_present = False
+            final_options = launch_options
 
-        # Combine options
-        final_parts = []
-        if wine_override_present:
-            final_parts.append(wine_override)
-            final_parts.append(command_marker)
-        elif platform.system() == "Linux" and wine_override in launch_options:
-            final_parts.extend([wine_override, command_marker])
-        
-        if current_options_clean:
-            final_parts.append(current_options_clean)
-            
-        if launch_options:
-            clean_launch_options = launch_options
-            if platform.system() == "Linux":
-                clean_launch_options = clean_launch_options.replace(wine_override, "").replace(command_marker, "")
-            final_parts.append(clean_launch_options.strip())
-
-        final_options = " ".join(filter(None, final_parts)).strip()
-        
         apps[app_id]["LaunchOptions"] = final_options
         
         write_log(f"Setting launch options to: {final_options}", "Info", log_widget)
@@ -393,16 +388,20 @@ class QualityOfLifeWidget(QWidget):
             return
 
         if self.skip_intro_cb.isChecked():
-            if os.path.exists(intro_file):
-                try:
-                    os.rename(intro_file, intro_file_bak)
-                    write_log("Intro video skipped.", "Success", self.log_widget)
-                except Exception as e:
-                    write_log(f"Failed to rename intro video file: {e}", "Error", self.log_widget)
-            elif os.path.exists(intro_file_bak):
+            # If backup exists, assume the intro is already skipped
+            if os.path.exists(intro_file_bak):
                 write_log("Intro video already skipped.", "Success", self.log_widget)
             else:
-                write_log("Intro video file not found.", "Warning", self.log_widget)
+                # If the original file exists, rename it
+                if os.path.exists(intro_file):
+                    try:
+                        os.rename(intro_file, intro_file_bak)
+                        write_log("Intro video skipped.", "Success", self.log_widget)
+                    except Exception as e:
+                        write_log(f"Failed to rename intro video file: {e}", "Error", self.log_widget)
+                else:
+                    # Neither original nor backup exist, but the user wants intros skipped
+                    write_log("Intro video skipped.", "Success", self.log_widget)
         else:
             if os.path.exists(intro_file_bak):
                 try:
@@ -465,7 +464,7 @@ class QualityOfLifeWidget(QWidget):
                 except Exception:
                     write_log("Failed to rename d3dcompiler_46.dll.", "Error", self.log_widget)
             elif os.path.exists(dll_bak):
-                write_log("Stutter reduction already enabled.", "Success", self.log_widget)
+                write_log("Already using latest d3dcompiler.", "Success", self.log_widget)
             else:
                 write_log("d3dcompiler_46.dll not found.", "Warning", self.log_widget)
         else:
@@ -491,7 +490,7 @@ class QualityOfLifeWidget(QWidget):
 
         # Get current launch options to preserve T7Patch settings
         user_id = find_steam_user_id()
-        if user_id and platform.system() == "Linux":  # Only check for WINE overrides on Linux
+        if user_id:
             config_path = os.path.join(steam_userdata_path, user_id, "config", "localconfig.vdf")
             if os.path.exists(config_path):
                 try:
@@ -525,6 +524,9 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(icon)
         self.init_ui()
         
+        # Load saved launch options state without applying
+        self.load_launch_options_state()
+        
         if os.path.exists(os.path.join(DEFAULT_GAME_DIR, "BlackOps3.exe")):
             if DEFAULT_GAME_DIR == get_application_path():
                 write_log("Using Black Ops III from PatchOpsIII directory", "Info", self.log_text)
@@ -540,6 +542,38 @@ class MainWindow(QMainWindow):
         if platform.system() == "Linux" and os.path.exists(t7_conf):
             launch_options = 'WINEDLLOVERRIDES="dsound=n,b" %command%'
             apply_launch_options(launch_options, self.log_text)
+
+        # Connect tab changed signal
+        self.tabs.currentChanged.connect(self.on_tab_changed)
+
+    def load_launch_options_state(self):
+        # Get the Steam user ID and read current launch options
+        user_id = find_steam_user_id()
+        if not user_id:
+            return
+
+        config_path = os.path.join(steam_userdata_path, user_id, "config", "localconfig.vdf")
+        if not os.path.exists(config_path):
+            return
+
+        try:
+            with open(config_path, "r", encoding="utf-8") as file:
+                data = vdf.load(file)
+            
+            current_options = data.get("UserLocalConfigStore", {}).get("Software", {}).get("Valve", {}).get("Steam", {}).get("apps", {}).get(app_id, {}).get("LaunchOptions", "")
+            
+            # Set radio button state based on current options without applying
+            if "+set fs_game 2994481309" in current_options:
+                self.qol_widget.radio_all_around.setChecked(True)
+            elif "+set fs_game 2942053577" in current_options:
+                self.qol_widget.radio_ultimate.setChecked(True)
+            elif "+set fs_game offlinemp" in current_options:
+                self.qol_widget.radio_offline.setChecked(True)
+            else:
+                self.qol_widget.radio_none.setChecked(True)
+            
+        except Exception as e:
+            write_log(f"Error loading launch options state: {e}", "Error", self.log_text)
 
     def init_ui(self):
         central = QWidget()

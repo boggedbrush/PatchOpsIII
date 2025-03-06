@@ -153,8 +153,19 @@ def check_essential_status(game_dir):
 
         status["all_settings"] = bool(re.search(r'RestrictGraphicsOptions\s*=\s*"0"', content))
         status["smooth"] = bool(re.search(r'SmoothFramerate\s*=\s*"1"', content))
-        status["vram"] = bool(re.search(r'VideoMemory\s*=\s*"1"', content)
-                              and re.search(r'StreamMinResident\s*=\s*"0"', content))
+        
+        # Update VRAM status check logic
+        video_memory_match = re.search(r'VideoMemory\s*=\s*"([^"]+)"', content)
+        stream_resident_match = re.search(r'StreamMinResident\s*=\s*"([^"]+)"', content)
+        
+        has_full_vram = (video_memory_match and video_memory_match.group(1) == "1" and
+                        stream_resident_match and stream_resident_match.group(1) == "0")
+        
+        status["vram"] = not has_full_vram
+        if video_memory_match and not has_full_vram:
+            status["vram_value"] = float(video_memory_match.group(1))
+        else:
+            status["vram_value"] = 0.75  # Default value when not set
 
         match = re.search(r'MaxFrameLatency\s*=\s*"(\d)"', content)
         status["latency"] = int(match.group(1)) if match else 1
@@ -176,6 +187,7 @@ def check_essential_status(game_dir):
             "all_settings": False,
             "smooth": False,
             "vram": False,
+            "vram_value": 0.75,
             "latency": 1,
             "reduce_cpu": False,
             "skip_intro": False,
@@ -389,10 +401,14 @@ class AdvancedSettingsWidget(QWidget):
         # Update UI elements with loaded settings
         self.smooth_cb.setChecked(status.get("smooth", False))
         self.vram_cb.setChecked(status.get("vram", False))
+        self.vram_limit_spin.setEnabled(status.get("vram", False))
+        
+        # Set VRAM limit using the value from status
+        vram_value = status.get("vram_value", 0.75)
+        self.vram_limit_spin.setValue(int(vram_value * 100))
+        
         self.latency_spin.setValue(status.get("latency", 1))
         self.reduce_cpu_cb.setChecked(status.get("reduce_cpu", False))
-        
-        # Check if all graphics options are unlocked
         self.all_settings_cb.setChecked(status.get("all_settings", False))
         
         # Check config file read-only status
@@ -450,7 +466,7 @@ class AdvancedSettingsWidget(QWidget):
     def set_game_directory(self, game_dir):
         self.game_dir = game_dir
         if self.game_dir:
-            self.load_settings()  # Changed from refresh_settings() to load_settings()
+            self.load_settings()  # Load settings immediately when directory is set
         config_path = os.path.join(game_dir, "players", "config.ini")
         if os.path.exists(config_path):
             self.lock_config_cb.setChecked(not os.access(config_path, os.W_OK))
