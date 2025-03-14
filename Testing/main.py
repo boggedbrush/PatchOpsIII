@@ -285,6 +285,12 @@ class QualityOfLifeWidget(QWidget):
         self.radio_offline = QRadioButton("Play Offline")
         self.radio_none.setChecked(True)
 
+        # Block signals during initialization
+        for rb in [self.radio_none, self.radio_all_around, self.radio_ultimate, self.radio_offline]:
+            rb.blockSignals(True)
+            self.radio_group.addButton(rb)
+            rb.blockSignals(False)
+
         # Create help buttons with links
         all_around_help = QPushButton("?")
         ultimate_help = QPushButton("?")
@@ -536,13 +542,6 @@ class MainWindow(QMainWindow):
         if os.path.exists(os.path.join(get_application_path(), "BlackOps3.exe")):
             write_log("Black Ops III found in the same directory as PatchOpsIII", "Info", self.log_text)
             
-        # Add Linux T7Patch launch options check
-        game_dir = self.game_dir_edit.text().strip()
-        t7_conf = os.path.join(game_dir, "t7patch.conf")
-        if platform.system() == "Linux" and os.path.exists(t7_conf):
-            launch_options = 'WINEDLLOVERRIDES="dsound=n,b" %command%'
-            apply_launch_options(launch_options, self.log_text)
-
         # Connect tab changed signal
         self.tabs.currentChanged.connect(self.on_tab_changed)
 
