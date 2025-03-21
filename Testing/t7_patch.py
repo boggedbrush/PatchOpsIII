@@ -148,7 +148,7 @@ def download_file(url, filename, log_widget):
 
 def install_lpc_files(game_dir, mod_files_dir, log_widget):
     """Download and install LPC files"""
-    zip_url = "https://github.com/shiversoftdev/t7patch/releases/download/Current/LPC.zip"
+    zip_url = "https://github.com/shiversoftdev/t7patch/releases/download/Current/LPC.1.zip"
     zip_dest = os.path.join(mod_files_dir, "LPC.zip")
     temp_dir = os.path.join(mod_files_dir, "LPC_temp")
     

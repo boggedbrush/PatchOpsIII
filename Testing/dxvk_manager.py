@@ -35,11 +35,19 @@ def download_file(url, filename):
     print(f"Downloading from {url}")
     with requests.get(url, stream=True) as r:
         r.raise_for_status()
+        # Check content type header to determine file type
+        content_type = r.headers.get('content-type', '')
+        if 'zip' in content_type:
+            filename = filename + '.zip'
+        elif 'gzip' in content_type:
+            filename = filename + '.tar.gz'
+        
         with open(filename, "wb") as f:
             for chunk in r.iter_content(chunk_size=8192):
                 if chunk:
                     f.write(chunk)
     print(f"Downloaded file saved as: {filename}")
+    return filename  # Return the modified filename
 
 def is_dxvk_async_installed(game_dir):
     return all(os.path.exists(os.path.join(game_dir, f)) for f in DXVK_ASYNC_FILES)
@@ -82,31 +90,53 @@ def manage_dxvk_async(game_dir, action, log_widget, mod_files_dir):
             except Exception as e:
                 write_log("Failed to fetch latest DXVK-GPLAsync release info.", "Error", log_widget)
                 return
-            filename = os.path.basename(urlsplit(dxvk_url).path) or "dxvk-gplasync_download"
-            dxvk_archive = os.path.join(mod_files_dir, filename)
             try:
-                download_file(dxvk_url, dxvk_archive)
+                dxvk_archive = download_file(dxvk_url, os.path.join(mod_files_dir, "dxvk-gplasync"))
                 write_log("Downloaded DXVK-GPLAsync successfully.", "Success", log_widget)
-            except Exception:
-                write_log("Failed to download DXVK-GPLAsync. Check your internet connection.", "Error", log_widget)
+            except Exception as e:
+                write_log(f"Failed to download DXVK-GPLAsync: {str(e)}", "Error", log_widget)
                 return
-            extract_dir = os.path.join(mod_files_dir, os.path.splitext(os.path.splitext(filename)[0])[0])
+
+            extract_dir = os.path.join(mod_files_dir, "dxvk_extracted")
             if os.path.exists(extract_dir):
-                shutil.rmtree(extract_dir)
+                try:
+                    shutil.rmtree(extract_dir)
+                except Exception:
+                    write_log("Failed to remove existing extraction directory.", "Error", log_widget)
+                    return
+
+            os.makedirs(extract_dir, exist_ok=True)
+            
             try:
-                with tarfile.open(dxvk_archive, "r:gz") as tar:
-                    tar.extractall(path=mod_files_dir)
+                if dxvk_archive.endswith('.tar.gz'):
+                    with tarfile.open(dxvk_archive, "r:gz") as tar:
+                        tar.extractall(path=extract_dir)
+                elif dxvk_archive.endswith('.zip'):
+                    import zipfile
+                    with zipfile.ZipFile(dxvk_archive, 'r') as zip_ref:
+                        zip_ref.extractall(extract_dir)
+                else:
+                    write_log(f"Unsupported archive format: {dxvk_archive}", "Error", log_widget)
+                    return
+                    
                 write_log("Extracted DXVK-GPLAsync successfully.", "Success", log_widget)
-            except Exception:
-                write_log("Failed to extract DXVK-GPLAsync. The archive may be corrupted.", "Error", log_widget)
+            except Exception as e:
+                write_log(f"Failed to extract DXVK-GPLAsync: {str(e)}", "Error", log_widget)
                 return
-            dxvk_win64_dir = os.path.join(extract_dir, "x64")
-            if not os.path.exists(dxvk_win64_dir):
+
+            # Look for x64 directory recursively
+            x64_dir = None
+            for root, dirs, files in os.walk(extract_dir):
+                if 'x64' in dirs:
+                    x64_dir = os.path.join(root, 'x64')
+                    break
+
+            if not x64_dir:
                 write_log("'x64' folder not found in extracted DXVK-GPLAsync directory.", "Error", log_widget)
                 return
             try:
-                shutil.copy(os.path.join(dxvk_win64_dir, "dxgi.dll"), game_dir)
-                shutil.copy(os.path.join(dxvk_win64_dir, "d3d11.dll"), game_dir)
+                shutil.copy(os.path.join(x64_dir, "dxgi.dll"), game_dir)
+                shutil.copy(os.path.join(x64_dir, "d3d11.dll"), game_dir)
                 # Write dxvk.conf with async and GPL async cache enabled
                 conf_path = os.path.join(game_dir, "dxvk.conf")
                 with open(conf_path, "w") as conf_file:
