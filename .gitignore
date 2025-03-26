@@ -32,9 +32,6 @@ Testing/pyinstaller/
 # Executable files:
 *.exe
 
-# Spec files:
-*.spec
-
 # text files:
 *.txt
 
