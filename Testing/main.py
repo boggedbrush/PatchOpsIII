@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QGroupBox, QRadioButton, QButtonGroup, QCheckBox, QGridLayout
 )
 from PySide6.QtGui import QIcon, QDesktopServices
-from PySide6.QtCore import Signal, Qt, QUrl
+from PySide6.QtCore import Qt, QUrl
 
 from t7_patch import T7PatchWidget
 from dxvk_manager import DXVKWidget

@@ -6,9 +6,8 @@ import stat
 from PySide6.QtWidgets import (
     QMessageBox, QWidget, QGroupBox, QVBoxLayout, QHBoxLayout, QLabel,
     QComboBox, QPushButton, QFormLayout, QCheckBox, QSpinBox, QLineEdit,
-    QSizePolicy, QRadioButton, QButtonGroup
+    QSizePolicy
 )
-from PySide6.QtCore import Qt
 from utils import write_log
 
 def set_config_value(game_dir, key, value, comment, log_widget):

@@ -1,10 +1,10 @@
 #!/usr/bin/env python
-import os, sys, ctypes, subprocess, zipfile, tarfile, shutil, requests
+import os, sys, ctypes, subprocess, zipfile, shutil, requests
 from PySide6.QtWidgets import (
     QMessageBox, QWidget, QGroupBox, QGridLayout, QLineEdit, QPushButton,
     QLabel, QHBoxLayout, QVBoxLayout, QRadioButton, QButtonGroup, QCheckBox, QSizePolicy
 )
-from PySide6.QtCore import Signal, Qt, QEvent
+from PySide6.QtCore import Signal, QEvent
 from utils import write_log
 
 # Add module-level flag

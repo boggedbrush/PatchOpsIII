@@ -2,7 +2,7 @@
 import os, shutil, tarfile, requests, sys, zipfile
 from urllib.parse import urlsplit
 from PySide6.QtWidgets import QMessageBox, QWidget, QGroupBox, QHBoxLayout, QPushButton, QLabel, QVBoxLayout, QSizePolicy
-from PySide6.QtCore import Qt, QEvent
+from PySide6.QtCore import QEvent
 from utils import write_log
 
 # ---------- DXVK Helper Functions (unchanged) ----------
