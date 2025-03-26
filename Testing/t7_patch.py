@@ -151,13 +151,17 @@ def install_lpc_files(game_dir, mod_files_dir, log_widget):
     zip_url = "https://github.com/shiversoftdev/t7patch/releases/download/Current/LPC.1.zip"
     zip_dest = os.path.join(mod_files_dir, "LPC.zip")
     temp_dir = os.path.join(mod_files_dir, "LPC_temp")
+    lpc_dir = os.path.join(game_dir, "LPC")
+    
+    # Create game's LPC directory if it doesn't exist
+    os.makedirs(lpc_dir, exist_ok=True)
     
     # Clean up temporary extraction directory if it exists
     if os.path.exists(temp_dir):
         shutil.rmtree(temp_dir)
     
     try:
-        # Download LPC.zip using the new download_file function
+        # Download LPC.zip
         download_file(zip_url, zip_dest, log_widget)
         
         # Create backups of existing LPC files
@@ -171,17 +175,17 @@ def install_lpc_files(game_dir, mod_files_dir, log_widget):
             
             # Copy files from extracted LPC folder to game's LPC folder
             src_lpc = os.path.join(temp_dir, "LPC")
-            dst_lpc = os.path.join(game_dir, "LPC")
-            
-            # Create LPC directory if it doesn't exist
-            os.makedirs(dst_lpc, exist_ok=True)
+            if not os.path.exists(src_lpc):
+                # Try without LPC subfolder
+                src_lpc = temp_dir
             
             # Copy new files, preserving existing .bak files
             for file in os.listdir(src_lpc):
-                src_file = os.path.join(src_lpc, file)
-                dst_file = os.path.join(dst_lpc, file)
-                if os.path.isfile(src_file):
-                    shutil.copy2(src_file, dst_file)
+                if file.endswith(".ff"):
+                    src_file = os.path.join(src_lpc, file)
+                    dst_file = os.path.join(lpc_dir, file)
+                    if os.path.isfile(src_file):
+                        shutil.copy2(src_file, dst_file)
             
         write_log("Installed LPC files successfully.", "Success", log_widget)
         return True
@@ -197,8 +201,8 @@ def install_lpc_files(game_dir, mod_files_dir, log_widget):
                 os.remove(zip_dest)
             if os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir)
-        except Exception:
-            pass
+        except Exception as e:
+            write_log(f"Warning: Could not clean up temporary files: {e}", "Warning", log_widget)
 
 def check_defender_available():
     """Check if Windows Defender is available and active"""

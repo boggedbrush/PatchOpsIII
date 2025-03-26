@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import os, shutil, tarfile, requests, sys
+import os, shutil, tarfile, requests, sys, zipfile
 from urllib.parse import urlsplit
 from PySide6.QtWidgets import QMessageBox, QWidget, QGroupBox, QHBoxLayout, QPushButton, QLabel, QVBoxLayout, QSizePolicy
 from PySide6.QtCore import Qt, QEvent
@@ -60,18 +60,19 @@ def manage_dxvk_async(game_dir, action, log_widget, mod_files_dir):
             for f in DXVK_ASYNC_FILES:
                 path = os.path.join(game_dir, f)
                 try:
-                    os.remove(path)
-                    write_log(f"Removed '{f}'.", "Success", log_widget)
-                except Exception:
-                    write_log(f"Failed to remove '{f}'.", "Error", log_widget)
+                    if os.path.exists(path):
+                        os.remove(path)
+                        write_log(f"Removed '{f}'.", "Success", log_widget)
+                except Exception as e:
+                    write_log(f"Failed to remove '{f}': {str(e)}", "Error", log_widget)
             # Remove dxvk.conf if it exists
             conf_path = os.path.join(game_dir, "dxvk.conf")
             if os.path.exists(conf_path):
                 try:
                     os.remove(conf_path)
                     write_log("Removed dxvk.conf.", "Success", log_widget)
-                except Exception:
-                    write_log("Failed to remove dxvk.conf.", "Error", log_widget)
+                except Exception as e:
+                    write_log(f"Failed to remove dxvk.conf: {str(e)}", "Error", log_widget)
             write_log("DXVK-GPLAsync has been uninstalled.", "Success", log_widget)
         else:
             write_log("DXVK-GPLAsync is not installed.", "Info", log_widget)
@@ -82,69 +83,82 @@ def manage_dxvk_async(game_dir, action, log_widget, mod_files_dir):
             return
         write_log("DXVK-GPLAsync can reduce stuttering by using async shader compilation.", "Info", log_widget)
         if QMessageBox.question(None, "Install DXVK-GPLAsync", "Do you want to install DXVK-GPLAsync?",
-                                QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
+                              QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
             try:
+                x64_dir = None
                 release = get_latest_release()
                 write_log("Latest release: " + release.get("name", release.get("tag_name", "Unknown")), "Info", log_widget)
                 dxvk_url = get_download_url(release)
-            except Exception as e:
-                write_log("Failed to fetch latest DXVK-GPLAsync release info.", "Error", log_widget)
-                return
-            try:
                 dxvk_archive = download_file(dxvk_url, os.path.join(mod_files_dir, "dxvk-gplasync"))
                 write_log("Downloaded DXVK-GPLAsync successfully.", "Success", log_widget)
-            except Exception as e:
-                write_log(f"Failed to download DXVK-GPLAsync: {str(e)}", "Error", log_widget)
-                return
 
-            extract_dir = os.path.join(mod_files_dir, "dxvk_extracted")
-            if os.path.exists(extract_dir):
-                try:
+                extract_dir = os.path.join(mod_files_dir, "dxvk_extracted")
+                if os.path.exists(extract_dir):
                     shutil.rmtree(extract_dir)
-                except Exception:
-                    write_log("Failed to remove existing extraction directory.", "Error", log_widget)
+                os.makedirs(extract_dir, exist_ok=True)
+
+                # Extract files based on archive type
+                try:
+                    if dxvk_archive.endswith('.tar.gz'):
+                        with tarfile.open(dxvk_archive, "r:gz") as tar:
+                            tar.extractall(path=extract_dir)
+                    elif dxvk_archive.endswith('.zip'):
+                        with zipfile.ZipFile(dxvk_archive, 'r') as zip_ref:
+                            zip_ref.extractall(extract_dir)
+                    write_log("Extracted DXVK-GPLAsync successfully.", "Success", log_widget)
+                except Exception as e:
+                    write_log(f"Failed to extract DXVK-GPLAsync: {str(e)}", "Error", log_widget)
                     return
 
-            os.makedirs(extract_dir, exist_ok=True)
-            
-            try:
-                if dxvk_archive.endswith('.tar.gz'):
-                    with tarfile.open(dxvk_archive, "r:gz") as tar:
-                        tar.extractall(path=extract_dir)
-                elif dxvk_archive.endswith('.zip'):
-                    import zipfile
-                    with zipfile.ZipFile(dxvk_archive, 'r') as zip_ref:
-                        zip_ref.extractall(extract_dir)
-                else:
-                    write_log(f"Unsupported archive format: {dxvk_archive}", "Error", log_widget)
+                # Look for x64 directory recursively
+                for root, dirs, files in os.walk(extract_dir):
+                    if 'x64' in dirs:
+                        x64_dir = os.path.join(root, 'x64')
+                        break
+
+                if not x64_dir:
+                    write_log("'x64' folder not found in extracted DXVK-GPLAsync directory.", "Error", log_widget)
                     return
-                    
-                write_log("Extracted DXVK-GPLAsync successfully.", "Success", log_widget)
+
+                # Install DXVK files
+                for file in DXVK_ASYNC_FILES:
+                    src = os.path.join(x64_dir, file)
+                    dst = os.path.join(game_dir, file)
+                    try:
+                        if os.path.exists(src):
+                            shutil.copy2(src, dst)
+                            write_log(f"Installed {file}.", "Success", log_widget)
+                        else:
+                            write_log(f"Source file {file} not found.", "Error", log_widget)
+                            return
+                    except Exception as e:
+                        write_log(f"Failed to install {file}: {str(e)}", "Error", log_widget)
+                        return
+
+                # Write dxvk.conf
+                try:
+                    conf_path = os.path.join(game_dir, "dxvk.conf")
+                    with open(conf_path, "w") as conf_file:
+                        conf_file.write("dxvk.enableAsync=true\n")
+                        conf_file.write("dxvk.gplAsyncCache=true\n")
+                    write_log("Created dxvk.conf with async settings.", "Success", log_widget)
+                except Exception as e:
+                    write_log(f"Failed to create dxvk.conf: {str(e)}", "Error", log_widget)
+                    return
+
+                write_log("DXVK-GPLAsync installed successfully.", "Success", log_widget)
+
             except Exception as e:
-                write_log(f"Failed to extract DXVK-GPLAsync: {str(e)}", "Error", log_widget)
-                return
-
-            # Look for x64 directory recursively
-            x64_dir = None
-            for root, dirs, files in os.walk(extract_dir):
-                if 'x64' in dirs:
-                    x64_dir = os.path.join(root, 'x64')
-                    break
-
-            if not x64_dir:
-                write_log("'x64' folder not found in extracted DXVK-GPLAsync directory.", "Error", log_widget)
-                return
-            try:
-                shutil.copy(os.path.join(x64_dir, "dxgi.dll"), game_dir)
-                shutil.copy(os.path.join(x64_dir, "d3d11.dll"), game_dir)
-                # Write dxvk.conf with async and GPL async cache enabled
-                conf_path = os.path.join(game_dir, "dxvk.conf")
-                with open(conf_path, "w") as conf_file:
-                    conf_file.write("dxvk.enableAsync=true\n")
-                    conf_file.write("dxvk.gplAsyncCache=true\n")
-                write_log("DXVK-GPLAsync installed successfully with dxvk.conf configured.", "Success", log_widget)
-            except Exception:
-                write_log("Error installing DXVK-GPLAsync. Antivirus or permissions may be blocking files.", "Error", log_widget)
+                write_log(f"Error during DXVK-GPLAsync installation: {str(e)}", "Error", log_widget)
+            finally:
+                # Clean up temporary files
+                try:
+                    if os.path.exists(dxvk_archive):
+                        os.remove(dxvk_archive)
+                    if os.path.exists(extract_dir):
+                        shutil.rmtree(extract_dir)
+                except Exception as e:
+                    write_log(f"Warning: Could not clean up temporary files: {str(e)}", "Warning", log_widget)
         else:
             write_log("DXVK-GPLAsync installation canceled by user.", "Info", log_widget)
 
