@@ -5,13 +5,15 @@ import re
 import shutil
 import subprocess
 import time
+import vdf
+import platform
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
     QPushButton, QLabel, QFileDialog, QTextEdit, QTabWidget, QSizePolicy,
     QGroupBox, QRadioButton, QButtonGroup, QCheckBox, QGridLayout
 )
 from PySide6.QtGui import QIcon, QDesktopServices
-from PySide6.QtCore import Signal, Qt, QUrl
+from PySide6.QtCore import Qt, QUrl
 
 from t7_patch import T7PatchWidget
 from dxvk_manager import DXVKWidget
@@ -47,8 +49,30 @@ MOD_FILES_DIR = os.path.join(get_application_path(), "BO3 Mod Files")
 if not os.path.exists(MOD_FILES_DIR):
     os.makedirs(MOD_FILES_DIR)
 
-steam_userdata_path = r"C:\Program Files (x86)\Steam\userdata"
-steam_exe_path = r"C:\Program Files (x86)\Steam\steam.exe"
+def get_steam_paths():
+    system = platform.system()
+    if system == "Windows":
+        return {
+            'userdata': r"C:\Program Files (x86)\Steam\userdata",
+            'steam_exe': r"C:\Program Files (x86)\Steam\steam.exe"
+        }
+    elif system == "Linux":
+        home = os.path.expanduser("~")
+        return {
+            'userdata': os.path.join(home, ".steam/steam/userdata"),
+            'steam_exe': "steam"  # On Linux, we can just use the command 'steam'
+        }
+    else:
+        return None
+
+# Replace the existing steam path variables with dynamic ones
+steam_paths = get_steam_paths()
+if steam_paths:
+    steam_userdata_path = steam_paths['userdata']
+    steam_exe_path = steam_paths['steam_exe']
+else:
+    write_log("Unsupported operating system", "Error", None)
+
 app_id = "311210"  # Black Ops III AppID
 
 def find_steam_user_id():
@@ -62,85 +86,175 @@ def find_steam_user_id():
     return user_ids[0]
 
 def backup_config_file(config_path, log_widget):
-    backup_file_path = os.path.join(get_application_path(), "localconfig_backup.vdf")
+    backup_dir = os.path.join(get_application_path(), "backups")
+    os.makedirs(backup_dir, exist_ok=True)
+    backup_file_path = os.path.join(backup_dir, "localconfig_backup.vdf")
+    
     try:
-        shutil.copy(config_path, backup_file_path)
+        shutil.copy2(config_path, backup_file_path)  # copy2 preserves metadata
+        write_log(f"Config backup created in program directory", "Success", log_widget)
+        return True
     except Exception as e:
         write_log(f"Failed to create backup: {e}", "Error", log_widget)
+        return False
 
 def restore_config_file(config_path, log_widget):
-    backup_file_path = os.path.join(get_application_path(), "localconfig_backup.vdf")
+    backup_file_path = os.path.join(get_application_path(), "backups", "localconfig_backup.vdf")
     if os.path.exists(backup_file_path):
         try:
-            shutil.copy(backup_file_path, config_path)
+            shutil.copy2(backup_file_path, config_path)
+            write_log("Config restored from backup", "Success", log_widget)
+            return True
         except Exception as e:
             write_log(f"Failed to restore backup: {e}", "Error", log_widget)
+            return False
+    else:
+        write_log("No backup file found", "Warning", log_widget)
+        return False
 
 def close_steam(log_widget):
+    system = platform.system()
     try:
-        subprocess.run(["taskkill", "/F", "/IM", "steam.exe"], check=True)
-        time.sleep(2)
+        if system == "Windows":
+            subprocess.run(["taskkill", "/F", "/IM", "steam.exe"], check=True)
+        elif system == "Linux":
+            subprocess.run(["pkill", "steam"], check=True)
+        time.sleep(5)
     except subprocess.CalledProcessError as e:
         write_log(f"Failed to close Steam: {e}", "Error", log_widget)
 
 def open_steam(log_widget):
+    system = platform.system()
     try:
-        subprocess.Popen([steam_exe_path])
+        if system == "Windows":
+            write_log("Opening Steam...", "Info", log_widget)
+            subprocess.Popen([steam_exe_path],
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+        else:
+            # Check if Steam is already running
+            was_running = (subprocess.call(["pgrep", "-x", "steam"],
+                                           stdout=subprocess.DEVNULL) == 0)
+            if was_running:
+                write_log("Closing Steam...", "Info", log_widget)
+                subprocess.call(["pkill", "-x", "steam"],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL)
+                time.sleep(2)  # Allow time for Steam to shut down
+
+            write_log("Setting launch options...", "Info", log_widget)
+            # (Place here any code that sets your launch options.)
+            
+            write_log("Opening Steam...", "Info", log_widget)
+            subprocess.Popen(["xdg-open", "steam://"],
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+            # Fallback: if xdg-open fails and 'steam' exists, launch it directly.
+            if subprocess.call(["which", "steam"],
+                               stdout=subprocess.DEVNULL) == 0:
+                subprocess.Popen(["steam"],
+                                 stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+        
+        # Poll for a stable Steam process
+        max_wait = 15      # maximum total wait time (seconds)
+        poll_interval = 0.5  # poll every 0.5 seconds
+        stable_duration = 2  # require Steam to be present for 2 consecutive seconds
+        elapsed = 0
+        stable_time = 0
+
+        while elapsed < max_wait:
+            if subprocess.call(["pgrep", "-x", "steam"],
+                               stdout=subprocess.DEVNULL) == 0:
+                stable_time += poll_interval
+                if stable_time >= stable_duration:
+                    break
+            else:
+                if stable_time > 0:
+                    # Try launching again if it vanished after being detected.
+                    subprocess.Popen(["xdg-open", "steam://"],
+                                     stdout=subprocess.DEVNULL,
+                                     stderr=subprocess.DEVNULL)
+                stable_time = 0
+            time.sleep(poll_interval)
+            elapsed += poll_interval
+
+        # Final check: ensure Steam is running stably.
+        if stable_time >= stable_duration and subprocess.call(["pgrep", "-x", "steam"],
+                                                            stdout=subprocess.DEVNULL) == 0:
+            write_log("Steam launched successfully", "Success", log_widget)
+        else:
+            write_log("Steam did not launch successfully", "Error", log_widget)
     except Exception as e:
         write_log(f"Failed to open Steam: {e}", "Error", log_widget)
-
+        write_log("Please start Steam manually", "Info", log_widget)
+        
 def set_launch_options(user_id, app_id, launch_options, log_widget):
     config_path = os.path.join(steam_userdata_path, user_id, "config", "localconfig.vdf")
     if not os.path.exists(config_path):
         write_log("localconfig.vdf not found!", "Error", log_widget)
-        return
-
-    backup_config_file(config_path, log_widget)
-
+        return False
+    if not backup_config_file(config_path, log_widget):
+        write_log("Aborting due to backup failure", "Error", log_widget)
+        return False
     try:
         with open(config_path, "r", encoding="utf-8") as file:
-            content = file.read()
-    except Exception as e:
-        write_log(f"Error reading config file: {e}", "Error", log_widget)
-        return
+            data = vdf.load(file)
+        # Navigate to the apps section
+        steam_config = data.get("UserLocalConfigStore", {})
+        software = steam_config.get("Software", {})
+        valve = software.get("Valve", {})
+        steam = valve.get("Steam", {})
+        apps = steam.get("apps", {})
 
-    app_section_pattern = rf'"{app_id}"\s*{{'
-    software_section = r'"Software"\s*{\s*"Valve"\s*{\s*"Steam"\s*{\s*"apps"\s*{'
-    
-    try:
-        if not re.search(software_section, content, re.DOTALL):
-            write_log("Steam apps section not found in config", "Error", log_widget)
-            return
-
-        if not re.search(app_section_pattern, content):
-            apps_match = re.search(r'"apps"\s*{', content)
-            if apps_match:
-                insert_pos = apps_match.end()
-                new_app_section = (
-                    f'\n\t\t\t"{app_id}"\n\t\t\t{{\n\t\t\t\t"LaunchOptions"\t\t"{launch_options}"\n\t\t\t}}'
-                )
-                content = content[:insert_pos] + new_app_section + content[insert_pos:]
+        if app_id not in apps:
+            apps[app_id] = {}
+        current_options = apps[app_id].get("LaunchOptions", "")
+        
+        # Parse existing options
+        wine_override = 'WINEDLLOVERRIDES="dsound=n,b"'
+        command_marker = "%command%"
+        fs_game_pattern = r'\+set fs_game \S+'
+        
+        # Keep WINE override if it exists and we're not explicitly setting it
+        if wine_override in current_options and wine_override not in launch_options:
+            launch_options = f"{wine_override} {command_marker} {launch_options}"
+        
+        # If we're adding WINE override, remove any existing one
+        elif wine_override in launch_options and wine_override in current_options:
+            current_options = current_options.replace(wine_override, "").strip()
+        
+        # Remove any existing fs_game parameters
+        current_options = re.sub(fs_game_pattern, '', current_options).strip()
+        
+        # Keep existing options that aren't fs_game or WINE related
+        current_parts = [opt for opt in current_options.split() 
+                        if opt != wine_override 
+                        and opt != command_marker]
+        
+        # Combine options, ensuring no duplicates
+        if current_parts:
+            final_options = " ".join(filter(None, [
+                wine_override if wine_override in launch_options else "",
+                command_marker if command_marker in launch_options else "",
+                " ".join(current_parts),
+                launch_options.replace(wine_override, "").replace(command_marker, "").strip()
+            ])).strip()
         else:
-            content = re.sub(
-                rf'("{app_id}"\s*{{[^}}]*?"LaunchOptions"\s*")[^"]*(".*?}})',
-                rf'\1{launch_options}\2',
-                content,
-                flags=re.DOTALL
-            )
-            if not re.search(rf'"{app_id}"\s*{{[^}}]*?"LaunchOptions"', content, re.DOTALL):
-                content = re.sub(
-                    rf'("{app_id}"\s*{{)',
-                    rf'\1\n\t\t\t\t"LaunchOptions"\t\t"{launch_options}"',
-                    content
-                )
+            final_options = launch_options
+
+        apps[app_id]["LaunchOptions"] = final_options
+        
+        write_log(f"Setting launch options to: {final_options}", "Info", log_widget)
 
         with open(config_path, "w", encoding="utf-8") as file:
-            file.write(content)
-            write_log("Launch options updated successfully", "Success", log_widget)
-            
+            vdf.dump(data, file, pretty=True)
+        write_log("Launch options updated successfully", "Success", log_widget)
+        return True
     except Exception as e:
         write_log(f"Error updating launch options: {e}", "Error", log_widget)
         restore_config_file(config_path, log_widget)
+        return False
 
 def apply_launch_options(launch_option, log_widget):
     user_id = find_steam_user_id()
@@ -170,6 +284,12 @@ class QualityOfLifeWidget(QWidget):
         self.radio_ultimate = QRadioButton("Ultimate Experience Mod")
         self.radio_offline = QRadioButton("Play Offline")
         self.radio_none.setChecked(True)
+
+        # Block signals during initialization
+        for rb in [self.radio_none, self.radio_all_around, self.radio_ultimate, self.radio_offline]:
+            rb.blockSignals(True)
+            self.radio_group.addButton(rb)
+            rb.blockSignals(False)
 
         # Create help buttons with links
         all_around_help = QPushButton("?")
@@ -274,16 +394,20 @@ class QualityOfLifeWidget(QWidget):
             return
 
         if self.skip_intro_cb.isChecked():
-            if os.path.exists(intro_file):
-                try:
-                    os.rename(intro_file, intro_file_bak)
-                    write_log("Intro video skipped.", "Success", self.log_widget)
-                except Exception as e:
-                    write_log(f"Failed to rename intro video file: {e}", "Error", self.log_widget)
-            elif os.path.exists(intro_file_bak):
+            # If backup exists, assume the intro is already skipped
+            if os.path.exists(intro_file_bak):
                 write_log("Intro video already skipped.", "Success", self.log_widget)
             else:
-                write_log("Intro video file not found.", "Warning", self.log_widget)
+                # If the original file exists, rename it
+                if os.path.exists(intro_file):
+                    try:
+                        os.rename(intro_file, intro_file_bak)
+                        write_log("Intro video skipped.", "Success", self.log_widget)
+                    except Exception as e:
+                        write_log(f"Failed to rename intro video file: {e}", "Error", self.log_widget)
+                else:
+                    # Neither original nor backup exist, but the user wants intros skipped
+                    write_log("Intro video skipped.", "Success", self.log_widget)
         else:
             if os.path.exists(intro_file_bak):
                 try:
@@ -346,7 +470,7 @@ class QualityOfLifeWidget(QWidget):
                 except Exception:
                     write_log("Failed to rename d3dcompiler_46.dll.", "Error", self.log_widget)
             elif os.path.exists(dll_bak):
-                write_log("Stutter reduction already enabled.", "Success", self.log_widget)
+                write_log("Already using latest d3dcompiler.", "Success", self.log_widget)
             else:
                 write_log("d3dcompiler_46.dll not found.", "Warning", self.log_widget)
         else:
@@ -370,6 +494,23 @@ class QualityOfLifeWidget(QWidget):
         elif self.radio_offline.isChecked():
             option = "+set fs_game offlinemp"
 
+        # Get current launch options to preserve T7Patch settings
+        user_id = find_steam_user_id()
+        if user_id:
+            config_path = os.path.join(steam_userdata_path, user_id, "config", "localconfig.vdf")
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, "r", encoding="utf-8") as file:
+                        data = vdf.load(file)
+                    current_options = data.get("UserLocalConfigStore", {}).get("Software", {}).get("Valve", {}).get("Steam", {}).get("apps", {}).get(app_id, {}).get("LaunchOptions", "")
+                    if 'WINEDLLOVERRIDES="dsound=n,b"' in current_options:
+                        if option:
+                            option = f'WINEDLLOVERRIDES="dsound=n,b" %command% {option}'
+                        else:
+                            option = 'WINEDLLOVERRIDES="dsound=n,b" %command%'
+                except Exception as e:
+                    write_log(f"Error reading current launch options: {e}", "Error", self.log_widget)
+
         try:
             write_log("Applying launch options...", "Info", self.log_widget)
             apply_launch_options(option, self.log_widget)
@@ -389,6 +530,9 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(icon)
         self.init_ui()
         
+        # Load saved launch options state without applying
+        self.load_launch_options_state()
+        
         if os.path.exists(os.path.join(DEFAULT_GAME_DIR, "BlackOps3.exe")):
             if DEFAULT_GAME_DIR == get_application_path():
                 write_log("Using Black Ops III from PatchOpsIII directory", "Info", self.log_text)
@@ -397,6 +541,38 @@ class MainWindow(QMainWindow):
 
         if os.path.exists(os.path.join(get_application_path(), "BlackOps3.exe")):
             write_log("Black Ops III found in the same directory as PatchOpsIII", "Info", self.log_text)
+            
+        # Connect tab changed signal
+        self.tabs.currentChanged.connect(self.on_tab_changed)
+
+    def load_launch_options_state(self):
+        # Get the Steam user ID and read current launch options
+        user_id = find_steam_user_id()
+        if not user_id:
+            return
+
+        config_path = os.path.join(steam_userdata_path, user_id, "config", "localconfig.vdf")
+        if not os.path.exists(config_path):
+            return
+
+        try:
+            with open(config_path, "r", encoding="utf-8") as file:
+                data = vdf.load(file)
+            
+            current_options = data.get("UserLocalConfigStore", {}).get("Software", {}).get("Valve", {}).get("Steam", {}).get("apps", {}).get(app_id, {}).get("LaunchOptions", "")
+            
+            # Set radio button state based on current options without applying
+            if "+set fs_game 2994481309" in current_options:
+                self.qol_widget.radio_all_around.setChecked(True)
+            elif "+set fs_game 2942053577" in current_options:
+                self.qol_widget.radio_ultimate.setChecked(True)
+            elif "+set fs_game offlinemp" in current_options:
+                self.qol_widget.radio_offline.setChecked(True)
+            else:
+                self.qol_widget.radio_none.setChecked(True)
+            
+        except Exception as e:
+            write_log(f"Error loading launch options state: {e}", "Error", self.log_text)
 
     def init_ui(self):
         central = QWidget()

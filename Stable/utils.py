@@ -4,7 +4,20 @@ def write_log(message, category="Info", log_widget=None, log_file="PatchOpsIII.l
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     full_message = f"{timestamp} - {category}: {message}"
     if log_widget:
-        log_widget.append(full_message)
+        # Define colors based on category
+        if category == "Info":
+            color = "white"
+        elif category == "Error":
+            color = "red"
+        elif category == "Warning":
+            color = "yellow"
+        elif category == "Success":
+            color = "green"
+        else:
+            color = "blue"
+        html_message = f'<span style="color:{color};">{full_message}</span>'
+        log_widget.append(html_message)
+    
     with open(log_file, "a") as f:
         f.write(full_message + "\n")
 

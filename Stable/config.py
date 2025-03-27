@@ -6,9 +6,8 @@ import stat
 from PySide6.QtWidgets import (
     QMessageBox, QWidget, QGroupBox, QVBoxLayout, QHBoxLayout, QLabel,
     QComboBox, QPushButton, QFormLayout, QCheckBox, QSpinBox, QLineEdit,
-    QSizePolicy, QRadioButton, QButtonGroup
+    QSizePolicy
 )
-from PySide6.QtCore import Qt
 from utils import write_log
 
 def set_config_value(game_dir, key, value, comment, log_widget):
@@ -153,8 +152,19 @@ def check_essential_status(game_dir):
 
         status["all_settings"] = bool(re.search(r'RestrictGraphicsOptions\s*=\s*"0"', content))
         status["smooth"] = bool(re.search(r'SmoothFramerate\s*=\s*"1"', content))
-        status["vram"] = bool(re.search(r'VideoMemory\s*=\s*"1"', content)
-                              and re.search(r'StreamMinResident\s*=\s*"0"', content))
+        
+        # Update VRAM status check logic
+        video_memory_match = re.search(r'VideoMemory\s*=\s*"([^"]+)"', content)
+        stream_resident_match = re.search(r'StreamMinResident\s*=\s*"([^"]+)"', content)
+        
+        has_full_vram = (video_memory_match and video_memory_match.group(1) == "1" and
+                        stream_resident_match and stream_resident_match.group(1) == "0")
+        
+        status["vram"] = not has_full_vram
+        if video_memory_match and not has_full_vram:
+            status["vram_value"] = float(video_memory_match.group(1))
+        else:
+            status["vram_value"] = 0.75  # Default value when not set
 
         match = re.search(r'MaxFrameLatency\s*=\s*"(\d)"', content)
         status["latency"] = int(match.group(1)) if match else 1
@@ -176,6 +186,7 @@ def check_essential_status(game_dir):
             "all_settings": False,
             "smooth": False,
             "vram": False,
+            "vram_value": 0.75,
             "latency": 1,
             "reduce_cpu": False,
             "skip_intro": False,
@@ -389,10 +400,14 @@ class AdvancedSettingsWidget(QWidget):
         # Update UI elements with loaded settings
         self.smooth_cb.setChecked(status.get("smooth", False))
         self.vram_cb.setChecked(status.get("vram", False))
+        self.vram_limit_spin.setEnabled(status.get("vram", False))
+        
+        # Set VRAM limit using the value from status
+        vram_value = status.get("vram_value", 0.75)
+        self.vram_limit_spin.setValue(int(vram_value * 100))
+        
         self.latency_spin.setValue(status.get("latency", 1))
         self.reduce_cpu_cb.setChecked(status.get("reduce_cpu", False))
-        
-        # Check if all graphics options are unlocked
         self.all_settings_cb.setChecked(status.get("all_settings", False))
         
         # Check config file read-only status
@@ -414,9 +429,18 @@ class AdvancedSettingsWidget(QWidget):
         self.smooth_cb.stateChanged.connect(self.smooth_changed)
         adv_form.addRow(self.smooth_cb)
 
-        self.vram_cb = QCheckBox("Use Full VRAM (Forces the game to use the full amount of VRAM)")
+        # VRAM settings
+        self.vram_cb = QCheckBox("Set VRAM Usage (Enables the VideoMemory and StreamMinResident options)")
         self.vram_cb.stateChanged.connect(self.vram_changed)
         adv_form.addRow(self.vram_cb)
+
+        # New spin box for limited VRAM percentage
+        self.vram_limit_spin = QSpinBox()
+        self.vram_limit_spin.setRange(75, 100)
+        self.vram_limit_spin.setValue(75)
+        self.vram_limit_spin.setEnabled(False)
+        self.vram_limit_spin.valueChanged.connect(self.vram_limit_changed)
+        adv_form.addRow("Set VRAM target to (%):", self.vram_limit_spin)
 
         self.latency_spin = QSpinBox()
         self.latency_spin.setRange(0, 4)
@@ -441,7 +465,7 @@ class AdvancedSettingsWidget(QWidget):
     def set_game_directory(self, game_dir):
         self.game_dir = game_dir
         if self.game_dir:
-            self.load_settings()  # Changed from refresh_settings() to load_settings()
+            self.load_settings()  # Load settings immediately when directory is set
         config_path = os.path.join(game_dir, "players", "config.ini")
         if os.path.exists(config_path):
             self.lock_config_cb.setChecked(not os.access(config_path, os.W_OK))
@@ -456,17 +480,27 @@ class AdvancedSettingsWidget(QWidget):
     def vram_changed(self):
         config_path = os.path.join(self.game_dir, "players", "config.ini")
         if self.vram_cb.isChecked():
+            # When checked, limited VRAM is enabled:
+            self.vram_limit_spin.setEnabled(True)
+            self.vram_limit_changed()  # Apply limited percentage setting.
+        else:
+            # When unchecked, full VRAM usage is enabled:
+            self.vram_limit_spin.setEnabled(False)
             pattern_replacements = {
                 r'^\s*VideoMemory\s*=': 'VideoMemory = "1" // 0.75 to 1',
                 r'^\s*StreamMinResident\s*=': 'StreamMinResident = "0" // 0 or 1',
             }
             update_config_values(config_path, pattern_replacements, "Enabled full VRAM usage.", self.log_widget)
-        else:
-            pattern_replacements = {
-                r'^\s*VideoMemory\s*=': 'VideoMemory = "0.75" // 0.75 to 1',
-                r'^\s*StreamMinResident\s*=': 'StreamMinResident = "1" // 0 or 1',
-            }
-            update_config_values(config_path, pattern_replacements, "Reverted VRAM usage.", self.log_widget)
+
+    def vram_limit_changed(self):
+        config_path = os.path.join(self.game_dir, "players", "config.ini")
+        percentage = self.vram_limit_spin.value()
+        decimal_value = percentage / 100.0
+        pattern_replacements = {
+            r'^\s*VideoMemory\s*=': f'VideoMemory = "{decimal_value}" // 0.75 to 1',
+            r'^\s*StreamMinResident\s*=': 'StreamMinResident = "1" // 0 or 1',
+        }
+        update_config_values(config_path, pattern_replacements, f"Limited VRAM usage set to {percentage}%.", self.log_widget)
 
     def latency_changed(self):
         set_config_value(self.game_dir, "MaxFrameLatency", str(self.latency_spin.value()), "0 to 4", self.log_widget)
