@@ -35,19 +35,22 @@ def download_file(url, filename):
     print(f"Downloading from {url}")
     with requests.get(url, stream=True) as r:
         r.raise_for_status()
-        # Check content type header to determine file type
-        content_type = r.headers.get('content-type', '')
-        if 'zip' in content_type:
-            filename = filename + '.zip'
-        elif 'gzip' in content_type:
-            filename = filename + '.tar.gz'
+        # Extract filename from URL
+        parsed_url = urlsplit(url)
+        original_filename = os.path.basename(parsed_url.path)
         
-        with open(filename, "wb") as f:
+        # Use the original filename if available, otherwise use the provided filename
+        if original_filename:
+            final_filename = os.path.join(os.path.dirname(filename), original_filename)
+        else:
+            final_filename = filename
+
+        with open(final_filename, "wb") as f:
             for chunk in r.iter_content(chunk_size=8192):
                 if chunk:
                     f.write(chunk)
-    print(f"Downloaded file saved as: {filename}")
-    return filename  # Return the modified filename
+    print(f"Downloaded file saved as: {final_filename}")
+    return final_filename  # Return the modified filename
 
 def is_dxvk_async_installed(game_dir):
     return all(os.path.exists(os.path.join(game_dir, f)) for f in DXVK_ASYNC_FILES)
@@ -110,14 +113,15 @@ def manage_dxvk_async(game_dir, action, log_widget, mod_files_dir):
                     write_log(f"Failed to extract DXVK-GPLAsync: {str(e)}", "Error", log_widget)
                     return
 
-                # Look for x64 directory recursively
+                # Look for the directory containing DXVK files recursively
+                x64_dir = None
                 for root, dirs, files in os.walk(extract_dir):
-                    if 'x64' in dirs:
-                        x64_dir = os.path.join(root, 'x64')
+                    if all(f in files for f in DXVK_ASYNC_FILES):
+                        x64_dir = root
                         break
 
                 if not x64_dir:
-                    write_log("'x64' folder not found in extracted DXVK-GPLAsync directory.", "Error", log_widget)
+                    write_log("Required DXVK files (dxgi.dll, d3d11.dll) not found in extracted DXVK-GPLAsync directory.", "Error", log_widget)
                     return
 
                 # Install DXVK files
