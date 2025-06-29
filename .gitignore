@@ -34,6 +34,7 @@ Testing/pyinstaller/
 
 # text files:
 *.txt
+!requirements.txt
 
 # vdf files:
 *.vdf

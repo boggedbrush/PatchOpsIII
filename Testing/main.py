@@ -39,8 +39,10 @@ def get_game_directory():
     local_exe = os.path.join(app_dir, "BlackOps3.exe")
     if os.path.exists(local_exe):
         return app_dir
-    
+
     # Fall back to Steam default path
+    if platform.system() == "Linux":
+        return os.path.expanduser("~/.local/share/Steam/steamapps/common/Call of Duty Black Ops III")
     return r"C:\Program Files (x86)\Steam\steamapps\common\Call of Duty Black Ops III"
 
 DEFAULT_GAME_DIR = get_game_directory()
@@ -224,8 +226,9 @@ def set_launch_options(user_id, app_id, launch_options, log_widget):
         elif wine_override in launch_options and wine_override in current_options:
             current_options = current_options.replace(wine_override, "").strip()
         
-        # Remove any existing fs_game parameters
-        current_options = re.sub(fs_game_pattern, '', current_options).strip()
+        # If the new options contain fs_game, remove any existing fs_game parameters
+        if '+set fs_game' in launch_options:
+            current_options = re.sub(fs_game_pattern, '', current_options).strip()
         
         # Keep existing options that aren't fs_game or WINE related
         current_parts = [opt for opt in current_options.split() 
