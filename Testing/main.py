@@ -411,6 +411,11 @@ class MainWindow(QMainWindow):
         gd_layout.addWidget(QLabel(label_text))
         gd_layout.addWidget(self.game_dir_edit)
         gd_layout.addWidget(browse_btn)
+        
+        launch_game_btn = QPushButton("Launch Game")
+        launch_game_btn.clicked.connect(self.launch_game)
+        gd_layout.addWidget(launch_game_btn)
+        
         main_layout.addWidget(game_dir_widget)
 
         # Individual widgets
@@ -514,6 +519,21 @@ class MainWindow(QMainWindow):
 
     def on_t7_patch_uninstalled(self):
         self._t7_just_uninstalled = True
+
+    def launch_game(self):
+        game_dir = self.game_dir_edit.text().strip()
+        game_exe_path = os.path.join(game_dir, "BlackOps3.exe")
+
+        if not os.path.exists(game_exe_path):
+            write_log(f"Error: BlackOps3.exe not found at {game_exe_path}", "Error", self.log_text)
+            return
+
+        try:
+            # Launch the game via Steam
+            subprocess.Popen(['steam', f'steam://rungameid/{app_id}'])
+            write_log(f"Launched Black Ops III via Steam (AppID: {app_id})", "Success", self.log_text)
+        except Exception as e:
+            write_log(f"Error launching game via Steam: {e}", "Error", self.log_text)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
