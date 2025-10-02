@@ -12,15 +12,19 @@ on:
       features:
         description: New features and improvements (one per line)
         required: false
+        default: ""
       fixes:
         description: Bug fixes (one per line)
         required: false
+        default: ""
       known_issues:
         description: Known issues (one per line)
         required: false
+        default: ""
       next_steps:
         description: Roadmap notes (one per line)
         required: false
+        default: ""
 permissions:
   contents: write
   id-token: write
