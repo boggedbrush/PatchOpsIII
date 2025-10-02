@@ -171,12 +171,17 @@ jobs:
           text = template_path.read_text(encoding="utf-8")
           
           def format_lines(value, default="- TBD"):
-              lines = [ln.strip() for ln in value.splitlines() if ln.strip()]
-              if not lines:
-                  return default
               formatted = []
-              for ln in lines:
-                  formatted.append(ln if ln.startswith('-') else f"- {ln}")
+              for raw_line in value.splitlines():
+                  if not raw_line.strip():
+                      continue
+                  stripped = raw_line.lstrip()
+                  if stripped.startswith(('-', '*', '+')):
+                      formatted.append(raw_line.rstrip())
+                  else:
+                      formatted.append(f"- {stripped}")
+              if not formatted:
+                  return default
               return "\n".join(formatted)
           
           windows_vt = os.environ.get("WINDOWS_VT_URL", "").strip() or "https://www.virustotal.com/"
@@ -221,9 +226,6 @@ jobs:
             exit 1
           fi
           cp "$win_exec" "release/PatchOpsIII-${VERSION}-windows.exe"
-          if [ -f "$(dirname "$win_exec")/hash.log" ]; then
-            cp "$(dirname "$win_exec")/hash.log" "release/PatchOpsIII-${VERSION}-windows-hash.log"
-          fi
           if [ -f "$(dirname "$win_exec")/PatchOpsIII.sig" ]; then
             cp "$(dirname "$win_exec")/PatchOpsIII.sig" "release/PatchOpsIII-${VERSION}-windows.sig"
           fi
@@ -238,9 +240,6 @@ jobs:
           fi
           cp "$linux_exec" "release/PatchOpsIII-${VERSION}-linux"
           chmod +x "release/PatchOpsIII-${VERSION}-linux"
-          if [ -f "$(dirname "$linux_exec")/hash.log" ]; then
-            cp "$(dirname "$linux_exec")/hash.log" "release/PatchOpsIII-${VERSION}-linux-hash.log"
-          fi
           if [ -f "$(dirname "$linux_exec")/PatchOpsIII.sig" ]; then
             cp "$(dirname "$linux_exec")/PatchOpsIII.sig" "release/PatchOpsIII-${VERSION}-linux.sig"
           fi
@@ -258,5 +257,3 @@ jobs:
             release/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-
