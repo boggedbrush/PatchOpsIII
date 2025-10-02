@@ -27,6 +27,9 @@ jobs:
       PYINSTALLER_ARCHIVE: pyinstaller-latest.zip
       PYINSTALLER_DIR: pyinstaller-develop
       WINDOWS_DIST_DIR: dist\windows
+      COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+      COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+      VT_API_KEY: ${{ secrets.VT_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - name: Setup Python
@@ -73,13 +76,11 @@ jobs:
             --distpath $env:WINDOWS_DIST_DIR `
             main.py
       - name: Install cosign (optional)
-        if: ${{ secrets.COSIGN_PRIVATE_KEY != '' }}
+        if: ${{ env.COSIGN_PRIVATE_KEY != '' }}
         uses: sigstore/cosign-installer@v3.4.0
       - name: Sign Windows binary with cosign
-        if: ${{ secrets.COSIGN_PRIVATE_KEY != '' }}
+        if: ${{ env.COSIGN_PRIVATE_KEY != '' }}
         env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
           COSIGN_EXPERIMENTAL: "1"
         run: |
           if (-not (Test-Path 'dist/windows/PatchOpsIII.exe')) {
@@ -98,9 +99,9 @@ jobs:
           Write-Host "SHA256: $hash"
           "WINDOWS_VT_URL=https://www.virustotal.com/gui/file/$hash" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: VirusTotal scan (optional)
-        if: ${{ secrets.VT_API_KEY != '' }}
+        if: ${{ env.VT_API_KEY != '' }}
         env:
-          VT_API_KEY: ${{ secrets.VT_API_KEY }}
+          VT_API_KEY: ${{ env.VT_API_KEY }}
         run: |
           $vtZip = 'vt-cli-latest.zip'
           if (Test-Path $vtZip) { Remove-Item $vtZip -Force }
@@ -120,3 +121,5 @@ jobs:
             Testing/dist/windows/PatchOpsIII.sig
             Testing/dist/windows/PatchOpsIII.pem
           if-no-files-found: ignore
+
+

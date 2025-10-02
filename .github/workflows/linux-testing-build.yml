@@ -27,6 +27,9 @@ jobs:
       PYINSTALLER_ARCHIVE: pyinstaller-latest.zip
       PYINSTALLER_DIR: pyinstaller-develop
       LINUX_DIST_DIR: dist/linux
+      COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+      COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+      VT_API_KEY: ${{ secrets.VT_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - name: Setup Python
@@ -72,13 +75,11 @@ jobs:
             --distpath "$LINUX_DIST_DIR" \
             main.py
       - name: Install cosign (optional)
-        if: ${{ secrets.COSIGN_PRIVATE_KEY != '' }}
+        if: ${{ env.COSIGN_PRIVATE_KEY != '' }}
         uses: sigstore/cosign-installer@v3.4.0
       - name: Sign Linux binary with cosign
-        if: ${{ secrets.COSIGN_PRIVATE_KEY != '' }}
+        if: ${{ env.COSIGN_PRIVATE_KEY != '' }}
         env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
           COSIGN_EXPERIMENTAL: "1"
         run: |
           if [ ! -f "dist/linux/PatchOpsIII" ]; then
@@ -99,9 +100,9 @@ jobs:
           echo "SHA256: $hash"
           echo "LINUX_VT_URL=https://www.virustotal.com/gui/file/$hash" >> "$GITHUB_ENV"
       - name: VirusTotal scan (optional)
-        if: ${{ secrets.VT_API_KEY != '' }}
+        if: ${{ env.VT_API_KEY != '' }}
         env:
-          VT_API_KEY: ${{ secrets.VT_API_KEY }}
+          VT_API_KEY: ${{ env.VT_API_KEY }}
         run: |
           python -c "import json, urllib.request, pathlib; data=json.load(urllib.request.urlopen('https://api.github.com/repos/VirusTotal/vt-cli/releases/latest')); url=next(a['browser_download_url'] for a in data['assets'] if a['name']=='Linux64.zip'); pathlib.Path('vt-cli.zip').write_bytes(urllib.request.urlopen(url).read())"
           unzip -q -o vt-cli.zip
@@ -117,3 +118,5 @@ jobs:
             Testing/dist/linux/PatchOpsIII.sig
             Testing/dist/linux/PatchOpsIII.pem
           if-no-files-found: ignore
+
+
