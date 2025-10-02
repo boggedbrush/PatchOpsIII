@@ -15,12 +15,22 @@ Stable/dist/
 Testing/dist/
 
 # Virtual environment:
-Stable/env/
-Testing/env/
+Stable/.venv/
+Testing/.venv/
+Stable/.venv-linux/
+Testing/.venv-linux/
 
 # pyinstaller:
-Stable/pyinstaller/
-Testing/pyinstaller/
+Stable/pyinstaller-develop/
+Testing/pyinstaller-develop/
+Stable/pyinstaller-latest/
+Testing/pyinstaller-latest/
+
+# PyInstaller build zips
+Stable/pyinstaller-latest.zip
+Testing/pyinstaller-latest.zip
+Stable/pyinstaller-develop.zip
+Testing/pyinstaller-develop.zip
 
 # Build files:
 *.bat
@@ -35,6 +45,9 @@ Testing/pyinstaller/
 # text files:
 *.txt
 !requirements.txt
+
+# PyInstaller spec files:
+*.spec
 
 # vdf files:
 *.vdf
