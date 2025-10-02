@@ -10,6 +10,23 @@ on:
       - Testing
       - testing
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to build
+        required: false
+        type: string
+        default: ''
+    outputs:
+      hash:
+        description: SHA256 hash of the Windows binary
+        value: ${{ jobs.build-windows.outputs.hash }}
+      vt_url:
+        description: VirusTotal URL for the Windows binary
+        value: ${{ jobs.build-windows.outputs.vt_url }}
+      artifact_name:
+        description: Name of the produced Windows artifact
+        value: ${{ jobs.build-windows.outputs.artifact_name }}
 
 permissions:
   contents: read
@@ -19,6 +36,10 @@ jobs:
   build-windows:
     name: Build Windows executable
     runs-on: windows-latest
+    outputs:
+      hash: ${{ steps.compute_hash.outputs.hash }}
+      vt_url: ${{ steps.compute_hash.outputs.vt_url }}
+      artifact_name: PatchOpsIII-windows-testing
     defaults:
       run:
         shell: pwsh
@@ -32,6 +53,8 @@ jobs:
       VT_API_KEY: ${{ secrets.VT_API_KEY }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -90,6 +113,7 @@ jobs:
           cosign sign-blob --yes --key cosign.key --output-signature dist/windows/PatchOpsIII.sig --output-certificate dist/windows/PatchOpsIII.pem dist/windows/PatchOpsIII.exe
           Remove-Item cosign.key
       - name: Compute Windows hash
+        id: compute_hash
         run: |
           if (-not (Test-Path 'dist/windows/PatchOpsIII.exe')) {
             throw 'dist/windows/PatchOpsIII.exe was not produced'
@@ -97,7 +121,10 @@ jobs:
           $hash = (Get-FileHash -Algorithm SHA256 -Path 'dist/windows/PatchOpsIII.exe').Hash
           Set-Content -Path 'dist/windows/hash.log' -Value $hash
           Write-Host "SHA256: $hash"
-          "WINDOWS_VT_URL=https://www.virustotal.com/gui/file/$hash" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $vtUrl = "https://www.virustotal.com/gui/file/$hash"
+          "WINDOWS_VT_URL=$vtUrl" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "hash=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "vt_url=$vtUrl" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
       - name: VirusTotal scan (optional)
         if: ${{ env.VT_API_KEY != '' }}
         env:
@@ -120,3 +147,4 @@ jobs:
             Testing/dist/windows/PatchOpsIII.sig
             Testing/dist/windows/PatchOpsIII.pem
           if-no-files-found: ignore
+

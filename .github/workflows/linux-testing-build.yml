@@ -10,6 +10,23 @@ on:
       - Testing
       - testing
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to build
+        required: false
+        type: string
+        default: ''
+    outputs:
+      hash:
+        description: SHA256 hash of the Linux binary
+        value: ${{ jobs.build-linux.outputs.hash }}
+      vt_url:
+        description: VirusTotal URL for the Linux binary
+        value: ${{ jobs.build-linux.outputs.vt_url }}
+      artifact_name:
+        description: Name of the produced Linux artifact
+        value: ${{ jobs.build-linux.outputs.artifact_name }}
 
 permissions:
   contents: read
@@ -19,6 +36,10 @@ jobs:
   build-linux:
     name: Build Linux executable
     runs-on: ubuntu-latest
+    outputs:
+      hash: ${{ steps.compute_hash.outputs.hash }}
+      vt_url: ${{ steps.compute_hash.outputs.vt_url }}
+      artifact_name: PatchOpsIII-linux-testing
     defaults:
       run:
         shell: bash
@@ -32,6 +53,8 @@ jobs:
       VT_API_KEY: ${{ secrets.VT_API_KEY }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -90,6 +113,7 @@ jobs:
           cosign sign-blob --yes --key cosign.key --output-signature dist/linux/PatchOpsIII.sig --output-certificate dist/linux/PatchOpsIII.pem dist/linux/PatchOpsIII
           rm -f cosign.key
       - name: Compute Linux hash
+        id: compute_hash
         run: |
           if [ ! -f "dist/linux/PatchOpsIII" ]; then
             echo "dist/linux/PatchOpsIII was not produced" >&2
@@ -98,7 +122,10 @@ jobs:
           hash=$(sha256sum dist/linux/PatchOpsIII | cut -d ' ' -f1)
           printf "%s\n" "$hash" > dist/linux/hash.log
           echo "SHA256: $hash"
-          echo "LINUX_VT_URL=https://www.virustotal.com/gui/file/$hash" >> "$GITHUB_ENV"
+          vt_url="https://www.virustotal.com/gui/file/$hash"
+          echo "LINUX_VT_URL=$vt_url" >> "$GITHUB_ENV"
+          printf "hash=%s\n" "$hash" >> "$GITHUB_OUTPUT"
+          printf "vt_url=%s\n" "$vt_url" >> "$GITHUB_OUTPUT"
       - name: VirusTotal scan (optional)
         if: ${{ env.VT_API_KEY != '' }}
         env:
@@ -118,3 +145,4 @@ jobs:
             Testing/dist/linux/PatchOpsIII.sig
             Testing/dist/linux/PatchOpsIII.pem
           if-no-files-found: ignore
+
