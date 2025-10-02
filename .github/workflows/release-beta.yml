@@ -191,8 +191,8 @@ jobs:
           linux_vt = os.environ.get("LINUX_VT_URL", "").strip() or "https://www.virustotal.com/"
           windows_hash = os.environ.get("WINDOWS_HASH", "").strip() or "TBD"
           linux_hash = os.environ.get("LINUX_HASH", "").strip() or "TBD"
-          asset_windows = f"PatchOpsIII-{version}-windows.exe"
-          asset_linux = f"PatchOpsIII-{version}-linux"
+          asset_windows = "PatchOpsIII.exe"
+          asset_linux = "PatchOpsIII"
           base_url = f"https://github.com/{repo}/releases/download/{version}"
           windows_download = f"{base_url}/{asset_windows}"
           linux_download = f"{base_url}/{asset_linux}"
@@ -228,12 +228,12 @@ jobs:
             find artifacts/windows -type f -print >&2
             exit 1
           fi
-          cp "$win_exec" "release/PatchOpsIII-${VERSION}-windows.exe"
+          cp "$win_exec" "release/PatchOpsIII.exe"
           if [ -f "$(dirname "$win_exec")/PatchOpsIII.sig" ]; then
-            cp "$(dirname "$win_exec")/PatchOpsIII.sig" "release/PatchOpsIII-${VERSION}-windows.sig"
+            cp "$(dirname "$win_exec")/PatchOpsIII.sig" "release/PatchOpsIII.sig"
           fi
           if [ -f "$(dirname "$win_exec")/PatchOpsIII.pem" ]; then
-            cp "$(dirname "$win_exec")/PatchOpsIII.pem" "release/PatchOpsIII-${VERSION}-windows.pem"
+            cp "$(dirname "$win_exec")/PatchOpsIII.pem" "release/PatchOpsIII.pem"
           fi
           linux_exec=$(find artifacts/linux -type f -name 'PatchOpsIII' -print -quit)
           if [ -z "$linux_exec" ]; then
@@ -241,13 +241,13 @@ jobs:
             find artifacts/linux -type f -print >&2
             exit 1
           fi
-          cp "$linux_exec" "release/PatchOpsIII-${VERSION}-linux"
-          chmod +x "release/PatchOpsIII-${VERSION}-linux"
+          cp "$linux_exec" "release/PatchOpsIII"
+          chmod +x "release/PatchOpsIII"
           if [ -f "$(dirname "$linux_exec")/PatchOpsIII.sig" ]; then
-            cp "$(dirname "$linux_exec")/PatchOpsIII.sig" "release/PatchOpsIII-${VERSION}-linux.sig"
+            cp "$(dirname "$linux_exec")/PatchOpsIII.sig" "release/PatchOpsIII-linux.sig"
           fi
           if [ -f "$(dirname "$linux_exec")/PatchOpsIII.pem" ]; then
-            cp "$(dirname "$linux_exec")/PatchOpsIII.pem" "release/PatchOpsIII-${VERSION}-linux.pem"
+            cp "$(dirname "$linux_exec")/PatchOpsIII.pem" "release/PatchOpsIII-linux.pem"
           fi
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2

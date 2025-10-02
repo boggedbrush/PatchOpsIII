@@ -59,6 +59,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: Testing/requirements.txt
       - name: Install base tooling
         run: |
           python -m pip install --upgrade pip setuptools wheel
@@ -145,4 +147,3 @@ jobs:
             Testing/dist/linux/PatchOpsIII.sig
             Testing/dist/linux/PatchOpsIII.pem
           if-no-files-found: ignore
-
