@@ -1,10 +1,14 @@
-name: Build
+name: Testing Build
 
 on:
   push:
     branches:
-      - main
+      - Testing
+      - testing
   pull_request:
+    branches:
+      - Testing
+      - testing
   workflow_dispatch:
 
 permissions:
@@ -18,6 +22,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
+        working-directory: Testing
     env:
       PYINSTALLER_ARCHIVE: pyinstaller-latest.zip
       PYINSTALLER_DIR: pyinstaller-develop
@@ -108,17 +113,21 @@ jobs:
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PatchOpsIII-windows
+          name: PatchOpsIII-windows-testing
           path: |
-            dist/windows/PatchOpsIII.exe
-            dist/windows/hash.log
-            dist/windows/PatchOpsIII.sig
-            dist/windows/PatchOpsIII.pem
+            Testing/dist/windows/PatchOpsIII.exe
+            Testing/dist/windows/hash.log
+            Testing/dist/windows/PatchOpsIII.sig
+            Testing/dist/windows/PatchOpsIII.pem
           if-no-files-found: ignore
 
   build-linux:
     name: Build Linux executable
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: Testing
     env:
       PYINSTALLER_ARCHIVE: pyinstaller-latest.zip
       PYINSTALLER_DIR: pyinstaller-develop
@@ -229,11 +238,10 @@ PY
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PatchOpsIII-linux
+          name: PatchOpsIII-linux-testing
           path: |
-            dist/linux/PatchOpsIII
-            dist/linux/hash.log
-            dist/linux/PatchOpsIII.sig
-            dist/linux/PatchOpsIII.pem
+            Testing/dist/linux/PatchOpsIII
+            Testing/dist/linux/hash.log
+            Testing/dist/linux/PatchOpsIII.sig
+            Testing/dist/linux/PatchOpsIII.pem
           if-no-files-found: ignore
-
