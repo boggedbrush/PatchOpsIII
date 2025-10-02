@@ -109,8 +109,7 @@ jobs:
           $downloadUrl = (Invoke-RestMethod -Uri https://api.github.com/repos/VirusTotal/vt-cli/releases/latest).assets | Where-Object { $_.name -eq 'Windows64.zip' } | Select-Object -ExpandProperty browser_download_url
           Invoke-WebRequest -Uri $downloadUrl -OutFile $vtZip
           Expand-Archive -Path $vtZip -DestinationPath . -Force
-          $env:VT_APIKEY = $env:VT_API_KEY
-          .\vt.exe scan file dist/windows/PatchOpsIII.exe --wait
+          .\vt.exe scan file dist/windows/PatchOpsIII.exe --wait --apikey $env:VT_API_KEY
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
@@ -121,5 +120,3 @@ jobs:
             Testing/dist/windows/PatchOpsIII.sig
             Testing/dist/windows/PatchOpsIII.pem
           if-no-files-found: ignore
-
-

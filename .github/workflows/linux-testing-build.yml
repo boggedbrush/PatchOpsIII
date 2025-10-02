@@ -107,7 +107,7 @@ jobs:
           python -c "import json, urllib.request, pathlib; data=json.load(urllib.request.urlopen('https://api.github.com/repos/VirusTotal/vt-cli/releases/latest')); url=next(a['browser_download_url'] for a in data['assets'] if a['name']=='Linux64.zip'); pathlib.Path('vt-cli.zip').write_bytes(urllib.request.urlopen(url).read())"
           unzip -q -o vt-cli.zip
           chmod +x vt
-          VT_APIKEY="$VT_API_KEY" ./vt scan file dist/linux/PatchOpsIII --wait
+          ./vt scan file dist/linux/PatchOpsIII --wait --apikey "$VT_API_KEY"
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
@@ -118,5 +118,3 @@ jobs:
             Testing/dist/linux/PatchOpsIII.sig
             Testing/dist/linux/PatchOpsIII.pem
           if-no-files-found: ignore
-
-
