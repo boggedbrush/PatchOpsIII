@@ -1,4 +1,4 @@
-name: Release Beta
+﻿name: Release Beta
 
 on:
   workflow_dispatch:
@@ -86,53 +86,53 @@ jobs:
           NEXT_STEPS: ${{ inputs.next_steps }}
         run: |
           python <<'PY'
-from pathlib import Path
-import os
+          from pathlib import Path
+          import os
 
-repo = os.environ["REPO"]
-version = os.environ["VERSION"]
-template_path = Path("Release Notes") / "template.md"
-if not template_path.exists():
-    raise SystemExit(f"Template not found: {template_path}")
-text = template_path.read_text(encoding="utf-8")
+          repo = os.environ["REPO"]
+          version = os.environ["VERSION"]
+          template_path = Path("Release Notes") / "template.md"
+          if not template_path.exists():
+              raise SystemExit(f"Template not found: {template_path}")
+          text = template_path.read_text(encoding="utf-8")
 
-def format_lines(value, default="- TBD"):
-    lines = [ln.strip() for ln in value.splitlines() if ln.strip()]
-    if not lines:
-        return default
-    formatted = []
-    for ln in lines:
-        formatted.append(ln if ln.startswith('-') else f"- {ln}")
-    return "\n".join(formatted)
+          def format_lines(value, default="- TBD"):
+              lines = [ln.strip() for ln in value.splitlines() if ln.strip()]
+              if not lines:
+                  return default
+              formatted = []
+              for ln in lines:
+                  formatted.append(ln if ln.startswith('-') else f"- {ln}")
+              return "\n".join(formatted)
 
-windows_vt = os.environ.get("WINDOWS_VT_URL", "").strip() or "https://www.virustotal.com/"
-linux_vt = os.environ.get("LINUX_VT_URL", "").strip() or "https://www.virustotal.com/"
-windows_hash = os.environ.get("WINDOWS_HASH", "").strip() or "TBD"
-linux_hash = os.environ.get("LINUX_HASH", "").strip() or "TBD"
-asset_windows = f"PatchOpsIII-{version}-windows.exe"
-asset_linux = f"PatchOpsIII-{version}-linux"
-base_url = f"https://github.com/{repo}/releases/download/{version}"
-windows_download = f"{base_url}/{asset_windows}"
-linux_download = f"{base_url}/{asset_linux}"
+          windows_vt = os.environ.get("WINDOWS_VT_URL", "").strip() or "https://www.virustotal.com/"
+          linux_vt = os.environ.get("LINUX_VT_URL", "").strip() or "https://www.virustotal.com/"
+          windows_hash = os.environ.get("WINDOWS_HASH", "").strip() or "TBD"
+          linux_hash = os.environ.get("LINUX_HASH", "").strip() or "TBD"
+          asset_windows = f"PatchOpsIII-{version}-windows.exe"
+          asset_linux = f"PatchOpsIII-{version}-linux"
+          base_url = f"https://github.com/{repo}/releases/download/{version}"
+          windows_download = f"{base_url}/{asset_windows}"
+          linux_download = f"{base_url}/{asset_linux}"
 
-replacements = {
-    "VERSION": version,
-    "WINDOWS_VT_URL": windows_vt,
-    "LINUX_VT_URL": linux_vt,
-    "FEATURES_LIST": format_lines(os.environ.get("FEATURES", "")),
-    "FIXES_LIST": format_lines(os.environ.get("FIXES", "")),
-    "KNOWN_ISSUES_LIST": format_lines(os.environ.get("KNOWN_ISSUES", "")),
-    "NEXT_STEPS_LIST": format_lines(os.environ.get("NEXT_STEPS", "")),
-    "WINDOWS_DOWNLOAD_URL": windows_download,
-    "LINUX_DOWNLOAD_URL": linux_download,
-    "WINDOWS_SHA256": windows_hash,
-    "LINUX_SHA256": linux_hash,
-}
-for key, value in replacements.items():
-    text = text.replace(f"{{{{{key}}}}}", value)
+          replacements = {
+              "VERSION": version,
+              "WINDOWS_VT_URL": windows_vt,
+              "LINUX_VT_URL": linux_vt,
+              "FEATURES_LIST": format_lines(os.environ.get("FEATURES", "")),
+              "FIXES_LIST": format_lines(os.environ.get("FIXES", "")),
+              "KNOWN_ISSUES_LIST": format_lines(os.environ.get("KNOWN_ISSUES", "")),
+              "NEXT_STEPS_LIST": format_lines(os.environ.get("NEXT_STEPS", "")),
+              "WINDOWS_DOWNLOAD_URL": windows_download,
+              "LINUX_DOWNLOAD_URL": linux_download,
+              "WINDOWS_SHA256": windows_hash,
+              "LINUX_SHA256": linux_hash,
+          }
+          for key, value in replacements.items():
+              text = text.replace(f"{{{{{key}}}}}", value)
 
-Path("release-notes.md").write_text(text + "\n", encoding="utf-8")
-
+          Path("release-notes.md").write_text(text + "\n", encoding="utf-8")
+          PY
       - name: Organize release assets
         env:
           VERSION: ${{ steps.version.outputs.version }}
