@@ -6,6 +6,14 @@ on:
       tag:
         description: Tag (e.g., v1.0.4-beta) to release when running manually
         required: true
+      source_ref:
+        description: Source branch or tag to tag from
+        required: false
+        default: main
+      create_tag:
+        description: Create or update the tag before building (true/false)
+        required: false
+        default: "true"
       features:
         description: New features and improvements (one per line)
         required: false
@@ -28,38 +36,81 @@ permissions:
   id-token: write
 
 jobs:
+  prepare:
+    name: Ensure tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Configure git
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+      - name: Create or verify tag
+        id: tag
+        env:
+          TAG_NAME: ${{ inputs.tag }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          CREATE_TAG: ${{ inputs.create_tag }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TAG_NAME" ]; then
+            echo "Tag input is required." >&2
+            exit 1
+          fi
+          git fetch origin --prune --tags
+          if ! git ls-remote --exit-code --heads origin "$SOURCE_REF" >/dev/null; then
+            echo "Source ref '$SOURCE_REF' not found on origin." >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG_NAME" >/dev/null; then
+            echo "Tag '$TAG_NAME' already exists on origin." >&2
+            if [ "${CREATE_TAG,,}" != "true" ]; then
+              echo "create_tag is not true; leaving tag untouched." >&2
+            else
+              git fetch origin "$SOURCE_REF"
+              git checkout --detach "origin/$SOURCE_REF"
+              git tag -f "$TAG_NAME"
+              git push origin "refs/tags/$TAG_NAME" --force
+            fi
+          else
+            git fetch origin "$SOURCE_REF"
+            git checkout --detach "origin/$SOURCE_REF"
+            git tag "$TAG_NAME"
+            git push origin "refs/tags/$TAG_NAME"
+          fi
+          echo "tag=$TAG_NAME" >> "$GITHUB_OUTPUT"
+
   build-windows:
+    needs: prepare
     uses: ./.github/workflows/windows-testing-build.yml
     with:
-      ref: ${{ inputs.tag }}
+      ref: ${{ needs.prepare.outputs.tag }}
     secrets: inherit
 
   build-linux:
+    needs: prepare
     uses: ./.github/workflows/linux-testing-build.yml
     with:
-      ref: ${{ inputs.tag }}
+      ref: ${{ needs.prepare.outputs.tag }}
     secrets: inherit
 
   release:
     name: Publish beta release
     runs-on: ubuntu-latest
     needs:
+      - prepare
       - build-windows
       - build-linux
     steps:
-      - name: Determine version
-        id: version
-        run: |
-          version="${{ inputs.tag }}"
-          if [ -z "$version" ]; then
-            echo "The tag input is required." >&2
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ steps.version.outputs.version }}
+          ref: ${{ needs.prepare.outputs.tag }}
           fetch-depth: 0
       - name: Download Windows artifact
         uses: actions/download-artifact@v4
@@ -72,9 +123,8 @@ jobs:
           name: ${{ needs.build-linux.outputs.artifact_name }}
           path: artifacts/linux
       - name: Prepare release notes
-        id: notes
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.prepare.outputs.tag }}
           WINDOWS_HASH: ${{ needs.build-windows.outputs.hash }}
           WINDOWS_VT_URL: ${{ needs.build-windows.outputs.vt_url }}
           LINUX_HASH: ${{ needs.build-linux.outputs.hash }}
@@ -86,56 +136,56 @@ jobs:
           NEXT_STEPS: ${{ inputs.next_steps }}
         run: |
           python <<'PY'
-          from pathlib import Path
-          import os
+from pathlib import Path
+import os
 
-          repo = os.environ["REPO"]
-          version = os.environ["VERSION"]
-          template_path = Path("Release Notes") / "template.md"
-          if not template_path.exists():
-              raise SystemExit(f"Template not found: {template_path}")
-          text = template_path.read_text(encoding="utf-8")
+repo = os.environ["REPO"]
+version = os.environ["VERSION"]
+template_path = Path("Release Notes") / "template.md"
+if not template_path.exists():
+    raise SystemExit(f"Template not found: {template_path}")
+text = template_path.read_text(encoding="utf-8")
 
-          def format_lines(value, default="- TBD"):
-              lines = [ln.strip() for ln in value.splitlines() if ln.strip()]
-              if not lines:
-                  return default
-              formatted = []
-              for ln in lines:
-                  formatted.append(ln if ln.startswith('-') else f"- {ln}")
-              return "\n".join(formatted)
+def format_lines(value, default="- TBD"):
+    lines = [ln.strip() for ln in value.splitlines() if ln.strip()]
+    if not lines:
+        return default
+    formatted = []
+    for ln in lines:
+        formatted.append(ln if ln.startswith('-') else f"- {ln}")
+    return "\n".join(formatted)
 
-          windows_vt = os.environ.get("WINDOWS_VT_URL", "").strip() or "https://www.virustotal.com/"
-          linux_vt = os.environ.get("LINUX_VT_URL", "").strip() or "https://www.virustotal.com/"
-          windows_hash = os.environ.get("WINDOWS_HASH", "").strip() or "TBD"
-          linux_hash = os.environ.get("LINUX_HASH", "").strip() or "TBD"
-          asset_windows = f"PatchOpsIII-{version}-windows.exe"
-          asset_linux = f"PatchOpsIII-{version}-linux"
-          base_url = f"https://github.com/{repo}/releases/download/{version}"
-          windows_download = f"{base_url}/{asset_windows}"
-          linux_download = f"{base_url}/{asset_linux}"
+windows_vt = os.environ.get("WINDOWS_VT_URL", "").strip() or "https://www.virustotal.com/"
+linux_vt = os.environ.get("LINUX_VT_URL", "").strip() or "https://www.virustotal.com/"
+windows_hash = os.environ.get("WINDOWS_HASH", "").strip() or "TBD"
+linux_hash = os.environ.get("LINUX_HASH", "").strip() or "TBD"
+asset_windows = f"PatchOpsIII-{version}-windows.exe"
+asset_linux = f"PatchOpsIII-{version}-linux"
+base_url = f"https://github.com/{repo}/releases/download/{version}"
+windows_download = f"{base_url}/{asset_windows}"
+linux_download = f"{base_url}/{asset_linux}"
 
-          replacements = {
-              "VERSION": version,
-              "WINDOWS_VT_URL": windows_vt,
-              "LINUX_VT_URL": linux_vt,
-              "FEATURES_LIST": format_lines(os.environ.get("FEATURES", "")),
-              "FIXES_LIST": format_lines(os.environ.get("FIXES", "")),
-              "KNOWN_ISSUES_LIST": format_lines(os.environ.get("KNOWN_ISSUES", "")),
-              "NEXT_STEPS_LIST": format_lines(os.environ.get("NEXT_STEPS", "")),
-              "WINDOWS_DOWNLOAD_URL": windows_download,
-              "LINUX_DOWNLOAD_URL": linux_download,
-              "WINDOWS_SHA256": windows_hash,
-              "LINUX_SHA256": linux_hash,
-          }
-          for key, value in replacements.items():
-              text = text.replace(f"{{{{{key}}}}}", value)
+replacements = {
+    "VERSION": version,
+    "WINDOWS_VT_URL": windows_vt,
+    "LINUX_VT_URL": linux_vt,
+    "FEATURES_LIST": format_lines(os.environ.get("FEATURES", "")),
+    "FIXES_LIST": format_lines(os.environ.get("FIXES", "")),
+    "KNOWN_ISSUES_LIST": format_lines(os.environ.get("KNOWN_ISSUES", "")),
+    "NEXT_STEPS_LIST": format_lines(os.environ.get("NEXT_STEPS", "")),
+    "WINDOWS_DOWNLOAD_URL": windows_download,
+    "LINUX_DOWNLOAD_URL": linux_download,
+    "WINDOWS_SHA256": windows_hash,
+    "LINUX_SHA256": linux_hash,
+}
+for key, value in replacements.items():
+    text = text.replace(f"{{{{{key}}}}}", value)
 
-          Path("release-notes.md").write_text(text + "\n", encoding="utf-8")
-          PY
+Path("release-notes.md").write_text(text + "\n", encoding="utf-8")
+PY
       - name: Organize release assets
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.prepare.outputs.tag }}
         run: |
           set -euo pipefail
           mkdir -p release
@@ -163,8 +213,8 @@ jobs:
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.version }}
-          name: PatchOpsIII ${{ steps.version.outputs.version }}
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: PatchOpsIII ${{ needs.prepare.outputs.tag }}
           prerelease: true
           body_path: release-notes.md
           files: |
