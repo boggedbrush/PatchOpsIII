@@ -69,9 +69,22 @@ jobs:
         run: |
           python -m pip install -r requirements.txt
           python -m pip install --upgrade nuitka pillow
+      - name: Cache Nuitka build artifacts
+        id: cache-nuitka
+        uses: actions/cache@v4
+        with:
+          path: |
+            PatchOpsIII.build
+            PatchOpsIII.dist
+            PatchOpsIII.onefile-build
+            .nuitka-cache
+          key: nuitka-${{ runner.os }}-${{ github.sha }}
       - name: Prepare build directories
         run: |
-          rm -rf dist build PatchOpsIII.build PatchOpsIII.dist PatchOpsIII.onefile-build
+          rm -rf dist build
+          if [ '${{ steps.cache-nuitka.outputs.cache-hit }}' != 'true' ]; then
+            rm -rf PatchOpsIII.build PatchOpsIII.dist PatchOpsIII.onefile-build .nuitka-cache
+          fi
           rm -f PatchOpsIII.spec
           rm -f PatchOpsIII.png
           mkdir -p "$LINUX_DIST_DIR"

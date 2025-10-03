@@ -55,31 +55,51 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
-      - name: Install LLVM toolchain
-        shell: pwsh
-        run: |
-          choco install llvm --yes --no-progress
-          $llvmPath = Join-Path $Env:ProgramFiles 'LLVM\\bin'
-          if (Test-Path $llvmPath) {
-            Add-Content -Path $Env:GITHUB_PATH -Value $llvmPath
-          }
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
           cache-dependency-path: Testing/requirements.txt
+      - name: Determine version metadata
+        id: version
+        run: |
+          $ref = '${{ inputs.ref != '' && inputs.ref || github.ref }}'
+          if ($ref -match '^refs/tags/(.+)$') {
+            $version = $Matches[1]
+          } else {
+            $version = "0.0.${{ github.run_number }}"
+          }
+          $normalized = $version -replace '[^0-9\.]', '.'
+          if (-not ($normalized -match '^\d+\.\d+\.\d+(\.\d+)?$')) {
+            $normalized = '0.0.${{ github.run_number }}'
+          }
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "normalized=$normalized" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
       - name: Install dependencies
         run: |
           python -m pip install -r requirements.txt
           python -m pip install --upgrade nuitka
+      - name: Cache Nuitka build artifacts
+        id: cache-nuitka
+        uses: actions/cache@v4
+        with:
+          path: |
+            PatchOpsIII.build
+            PatchOpsIII.dist
+            PatchOpsIII.onefile-build
+            .nuitka-cache
+          key: nuitka-${{ runner.os }}-${{ steps.version.outputs.normalized }}
       - name: Prepare build directories
         run: |
           if (Test-Path 'dist') { Remove-Item 'dist' -Recurse -Force }
           if (Test-Path 'build') { Remove-Item 'build' -Recurse -Force }
-          if (Test-Path 'PatchOpsIII.build') { Remove-Item 'PatchOpsIII.build' -Recurse -Force }
-          if (Test-Path 'PatchOpsIII.dist') { Remove-Item 'PatchOpsIII.dist' -Recurse -Force }
-          if (Test-Path 'PatchOpsIII.onefile-build') { Remove-Item 'PatchOpsIII.onefile-build' -Recurse -Force }
+          if ('${{ steps.cache-nuitka.outputs.cache-hit }}' -ne 'true') {
+            if (Test-Path 'PatchOpsIII.build') { Remove-Item 'PatchOpsIII.build' -Recurse -Force }
+            if (Test-Path 'PatchOpsIII.dist') { Remove-Item 'PatchOpsIII.dist' -Recurse -Force }
+            if (Test-Path 'PatchOpsIII.onefile-build') { Remove-Item 'PatchOpsIII.onefile-build' -Recurse -Force }
+            if (Test-Path '.nuitka-cache') { Remove-Item '.nuitka-cache' -Recurse -Force }
+          }
           if (Test-Path 'PatchOpsIII.spec') { Remove-Item 'PatchOpsIII.spec' -Force }
           New-Item -ItemType Directory -Force -Path $env:WINDOWS_DIST_DIR | Out-Null
       - name: Build executable with Nuitka
@@ -95,6 +115,8 @@ jobs:
             --windows-icon-from-ico=PatchOpsIII.ico `
             --windows-company-name=boggedbrush `
             --windows-product-name=PatchOpsIII `
+            --windows-file-version=${{ steps.version.outputs.normalized }} `
+            --windows-product-version=${{ steps.version.outputs.normalized }} `
             --output-dir=$env:WINDOWS_DIST_DIR `
             --output-filename=$env:WINDOWS_BINARY `
             main.py
