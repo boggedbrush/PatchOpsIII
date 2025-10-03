@@ -115,6 +115,16 @@ jobs:
             --clang \
             --lto=yes \
             --assume-yes-for-downloads \
+            --include-qt-plugins=sensible,platforms \
+            --nofollow-import-to=PySide6.QtWebEngineCore \
+            --nofollow-import-to=PySide6.QtWebEngineWidgets \
+            --nofollow-import-to=PySide6.QtWebEngine \
+            --nofollow-import-to=PySide6.QtWebEngineQuick \
+            --nofollow-import-to=PySide6.QtMultimedia \
+            --nofollow-import-to=PySide6.QtMultimediaWidgets \
+            --nofollow-import-to=PySide6.QtOpenGLWidgets \
+            --include-package=vdf \
+            --include-package=requests \
             --include-data-file=presets.json=presets.json \
             --include-data-file=PatchOpsIII.ico=PatchOpsIII.ico \
             --linux-onefile-icon=PatchOpsIII.png \
