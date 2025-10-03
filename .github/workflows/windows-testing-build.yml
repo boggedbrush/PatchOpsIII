@@ -107,6 +107,7 @@ jobs:
           python -m nuitka `
             --onefile `
             --onefile-no-compression `
+            --windows-disable-console `
             --clang `
             --lto=yes `
             --assume-yes-for-downloads `
@@ -150,7 +151,8 @@ jobs:
             throw "$target was not produced"
           }
           Set-Content -Path cosign.key -Value $env:COSIGN_PRIVATE_KEY -NoNewline
-          cosign sign-blob --yes --key cosign.key --output-signature "$target.sig" --output-certificate "$target.pem" $target
+          $signature = Join-Path $env:WINDOWS_DIST_DIR 'PatchOpsIII.sig'
+          cosign sign-blob --yes --key cosign.key --output-signature $signature $target
           Remove-Item cosign.key
       - name: Compute Windows hash
         id: compute_hash
@@ -218,6 +220,5 @@ jobs:
           path: |
             Testing/${{ env.WINDOWS_DIST_DIR }}/${{ env.WINDOWS_BINARY }}
             Testing/${{ env.WINDOWS_DIST_DIR }}/hash.log
-            Testing/${{ env.WINDOWS_DIST_DIR }}/${{ env.WINDOWS_BINARY }}.sig
-            Testing/${{ env.WINDOWS_DIST_DIR }}/${{ env.WINDOWS_BINARY }}.pem
+            Testing/${{ env.WINDOWS_DIST_DIR }}/PatchOpsIII.sig
           if-no-files-found: ignore

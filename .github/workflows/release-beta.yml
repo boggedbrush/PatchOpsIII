@@ -234,9 +234,6 @@ jobs:
           if [ -f "$(dirname "$win_exec")/PatchOpsIII.sig" ]; then
             cp "$(dirname "$win_exec")/PatchOpsIII.sig" "release/PatchOpsIII.sig"
           fi
-          if [ -f "$(dirname "$win_exec")/PatchOpsIII.pem" ]; then
-            cp "$(dirname "$win_exec")/PatchOpsIII.pem" "release/PatchOpsIII.pem"
-          fi
           linux_exec=$(find artifacts/linux -type f -name 'PatchOpsIII.AppImage' -print -quit)
           if [ -z "$linux_exec" ]; then
             echo "Linux binary not found under artifacts/linux" >&2
@@ -247,9 +244,6 @@ jobs:
           chmod +x "release/PatchOpsIII.AppImage"
           if [ -f "$(dirname "$linux_exec")/PatchOpsIII.AppImage.sig" ]; then
             cp "$(dirname "$linux_exec")/PatchOpsIII.AppImage.sig" "release/PatchOpsIII.AppImage.sig"
-          fi
-          if [ -f "$(dirname "$linux_exec")/PatchOpsIII.AppImage.pem" ]; then
-            cp "$(dirname "$linux_exec")/PatchOpsIII.AppImage.pem" "release/PatchOpsIII.AppImage.pem"
           fi
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
