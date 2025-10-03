@@ -28,33 +28,91 @@ def write_log(message, category="Info", log_widget=None, log_file="PatchOpsIII.l
     with open(log_file, "a") as f:
         f.write(full_message + "\n")
 
+def _find_windows_steam_root():
+    candidates = []
+    try:
+        import winreg
+        registry_targets = [
+            (winreg.HKEY_CURRENT_USER, r"Software\\Valve\\Steam", "SteamPath"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\\WOW6432Node\\Valve\\Steam", "InstallPath"),
+            (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\\Valve\\Steam", "InstallPath"),
+        ]
+        for hive, subkey, value in registry_targets:
+            try:
+                with winreg.OpenKey(hive, subkey) as key:
+                    location, _ = winreg.QueryValueEx(key, value)
+                    if location:
+                        candidates.append(location)
+            except (FileNotFoundError, OSError):
+                continue
+    except ImportError:
+        pass
+
+    possible_program_files = [
+        os.environ.get("PROGRAMFILES(X86)"),
+        os.environ.get("PROGRAMFILES"),
+    ]
+    for root in possible_program_files:
+        if root:
+            candidates.append(os.path.join(root, "Steam"))
+
+    candidates.extend([
+        r"C:\\Program Files (x86)\\Steam",
+        r"C:\\Program Files\\Steam",
+    ])
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        normalized = os.path.normpath(candidate)
+        exe_path = os.path.join(normalized, "steam.exe")
+        if os.path.exists(exe_path):
+            return normalized
+    return None
 def get_steam_paths():
     system = platform.system()
     if system == "Windows":
+        steam_root = _find_windows_steam_root()
+        if steam_root:
+            return {
+                'userdata': os.path.join(steam_root, "userdata"),
+                'steam_exe': os.path.join(steam_root, "steam.exe"),
+            }
+        default_base = os.environ.get("PROGRAMFILES(X86)") or os.environ.get("PROGRAMFILES") or r"C:\\Program Files (x86)"
+        default_root = os.path.join(default_base, "Steam")
         return {
-            'userdata': r"C:\Program Files (x86)\Steam\userdata",
-            'steam_exe': r"C:\Program Files (x86)\Steam\steam.exe"
+            'userdata': os.path.join(default_root, "userdata"),
+            'steam_exe': os.path.join(default_root, "steam.exe"),
         }
-    elif system == "Linux":
+    if system == "Linux":
         home = os.path.expanduser("~")
         return {
             'userdata': os.path.join(home, ".steam/steam/userdata"),
-            'steam_exe': "steam"  # On Linux, we can just use the command 'steam'
+            'steam_exe': "steam",
         }
-    else:
-        return None
-
+    if system == "Darwin":
+        home = os.path.expanduser("~")
+        return {
+            'userdata': os.path.join(home, "Library/Application Support/Steam/userdata"),
+            'steam_exe': "open",
+        }
+    return None
 steam_paths = get_steam_paths()
+steam_userdata_path = None
+steam_exe_path = None
 if steam_paths:
-    steam_userdata_path = steam_paths['userdata']
-    steam_exe_path = steam_paths['steam_exe']
+    steam_userdata_path = steam_paths.get('userdata')
+    steam_exe_path = steam_paths.get('steam_exe')
 else:
     write_log("Unsupported operating system", "Error", None)
+
+if platform.system() == "Windows" and steam_exe_path and not os.path.exists(steam_exe_path):
+    write_log(f"Steam executable not found at {steam_exe_path}. Update your configuration or reinstall Steam.", "Warning", None)
 
 app_id = "311210"  # Black Ops III AppID
 
 def find_steam_user_id():
-    if not os.path.exists(steam_userdata_path):
+    if not steam_userdata_path or not os.path.exists(steam_userdata_path):
         write_log("Steam userdata path not found!", "Warning", None)
         return None
     user_ids = [f for f in os.listdir(steam_userdata_path) if f.isdigit()]
@@ -106,9 +164,16 @@ def open_steam(log_widget):
     try:
         if system == "Windows":
             write_log("Opening Steam...", "Info", log_widget)
-            subprocess.Popen([steam_exe_path, "-silent"],
-                             stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL)
+            if steam_exe_path and os.path.exists(steam_exe_path):
+                subprocess.Popen([steam_exe_path, "-silent"],
+                                 stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+            else:
+                write_log("Steam executable path not found; attempting to use system URI handler.", "Warning", log_widget)
+                try:
+                    os.startfile("steam://open/main")  # type: ignore[attr-defined]
+                except AttributeError:
+                    subprocess.Popen(["cmd", "/c", "start", "", "steam://"])
         else:
             # Check if Steam is already running
             was_running = (subprocess.call(["pgrep", "-x", "steam"],
@@ -167,6 +232,35 @@ def open_steam(log_widget):
         write_log(f"Failed to open Steam: {e}", "Error", log_widget)
         write_log("Please start Steam manually", "Info", log_widget)
         
+def launch_game_via_steam(app_id, log_widget=None):
+    uri = f"steam://rungameid/{app_id}"
+    system = platform.system()
+    try:
+        if system == "Windows":
+            if steam_exe_path and os.path.exists(steam_exe_path):
+                subprocess.Popen([steam_exe_path, "-applaunch", app_id])
+            else:
+                write_log("Steam executable path not found; attempting to use system URI handler.", "Warning", log_widget)
+                try:
+                    os.startfile(uri)  # type: ignore[attr-defined]
+                except AttributeError:
+                    subprocess.Popen(["cmd", "/c", "start", "", uri])
+        elif system == "Linux":
+            if shutil.which("xdg-open"):
+                subprocess.Popen(["xdg-open", uri])
+            else:
+                subprocess.Popen([steam_exe_path or "steam", uri])
+        elif system == "Darwin":
+            subprocess.Popen(["open", uri])
+        else:
+            subprocess.Popen([steam_exe_path or "steam", uri])
+        write_log(f"Launched Black Ops III via Steam (AppID: {app_id})", "Success", log_widget)
+    except FileNotFoundError:
+        write_log("Steam client not found. Please verify your Steam installation path.", "Error", log_widget)
+    except Exception as exc:
+        write_log(f"Error launching game via Steam: {exc}", "Error", log_widget)
+
+
 def set_launch_options(user_id, app_id, launch_options, log_widget):
     config_path = os.path.join(steam_userdata_path, user_id, "config", "localconfig.vdf")
     if not os.path.exists(config_path):
@@ -241,3 +335,4 @@ def apply_launch_options(launch_option, log_widget):
     close_steam(log_widget)
     set_launch_options(user_id, app_id, launch_option, log_widget)
     open_steam(log_widget)
+

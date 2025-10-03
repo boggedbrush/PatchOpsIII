@@ -3,7 +3,6 @@ import sys
 import os
 import re
 import shutil
-import subprocess
 import time
 import vdf
 import platform
@@ -18,7 +17,7 @@ from PySide6.QtCore import Qt, QUrl, QThread, Signal
 from t7_patch import T7PatchWidget
 from dxvk_manager import DXVKWidget
 from config import GraphicsSettingsWidget, AdvancedSettingsWidget
-from utils import write_log, apply_launch_options, find_steam_user_id, steam_userdata_path, app_id
+from utils import write_log, apply_launch_options, find_steam_user_id, steam_userdata_path, app_id, launch_game_via_steam
 
 def resource_path(relative_path):
     """Resolve bundled assets while supporting PyInstaller and Nuitka."""
@@ -551,12 +550,7 @@ class MainWindow(QMainWindow):
             write_log(f"Error: BlackOps3.exe not found at {game_exe_path}", "Error", self.log_text)
             return
 
-        try:
-            # Launch the game via Steam
-            subprocess.Popen(['steam', f'steam://rungameid/{app_id}'])
-            write_log(f"Launched Black Ops III via Steam (AppID: {app_id})", "Success", self.log_text)
-        except Exception as e:
-            write_log(f"Error launching game via Steam: {e}", "Error", self.log_text)
+        launch_game_via_steam(app_id, self.log_text)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
