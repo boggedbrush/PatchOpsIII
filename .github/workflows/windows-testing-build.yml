@@ -19,13 +19,13 @@ on:
         default: ''
     outputs:
       hash:
-        description: SHA256 hash of the Windows binary
+        description: SHA256 hash of the Windows executable
         value: ${{ jobs.build-windows.outputs.hash }}
       vt_url:
-        description: VirusTotal URL for the Windows binary
+        description: VirusTotal URL for the Windows executable
         value: ${{ jobs.build-windows.outputs.vt_url }}
       artifact_name:
-        description: Name of the produced Windows artifact
+        description: Name of the produced artifact
         value: ${{ jobs.build-windows.outputs.artifact_name }}
 
 permissions:
@@ -39,15 +39,14 @@ jobs:
     outputs:
       hash: ${{ steps.compute_hash.outputs.hash }}
       vt_url: ${{ steps.compute_hash.outputs.vt_url }}
-      artifact_name: PatchOpsIII-windows-testing
+      artifact_name: PatchOpsIII-windows
     defaults:
       run:
         shell: pwsh
         working-directory: Testing
     env:
-      PYINSTALLER_ARCHIVE: pyinstaller-latest.zip
-      PYINSTALLER_DIR: pyinstaller-develop
       WINDOWS_DIST_DIR: dist\windows
+      WINDOWS_BINARY: PatchOpsIII.exe
       VT_CLI_ARCHIVE: vt-cli-latest.zip
       COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
       COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
@@ -62,85 +61,106 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
           cache-dependency-path: Testing/requirements.txt
-      - name: Determine PyInstaller commit
-        id: pyinstaller_ref
-        shell: pwsh
+      - name: Determine version metadata
+        id: version
         run: |
-          $lines = git ls-remote https://github.com/pyinstaller/pyinstaller develop
-          if (-not $lines) {
-            throw 'Failed to resolve PyInstaller develop commit'
+          $ref = '${{ inputs.ref != '' && inputs.ref || github.ref }}'
+          if ($ref -match '^refs/tags/(.+)$') {
+            $version = $Matches[1]
+          } else {
+            $version = "0.0.${{ github.run_number }}"
           }
-          $commit = $lines[0].Split("`t")[0]
-          if (-not $commit) {
-            throw 'Commit hash not found for PyInstaller develop'
+          $normalized = $version -replace '[^0-9\.]', '.'
+          if (-not ($normalized -match '^\d+\.\d+\.\d+(\.\d+)?$')) {
+            $normalized = '0.0.${{ github.run_number }}'
           }
-          "commit=$commit" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-      - name: Cache PyInstaller source
-        id: cache-pyinstaller
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.PYINSTALLER_DIR }}
-          key: pyinstaller-${{ runner.os }}-${{ steps.pyinstaller_ref.outputs.commit }}
-      - name: Install project requirements
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "normalized=$normalized" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+      - name: Install dependencies
         run: |
           python -m pip install -r requirements.txt
-      - name: Prepare PyInstaller source
-        if: ${{ steps.cache-pyinstaller.outputs.cache-hit != 'true' }}
-        run: |
-          if (Test-Path $env:PYINSTALLER_ARCHIVE) { Remove-Item $env:PYINSTALLER_ARCHIVE -Force }
-          if (Test-Path $env:PYINSTALLER_DIR) { Remove-Item $env:PYINSTALLER_DIR -Recurse -Force }
-          Invoke-WebRequest -Uri https://github.com/pyinstaller/pyinstaller/archive/refs/heads/develop.zip -OutFile $env:PYINSTALLER_ARCHIVE
-          Expand-Archive -Path $env:PYINSTALLER_ARCHIVE -DestinationPath .
-      - name: Install PyInstaller from source
-        run: |
-          Push-Location $env:PYINSTALLER_DIR
-          python -m pip install .
-          Pop-Location
-      - name: Rebuild PyInstaller bootloader
-        if: ${{ steps.cache-pyinstaller.outputs.cache-hit != 'true' }}
-        run: |
-          Push-Location "$env:PYINSTALLER_DIR\bootloader"
-          python waf distclean all --target-arch=64bit
-          Pop-Location
-      - name: Build Windows binary
+          python -m pip install --upgrade nuitka
+      - name: Cache Nuitka build artifacts
+        id: cache-nuitka
+        uses: actions/cache@v4
+        with:
+          path: |
+            PatchOpsIII.build
+            PatchOpsIII.dist
+            PatchOpsIII.onefile-build
+            .nuitka-cache
+          key: nuitka-${{ runner.os }}-${{ steps.version.outputs.normalized }}
+      - name: Prepare build directories
         run: |
           if (Test-Path 'dist') { Remove-Item 'dist' -Recurse -Force }
           if (Test-Path 'build') { Remove-Item 'build' -Recurse -Force }
+          if ('${{ steps.cache-nuitka.outputs.cache-hit }}' -ne 'true') {
+            if (Test-Path 'PatchOpsIII.build') { Remove-Item 'PatchOpsIII.build' -Recurse -Force }
+            if (Test-Path 'PatchOpsIII.dist') { Remove-Item 'PatchOpsIII.dist' -Recurse -Force }
+            if (Test-Path 'PatchOpsIII.onefile-build') { Remove-Item 'PatchOpsIII.onefile-build' -Recurse -Force }
+            if (Test-Path '.nuitka-cache') { Remove-Item '.nuitka-cache' -Recurse -Force }
+          }
           if (Test-Path 'PatchOpsIII.spec') { Remove-Item 'PatchOpsIII.spec' -Force }
           New-Item -ItemType Directory -Force -Path $env:WINDOWS_DIST_DIR | Out-Null
-          python -m PyInstaller `
+      - name: Build executable with Nuitka
+        run: |
+          python -m nuitka `
             --onefile `
-            --noconsole `
-            --clean `
-            --noupx `
-            --name PatchOpsIII `
-            --icon PatchOpsIII.ico `
-            --add-data "presets.json;." `
-            --add-data "PatchOpsIII.ico;." `
-            --distpath $env:WINDOWS_DIST_DIR `
+            --onefile-no-compression `
+            --clang `
+            --lto=yes `
+            --assume-yes-for-downloads `
+            --enable-plugins=pyside6 `
+            --include-qt-plugins=sensible,platforms `
+            --nofollow-import-to=PySide6.QtWebEngineCore `
+            --nofollow-import-to=PySide6.QtWebEngineWidgets `
+            --nofollow-import-to=PySide6.QtWebEngine `
+            --nofollow-import-to=PySide6.QtWebEngineQuick `
+            --nofollow-import-to=PySide6.QtMultimedia `
+            --nofollow-import-to=PySide6.QtMultimediaWidgets `
+            --nofollow-import-to=PySide6.QtOpenGLWidgets `
+            --include-package=vdf `
+            --include-package=requests `
+            --include-data-file=presets.json=presets.json `
+            --include-data-file=PatchOpsIII.ico=PatchOpsIII.ico `
+            --windows-icon-from-ico=PatchOpsIII.ico `
+            --company-name=boggedbrush `
+            --product-name=PatchOpsIII `
+            --file-version=${{ steps.version.outputs.normalized }} `
+            --product-version=${{ steps.version.outputs.normalized }} `
+            --output-dir=$env:WINDOWS_DIST_DIR `
+            --output-filename=$env:WINDOWS_BINARY `
             main.py
+      - name: Ensure executable exists
+        run: |
+          $target = Join-Path $env:WINDOWS_DIST_DIR $env:WINDOWS_BINARY
+          if (-not (Test-Path $target)) {
+            throw "$target was not produced"
+          }
       - name: Install cosign (optional)
         if: ${{ env.COSIGN_PRIVATE_KEY != '' }}
         uses: sigstore/cosign-installer@v3.4.0
-      - name: Sign Windows binary with cosign
+      - name: Sign executable with cosign
         if: ${{ env.COSIGN_PRIVATE_KEY != '' }}
         env:
           COSIGN_EXPERIMENTAL: "1"
         run: |
-          if (-not (Test-Path 'dist/windows/PatchOpsIII.exe')) {
-            throw 'dist/windows/PatchOpsIII.exe was not produced'
+          $target = Join-Path $env:WINDOWS_DIST_DIR $env:WINDOWS_BINARY
+          if (-not (Test-Path $target)) {
+            throw "$target was not produced"
           }
           Set-Content -Path cosign.key -Value $env:COSIGN_PRIVATE_KEY -NoNewline
-          cosign sign-blob --yes --key cosign.key --output-signature dist/windows/PatchOpsIII.sig --output-certificate dist/windows/PatchOpsIII.pem dist/windows/PatchOpsIII.exe
+          cosign sign-blob --yes --key cosign.key --output-signature "$target.sig" --output-certificate "$target.pem" $target
           Remove-Item cosign.key
       - name: Compute Windows hash
         id: compute_hash
         run: |
-          if (-not (Test-Path 'dist/windows/PatchOpsIII.exe')) {
-            throw 'dist/windows/PatchOpsIII.exe was not produced'
+          $target = Join-Path $env:WINDOWS_DIST_DIR $env:WINDOWS_BINARY
+          if (-not (Test-Path $target)) {
+            throw "$target was not produced"
           }
-          $hash = (Get-FileHash -Algorithm SHA256 -Path 'dist/windows/PatchOpsIII.exe').Hash
-          Set-Content -Path 'dist/windows/hash.log' -Value $hash
+          $hash = (Get-FileHash -Algorithm SHA256 -Path $target).Hash
+          Set-Content -Path (Join-Path $env:WINDOWS_DIST_DIR 'hash.log') -Value $hash
           Write-Host "SHA256: $hash"
           $vtUrl = "https://www.virustotal.com/gui/file/$hash"
           "WINDOWS_VT_URL=$vtUrl" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -189,14 +209,15 @@ jobs:
         env:
           VT_API_KEY: ${{ env.VT_API_KEY }}
         run: |
-          .\vt.exe scan file dist/windows/PatchOpsIII.exe --wait --apikey $env:VT_API_KEY
+          $target = Join-Path $env:WINDOWS_DIST_DIR $env:WINDOWS_BINARY
+          .\vt.exe scan file $target --wait --apikey $env:VT_API_KEY
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PatchOpsIII-windows-testing
+          name: PatchOpsIII-windows
           path: |
-            Testing/dist/windows/PatchOpsIII.exe
-            Testing/dist/windows/hash.log
-            Testing/dist/windows/PatchOpsIII.sig
-            Testing/dist/windows/PatchOpsIII.pem
+            Testing/${{ env.WINDOWS_DIST_DIR }}/${{ env.WINDOWS_BINARY }}
+            Testing/${{ env.WINDOWS_DIST_DIR }}/hash.log
+            Testing/${{ env.WINDOWS_DIST_DIR }}/${{ env.WINDOWS_BINARY }}.sig
+            Testing/${{ env.WINDOWS_DIST_DIR }}/${{ env.WINDOWS_BINARY }}.pem
           if-no-files-found: ignore

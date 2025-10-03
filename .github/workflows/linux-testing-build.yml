@@ -19,13 +19,13 @@ on:
         default: ''
     outputs:
       hash:
-        description: SHA256 hash of the Linux binary
+        description: SHA256 hash of the AppImage
         value: ${{ jobs.build-linux.outputs.hash }}
       vt_url:
-        description: VirusTotal URL for the Linux binary
+        description: VirusTotal URL for the AppImage
         value: ${{ jobs.build-linux.outputs.vt_url }}
       artifact_name:
-        description: Name of the produced Linux artifact
+        description: Name of the produced artifact
         value: ${{ jobs.build-linux.outputs.artifact_name }}
 
 permissions:
@@ -34,20 +34,19 @@ permissions:
 
 jobs:
   build-linux:
-    name: Build Linux executable
+    name: Build Linux AppImage
     runs-on: ubuntu-latest
     outputs:
       hash: ${{ steps.compute_hash.outputs.hash }}
       vt_url: ${{ steps.compute_hash.outputs.vt_url }}
-      artifact_name: PatchOpsIII-linux-testing
+      artifact_name: PatchOpsIII-linux
     defaults:
       run:
         shell: bash
         working-directory: Testing
     env:
-      PYINSTALLER_ARCHIVE: pyinstaller-latest.zip
-      PYINSTALLER_DIR: pyinstaller-develop
       LINUX_DIST_DIR: dist/linux
+      LINUX_APPIMAGE: PatchOpsIII.AppImage
       VT_CLI_ARCHIVE: vt-cli.zip
       COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
       COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
@@ -56,89 +55,117 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
           cache-dependency-path: Testing/requirements.txt
-      - name: Determine PyInstaller commit
-        id: pyinstaller_ref
-        run: |
-          set -euo pipefail
-          commit=$(git ls-remote https://github.com/pyinstaller/pyinstaller develop | awk 'NR==1 {print $1}')
-          if [ -z "$commit" ]; then
-            echo "Failed to resolve PyInstaller develop commit" >&2
-            exit 1
-          fi
-          echo "commit=$commit" >> "$GITHUB_OUTPUT"
-      - name: Cache PyInstaller source
-        id: cache-pyinstaller
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.PYINSTALLER_DIR }}
-          key: pyinstaller-${{ runner.os }}-${{ steps.pyinstaller_ref.outputs.commit }}
-      - name: Install project requirements
+      - name: Install dependencies
         run: |
           python -m pip install -r requirements.txt
-      - name: Prepare PyInstaller source
-        if: ${{ steps.cache-pyinstaller.outputs.cache-hit != 'true' }}
-        run: |
-          rm -f "$PYINSTALLER_ARCHIVE"
-          rm -rf "$PYINSTALLER_DIR"
-          curl -L -o "$PYINSTALLER_ARCHIVE" https://github.com/pyinstaller/pyinstaller/archive/refs/heads/develop.zip
-          unzip -q "$PYINSTALLER_ARCHIVE"
-      - name: Install PyInstaller from source
-        run: |
-          pushd "$PYINSTALLER_DIR"
-          python -m pip install .
-          popd
-      - name: Rebuild PyInstaller bootloader
-        if: ${{ steps.cache-pyinstaller.outputs.cache-hit != 'true' }}
-        run: |
-          pushd "$PYINSTALLER_DIR/bootloader"
-          python waf distclean all
-          popd
-      - name: Build Linux binary
+          python -m pip install --upgrade nuitka pillow
+      - name: Cache Nuitka build artifacts
+        id: cache-nuitka
+        uses: actions/cache@v4
+        with:
+          path: |
+            PatchOpsIII.build
+            PatchOpsIII.dist
+            PatchOpsIII.onefile-build
+            .nuitka-cache
+          key: nuitka-${{ runner.os }}-${{ github.sha }}
+      - name: Prepare build directories
         run: |
           rm -rf dist build
+          if [ '${{ steps.cache-nuitka.outputs.cache-hit }}' != 'true' ]; then
+            rm -rf PatchOpsIII.build PatchOpsIII.dist PatchOpsIII.onefile-build .nuitka-cache
+          fi
           rm -f PatchOpsIII.spec
+          rm -f PatchOpsIII.png
           mkdir -p "$LINUX_DIST_DIR"
-          python -m PyInstaller \
+      - name: Generate AppImage icon
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          from PIL import Image
+
+          ico_path = Path('PatchOpsIII.ico')
+          png_path = Path('PatchOpsIII.png')
+          image = Image.open(ico_path)
+          frame_index = 0
+          if getattr(image, 'n_frames', 1) > 1:
+              candidates = []
+              for idx in range(image.n_frames):
+                  image.seek(idx)
+                  candidates.append((idx, image.size[0] * image.size[1]))
+              frame_index = max(candidates, key=lambda item: item[1])[0]
+              image.seek(frame_index)
+          image.convert('RGBA').save(png_path, format='PNG')
+          PY
+      - name: Build AppImage with Nuitka
+        run: |
+          python -m nuitka \
             --onefile \
-            --noconsole \
-            --clean \
-            --noupx \
-            --name PatchOpsIII \
-            --icon PatchOpsIII.ico \
-            --add-data "presets.json:." \
-            --add-data "PatchOpsIII.ico:." \
-            --distpath "$LINUX_DIST_DIR" \
+            --onefile-no-compression \
+            --clang \
+            --lto=yes \
+            --assume-yes-for-downloads \
+            --enable-plugins=pyside6 \
+            --include-qt-plugins=sensible,platforms \
+            --nofollow-import-to=PySide6.QtWebEngineCore \
+            --nofollow-import-to=PySide6.QtWebEngineWidgets \
+            --nofollow-import-to=PySide6.QtWebEngine \
+            --nofollow-import-to=PySide6.QtWebEngineQuick \
+            --nofollow-import-to=PySide6.QtMultimedia \
+            --nofollow-import-to=PySide6.QtMultimediaWidgets \
+            --nofollow-import-to=PySide6.QtOpenGLWidgets \
+            --include-package=vdf \
+            --include-package=requests \
+            --include-data-file=presets.json=presets.json \
+            --include-data-file=PatchOpsIII.ico=PatchOpsIII.ico \
+            --linux-icon=PatchOpsIII.png \
+            --output-dir="$LINUX_DIST_DIR" \
+            --output-filename="$LINUX_APPIMAGE" \
             main.py
+      - name: Ensure AppImage is executable
+        run: |
+          target="$LINUX_DIST_DIR/$LINUX_APPIMAGE"
+          if [ ! -f "$target" ]; then
+            echo "$target was not produced" >&2
+            exit 1
+          fi
+          chmod +x "$target"
       - name: Install cosign (optional)
         if: ${{ env.COSIGN_PRIVATE_KEY != '' }}
         uses: sigstore/cosign-installer@v3.4.0
-      - name: Sign Linux binary with cosign
+      - name: Sign AppImage with cosign
         if: ${{ env.COSIGN_PRIVATE_KEY != '' }}
         env:
           COSIGN_EXPERIMENTAL: "1"
         run: |
-          if [ ! -f "dist/linux/PatchOpsIII" ]; then
-            echo "dist/linux/PatchOpsIII was not produced" >&2
+          target="$LINUX_DIST_DIR/$LINUX_APPIMAGE"
+          if [ ! -f "$target" ]; then
+            echo "$target was not produced" >&2
             exit 1
           fi
           printf "%s" "$COSIGN_PRIVATE_KEY" > cosign.key
-          cosign sign-blob --yes --key cosign.key --output-signature dist/linux/PatchOpsIII.sig --output-certificate dist/linux/PatchOpsIII.pem dist/linux/PatchOpsIII
+          cosign sign-blob --yes --key cosign.key --output-signature "$target.sig" --output-certificate "$target.pem" "$target"
           rm -f cosign.key
-      - name: Compute Linux hash
+      - name: Compute AppImage hash
         id: compute_hash
         run: |
-          if [ ! -f "dist/linux/PatchOpsIII" ]; then
-            echo "dist/linux/PatchOpsIII was not produced" >&2
+          target="$LINUX_DIST_DIR/$LINUX_APPIMAGE"
+          if [ ! -f "$target" ]; then
+            echo "$target was not produced" >&2
             exit 1
           fi
-          hash=$(sha256sum dist/linux/PatchOpsIII | cut -d ' ' -f1)
-          printf "%s\n" "$hash" > dist/linux/hash.log
+          hash=$(sha256sum "$target" | cut -d ' ' -f1)
+          printf "%s\n" "$hash" > "$LINUX_DIST_DIR/hash.log"
           echo "SHA256: $hash"
           vt_url="https://www.virustotal.com/gui/file/$hash"
           echo "LINUX_VT_URL=$vt_url" >> "$GITHUB_ENV"
@@ -152,7 +179,6 @@ jobs:
           python <<'PY'
           import json
           import os
-          import sys
           import urllib.request
 
           url = 'https://api.github.com/repos/VirusTotal/vt-cli/releases/latest'
@@ -189,20 +215,23 @@ jobs:
         run: |
           if [ -f vt ]; then
             chmod +x vt
+          else
+            echo 'VirusTotal CLI binary not found' >&2
+            exit 1
           fi
       - name: VirusTotal scan (optional)
         if: ${{ env.VT_API_KEY != '' }}
         env:
           VT_API_KEY: ${{ env.VT_API_KEY }}
         run: |
-          ./vt scan file dist/linux/PatchOpsIII --wait --apikey "$VT_API_KEY"
-      - name: Upload Linux artifact
+          ./vt scan file "$LINUX_DIST_DIR/$LINUX_APPIMAGE" --wait --apikey "$VT_API_KEY"
+      - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PatchOpsIII-linux-testing
+          name: PatchOpsIII-linux
           path: |
-            Testing/dist/linux/PatchOpsIII
-            Testing/dist/linux/hash.log
-            Testing/dist/linux/PatchOpsIII.sig
-            Testing/dist/linux/PatchOpsIII.pem
+            Testing/${{ env.LINUX_DIST_DIR }}/${{ env.LINUX_APPIMAGE }}
+            Testing/${{ env.LINUX_DIST_DIR }}/hash.log
+            Testing/${{ env.LINUX_DIST_DIR }}/${{ env.LINUX_APPIMAGE }}.sig
+            Testing/${{ env.LINUX_DIST_DIR }}/${{ env.LINUX_APPIMAGE }}.pem
           if-no-files-found: ignore
