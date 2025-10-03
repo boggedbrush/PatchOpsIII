@@ -115,8 +115,8 @@ jobs:
             --clang \
             --lto=yes \
             --assume-yes-for-downloads \
-            --enable-plugin=pyside6 \
-            --qt-plugins=sensible,platforms \
+            --enable-plugins=pyside6 \
+            --include-qt-plugins=sensible,platforms \
             --nofollow-import-to=PySide6.QtWebEngineCore \
             --nofollow-import-to=PySide6.QtWebEngineWidgets \
             --nofollow-import-to=PySide6.QtWebEngine \
@@ -128,7 +128,7 @@ jobs:
             --include-package=requests \
             --include-data-file=presets.json=presets.json \
             --include-data-file=PatchOpsIII.ico=PatchOpsIII.ico \
-            --linux-onefile-icon=PatchOpsIII.png \
+            --linux-icon=PatchOpsIII.png \
             --output-dir="$LINUX_DIST_DIR" \
             --output-filename="$LINUX_APPIMAGE" \
             main.py
