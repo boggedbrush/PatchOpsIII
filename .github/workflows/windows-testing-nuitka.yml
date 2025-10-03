@@ -110,7 +110,7 @@ jobs:
             --clang `
             --lto=yes `
             --assume-yes-for-downloads `
-            --enable-plugin=qt-plugins `
+            --enable-plugin=pyside6 `
             --qt-plugins=sensible,platforms `
             --nofollow-import-to=PySide6.QtWebEngineCore `
             --nofollow-import-to=PySide6.QtWebEngineWidgets `
