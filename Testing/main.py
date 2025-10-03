@@ -21,10 +21,33 @@ from config import GraphicsSettingsWidget, AdvancedSettingsWidget
 from utils import write_log, apply_launch_options, find_steam_user_id, steam_userdata_path, app_id
 
 def resource_path(relative_path):
-    base_path = getattr(sys, '_MEIPASS', os.path.abspath("."))
-    candidate = os.path.join(base_path, relative_path)
-    if os.path.exists(candidate):
-        return candidate
+    """Resolve bundled assets while supporting PyInstaller and Nuitka."""
+    candidates = []
+
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(os.path.join(meipass, relative_path))
+
+    if getattr(sys, "frozen", False):
+        candidates.append(os.path.join(os.path.dirname(sys.executable), relative_path))
+        nuitka_temp = os.environ.get("NUITKA_ONEFILE_TEMP")
+        if nuitka_temp:
+            candidates.append(os.path.join(nuitka_temp, relative_path))
+        nuitka_parent = os.environ.get("NUITKA_ONEFILE_PARENT")
+        if nuitka_parent:
+            candidates.append(os.path.join(nuitka_parent, relative_path))
+
+    candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path))
+    candidates.append(os.path.join(os.path.abspath("."), relative_path))
+
+    seen = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if os.path.exists(candidate):
+            return candidate
+
     return os.path.join(os.path.abspath("."), relative_path)
 
 def get_application_path():
