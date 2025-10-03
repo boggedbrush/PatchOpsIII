@@ -1,0 +1,206 @@
+name: Linux Testing Nuitka
+
+on:
+  push:
+    branches:
+      - Testing
+      - testing
+  pull_request:
+    branches:
+      - Testing
+      - testing
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to build
+        required: false
+        type: string
+        default: ''
+    outputs:
+      hash:
+        description: SHA256 hash of the AppImage
+        value: ${{ jobs.build-linux-nuitka.outputs.hash }}
+      vt_url:
+        description: VirusTotal URL for the AppImage
+        value: ${{ jobs.build-linux-nuitka.outputs.vt_url }}
+      artifact_name:
+        description: Name of the produced artifact
+        value: ${{ jobs.build-linux-nuitka.outputs.artifact_name }}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-linux-nuitka:
+    name: Build Linux AppImage with Nuitka
+    runs-on: ubuntu-latest
+    outputs:
+      hash: ${{ steps.compute_hash.outputs.hash }}
+      vt_url: ${{ steps.compute_hash.outputs.vt_url }}
+      artifact_name: PatchOpsIII-linux-nuitka
+    defaults:
+      run:
+        shell: bash
+        working-directory: Testing
+    env:
+      LINUX_DIST_DIR: dist/linux-nuitka
+      LINUX_APPIMAGE: PatchOpsIII-nuitka.AppImage
+      VT_CLI_ARCHIVE: vt-cli.zip
+      COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+      COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+      VT_API_KEY: ${{ secrets.VT_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: Testing/requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install --upgrade nuitka pillow
+      - name: Prepare build directories
+        run: |
+          rm -rf dist build PatchOpsIII.build PatchOpsIII.dist PatchOpsIII.onefile-build
+          rm -f PatchOpsIII.spec
+          rm -f PatchOpsIII.png
+          mkdir -p "$LINUX_DIST_DIR"
+      - name: Generate AppImage icon
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          from PIL import Image
+
+          ico_path = Path('PatchOpsIII.ico')
+          png_path = Path('PatchOpsIII.png')
+          image = Image.open(ico_path)
+          frame_index = 0
+          if getattr(image, 'n_frames', 1) > 1:
+              candidates = []
+              for idx in range(image.n_frames):
+                  image.seek(idx)
+                  candidates.append((idx, image.size[0] * image.size[1]))
+              frame_index = max(candidates, key=lambda item: item[1])[0]
+              image.seek(frame_index)
+          image.convert('RGBA').save(png_path, format='PNG')
+          PY
+      - name: Build AppImage with Nuitka
+        run: |
+          python -m nuitka \
+            --onefile \
+            --assume-yes-for-downloads \
+            --include-data-file=presets.json=presets.json \
+            --include-data-file=PatchOpsIII.ico=PatchOpsIII.ico \
+            --linux-onefile-icon=PatchOpsIII.png \
+            --output-dir="$LINUX_DIST_DIR" \
+            --output-filename="$LINUX_APPIMAGE" \
+            main.py
+      - name: Ensure AppImage is executable
+        run: |
+          target="$LINUX_DIST_DIR/$LINUX_APPIMAGE"
+          if [ ! -f "$target" ]; then
+            echo "$target was not produced" >&2
+            exit 1
+          fi
+          chmod +x "$target"
+      - name: Install cosign (optional)
+        if: ${{ env.COSIGN_PRIVATE_KEY != '' }}
+        uses: sigstore/cosign-installer@v3.4.0
+      - name: Sign AppImage with cosign
+        if: ${{ env.COSIGN_PRIVATE_KEY != '' }}
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          target="$LINUX_DIST_DIR/$LINUX_APPIMAGE"
+          if [ ! -f "$target" ]; then
+            echo "$target was not produced" >&2
+            exit 1
+          fi
+          printf "%s" "$COSIGN_PRIVATE_KEY" > cosign.key
+          cosign sign-blob --yes --key cosign.key --output-signature "$target.sig" --output-certificate "$target.pem" "$target"
+          rm -f cosign.key
+      - name: Compute AppImage hash
+        id: compute_hash
+        run: |
+          target="$LINUX_DIST_DIR/$LINUX_APPIMAGE"
+          if [ ! -f "$target" ]; then
+            echo "$target was not produced" >&2
+            exit 1
+          fi
+          hash=$(sha256sum "$target" | cut -d ' ' -f1)
+          printf "%s\n" "$hash" > "$LINUX_DIST_DIR/hash.log"
+          echo "SHA256: $hash"
+          vt_url="https://www.virustotal.com/gui/file/$hash"
+          echo "LINUX_VT_URL=$vt_url" >> "$GITHUB_ENV"
+          printf "hash=%s\n" "$hash" >> "$GITHUB_OUTPUT"
+          printf "vt_url=%s\n" "$vt_url" >> "$GITHUB_OUTPUT"
+      - name: Determine VirusTotal CLI release
+        id: vt_release
+        if: ${{ env.VT_API_KEY != '' }}
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          url = 'https://api.github.com/repos/VirusTotal/vt-cli/releases/latest'
+          with urllib.request.urlopen(url) as response:
+              data = json.load(response)
+          tag = data.get('tag_name')
+          try:
+              asset_url = next(asset['browser_download_url'] for asset in data['assets'] if asset['name'] == 'Linux64.zip')
+          except StopIteration:
+              raise SystemExit('Linux64.zip asset not found in VirusTotal CLI release metadata')
+          if not tag:
+              raise SystemExit('Release tag missing from VirusTotal CLI metadata')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as fh:
+              fh.write(f'tag={tag}\n')
+              fh.write(f'url={asset_url}\n')
+          PY
+      - name: Cache VirusTotal CLI
+        if: ${{ env.VT_API_KEY != '' }}
+        id: cache-vt
+        uses: actions/cache@v4
+        with:
+          path: |
+            vt
+            ${{ env.VT_CLI_ARCHIVE }}
+          key: vt-${{ runner.os }}-${{ steps.vt_release.outputs.tag }}
+      - name: Download VirusTotal CLI
+        if: ${{ env.VT_API_KEY != '' && steps.cache-vt.outputs.cache-hit != 'true' }}
+        run: |
+          set -euo pipefail
+          curl -sSL "${{ steps.vt_release.outputs.url }}" -o "$VT_CLI_ARCHIVE"
+          unzip -q -o "$VT_CLI_ARCHIVE"
+      - name: Ensure VirusTotal CLI executable
+        if: ${{ env.VT_API_KEY != '' }}
+        run: |
+          if [ -f vt ]; then
+            chmod +x vt
+          else
+            echo 'VirusTotal CLI binary not found' >&2
+            exit 1
+          fi
+      - name: VirusTotal scan (optional)
+        if: ${{ env.VT_API_KEY != '' }}
+        env:
+          VT_API_KEY: ${{ env.VT_API_KEY }}
+        run: |
+          ./vt scan file "$LINUX_DIST_DIR/$LINUX_APPIMAGE" --wait --apikey "$VT_API_KEY"
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PatchOpsIII-linux-nuitka
+          path: |
+            Testing/${{ env.LINUX_DIST_DIR }}/${{ env.LINUX_APPIMAGE }}
+            Testing/${{ env.LINUX_DIST_DIR }}/hash.log
+            Testing/${{ env.LINUX_DIST_DIR }}/${{ env.LINUX_APPIMAGE }}.sig
+            Testing/${{ env.LINUX_DIST_DIR }}/${{ env.LINUX_APPIMAGE }}.pem
+          if-no-files-found: ignore
