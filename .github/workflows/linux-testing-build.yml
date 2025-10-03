@@ -48,6 +48,7 @@ jobs:
       PYINSTALLER_ARCHIVE: pyinstaller-latest.zip
       PYINSTALLER_DIR: pyinstaller-develop
       LINUX_DIST_DIR: dist/linux
+      VT_CLI_ARCHIVE: vt-cli.zip
       COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
       COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
       VT_API_KEY: ${{ secrets.VT_API_KEY }}
@@ -61,13 +62,27 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
           cache-dependency-path: Testing/requirements.txt
-      - name: Install base tooling
+      - name: Determine PyInstaller commit
+        id: pyinstaller_ref
         run: |
-          python -m pip install --upgrade pip setuptools wheel
+          set -euo pipefail
+          commit=$(git ls-remote https://github.com/pyinstaller/pyinstaller develop | awk 'NR==1 {print $1}')
+          if [ -z "$commit" ]; then
+            echo "Failed to resolve PyInstaller develop commit" >&2
+            exit 1
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - name: Cache PyInstaller source
+        id: cache-pyinstaller
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PYINSTALLER_DIR }}
+          key: pyinstaller-${{ runner.os }}-${{ steps.pyinstaller_ref.outputs.commit }}
       - name: Install project requirements
         run: |
           python -m pip install -r requirements.txt
       - name: Prepare PyInstaller source
+        if: ${{ steps.cache-pyinstaller.outputs.cache-hit != 'true' }}
         run: |
           rm -f "$PYINSTALLER_ARCHIVE"
           rm -rf "$PYINSTALLER_DIR"
@@ -79,6 +94,7 @@ jobs:
           python -m pip install .
           popd
       - name: Rebuild PyInstaller bootloader
+        if: ${{ steps.cache-pyinstaller.outputs.cache-hit != 'true' }}
         run: |
           pushd "$PYINSTALLER_DIR/bootloader"
           python waf distclean all
@@ -128,14 +144,57 @@ jobs:
           echo "LINUX_VT_URL=$vt_url" >> "$GITHUB_ENV"
           printf "hash=%s\n" "$hash" >> "$GITHUB_OUTPUT"
           printf "vt_url=%s\n" "$vt_url" >> "$GITHUB_OUTPUT"
+      - name: Determine VirusTotal CLI release
+        id: vt_release
+        if: ${{ env.VT_API_KEY != '' }}
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.request
+
+          url = 'https://api.github.com/repos/VirusTotal/vt-cli/releases/latest'
+          with urllib.request.urlopen(url) as response:
+              data = json.load(response)
+          tag = data.get('tag_name')
+          try:
+              asset_url = next(asset['browser_download_url'] for asset in data['assets'] if asset['name'] == 'Linux64.zip')
+          except StopIteration:
+              raise SystemExit('Linux64.zip asset not found in VirusTotal CLI release metadata')
+          if not tag:
+              raise SystemExit('Release tag missing from VirusTotal CLI metadata')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as fh:
+              fh.write(f'tag={tag}\n')
+              fh.write(f'url={asset_url}\n')
+          PY
+      - name: Cache VirusTotal CLI
+        if: ${{ env.VT_API_KEY != '' }}
+        id: cache-vt
+        uses: actions/cache@v4
+        with:
+          path: |
+            vt
+            ${{ env.VT_CLI_ARCHIVE }}
+          key: vt-${{ runner.os }}-${{ steps.vt_release.outputs.tag }}
+      - name: Download VirusTotal CLI
+        if: ${{ env.VT_API_KEY != '' && steps.cache-vt.outputs.cache-hit != 'true' }}
+        run: |
+          set -euo pipefail
+          curl -sSL "${{ steps.vt_release.outputs.url }}" -o "$VT_CLI_ARCHIVE"
+          unzip -q -o "$VT_CLI_ARCHIVE"
+      - name: Ensure VirusTotal CLI executable
+        if: ${{ env.VT_API_KEY != '' }}
+        run: |
+          if [ -f vt ]; then
+            chmod +x vt
+          fi
       - name: VirusTotal scan (optional)
         if: ${{ env.VT_API_KEY != '' }}
         env:
           VT_API_KEY: ${{ env.VT_API_KEY }}
         run: |
-          python -c "import json, urllib.request, pathlib; data=json.load(urllib.request.urlopen('https://api.github.com/repos/VirusTotal/vt-cli/releases/latest')); url=next(a['browser_download_url'] for a in data['assets'] if a['name']=='Linux64.zip'); pathlib.Path('vt-cli.zip').write_bytes(urllib.request.urlopen(url).read())"
-          unzip -q -o vt-cli.zip
-          chmod +x vt
           ./vt scan file dist/linux/PatchOpsIII --wait --apikey "$VT_API_KEY"
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4

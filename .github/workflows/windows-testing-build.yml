@@ -48,6 +48,7 @@ jobs:
       PYINSTALLER_ARCHIVE: pyinstaller-latest.zip
       PYINSTALLER_DIR: pyinstaller-develop
       WINDOWS_DIST_DIR: dist\windows
+      VT_CLI_ARCHIVE: vt-cli-latest.zip
       COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
       COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
       VT_API_KEY: ${{ secrets.VT_API_KEY }}
@@ -61,13 +62,30 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
           cache-dependency-path: Testing/requirements.txt
-      - name: Install base tooling
+      - name: Determine PyInstaller commit
+        id: pyinstaller_ref
+        shell: pwsh
         run: |
-          python -m pip install --upgrade pip setuptools wheel
+          $lines = git ls-remote https://github.com/pyinstaller/pyinstaller develop
+          if (-not $lines) {
+            throw 'Failed to resolve PyInstaller develop commit'
+          }
+          $commit = $lines[0].Split("`t")[0]
+          if (-not $commit) {
+            throw 'Commit hash not found for PyInstaller develop'
+          }
+          "commit=$commit" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+      - name: Cache PyInstaller source
+        id: cache-pyinstaller
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PYINSTALLER_DIR }}
+          key: pyinstaller-${{ runner.os }}-${{ steps.pyinstaller_ref.outputs.commit }}
       - name: Install project requirements
         run: |
           python -m pip install -r requirements.txt
       - name: Prepare PyInstaller source
+        if: ${{ steps.cache-pyinstaller.outputs.cache-hit != 'true' }}
         run: |
           if (Test-Path $env:PYINSTALLER_ARCHIVE) { Remove-Item $env:PYINSTALLER_ARCHIVE -Force }
           if (Test-Path $env:PYINSTALLER_DIR) { Remove-Item $env:PYINSTALLER_DIR -Recurse -Force }
@@ -79,6 +97,7 @@ jobs:
           python -m pip install .
           Pop-Location
       - name: Rebuild PyInstaller bootloader
+        if: ${{ steps.cache-pyinstaller.outputs.cache-hit != 'true' }}
         run: |
           Push-Location "$env:PYINSTALLER_DIR\bootloader"
           python waf distclean all --target-arch=64bit
@@ -127,17 +146,49 @@ jobs:
           "WINDOWS_VT_URL=$vtUrl" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "hash=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "vt_url=$vtUrl" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+      - name: Determine VirusTotal CLI release
+        id: vt_release
+        if: ${{ env.VT_API_KEY != '' }}
+        shell: pwsh
+        run: |
+          $release = Invoke-RestMethod -Uri https://api.github.com/repos/VirusTotal/vt-cli/releases/latest
+          $tag = $release.tag_name
+          if (-not $tag) {
+            throw 'Release tag missing from VirusTotal CLI metadata'
+          }
+          $asset = $release.assets | Where-Object { $_.name -eq 'Windows64.zip' } | Select-Object -First 1
+          if (-not $asset) {
+            throw 'Windows64.zip asset not found in VirusTotal CLI release metadata'
+          }
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "url=$($asset.browser_download_url)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+      - name: Cache VirusTotal CLI
+        if: ${{ env.VT_API_KEY != '' }}
+        id: cache-vt
+        uses: actions/cache@v4
+        with:
+          path: |
+            vt.exe
+            ${{ env.VT_CLI_ARCHIVE }}
+          key: vt-${{ runner.os }}-${{ steps.vt_release.outputs.tag }}
+      - name: Download VirusTotal CLI
+        if: ${{ env.VT_API_KEY != '' && steps.cache-vt.outputs.cache-hit != 'true' }}
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri '${{ steps.vt_release.outputs.url }}' -OutFile $env:VT_CLI_ARCHIVE
+          Expand-Archive -Path $env:VT_CLI_ARCHIVE -DestinationPath . -Force
+      - name: Ensure VirusTotal CLI executable
+        if: ${{ env.VT_API_KEY != '' }}
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'vt.exe')) {
+            throw 'VirusTotal CLI binary vt.exe not found'
+          }
       - name: VirusTotal scan (optional)
         if: ${{ env.VT_API_KEY != '' }}
         env:
           VT_API_KEY: ${{ env.VT_API_KEY }}
         run: |
-          $vtZip = 'vt-cli-latest.zip'
-          if (Test-Path $vtZip) { Remove-Item $vtZip -Force }
-          if (Test-Path 'vt.exe') { Remove-Item 'vt.exe' -Force }
-          $downloadUrl = (Invoke-RestMethod -Uri https://api.github.com/repos/VirusTotal/vt-cli/releases/latest).assets | Where-Object { $_.name -eq 'Windows64.zip' } | Select-Object -ExpandProperty browser_download_url
-          Invoke-WebRequest -Uri $downloadUrl -OutFile $vtZip
-          Expand-Archive -Path $vtZip -DestinationPath . -Force
           .\vt.exe scan file dist/windows/PatchOpsIII.exe --wait --apikey $env:VT_API_KEY
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
