@@ -13,6 +13,11 @@ The latest release of **PatchOpsIII** is here! Version **{{VERSION}}** brings ne
 
 ---
 
+## 🔄 **Changes:**
+{{CHANGES_LIST}}
+
+---
+
 ## 🛠 Fixes
 {{FIXES_LIST}}
 

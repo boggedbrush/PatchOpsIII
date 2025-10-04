@@ -23,6 +23,10 @@ on:
         description: Bug fixes (one per line)
         type: string
         default: ""
+      changes:
+        description: Other changes and improvements (one per line)
+        type: string
+        default: ""
       known_issues:
         description: Known issues (one per line)
         type: string
@@ -158,6 +162,7 @@ jobs:
           REPO: ${{ github.repository }}
           FEATURES: ${{ inputs.features }}
           FIXES: ${{ inputs.fixes }}
+          CHANGES: ${{ inputs.changes }}
           KNOWN_ISSUES: ${{ inputs.known_issues }}
           NEXT_STEPS: ${{ inputs.next_steps }}
         run: |
@@ -172,7 +177,7 @@ jobs:
               raise SystemExit(f"Template not found: {template_path}")
           text = template_path.read_text(encoding="utf-8")
           
-          def format_lines(value, default="- TBD"):
+          def format_lines(value, default="- None"):
               import re
               normalized = value.replace(' - **', '\n- **')
               normalized = re.sub(r' {2,}-', lambda m: '\n' + ' ' * (len(m.group(0)) - 1) + '-', normalized)
@@ -191,8 +196,8 @@ jobs:
           
           windows_vt = os.environ.get("WINDOWS_VT_URL", "").strip() or "https://www.virustotal.com/"
           linux_vt = os.environ.get("LINUX_VT_URL", "").strip() or "https://www.virustotal.com/"
-          windows_hash = os.environ.get("WINDOWS_HASH", "").strip() or "TBD"
-          linux_hash = os.environ.get("LINUX_HASH", "").strip() or "TBD"
+          windows_hash = os.environ.get("WINDOWS_HASH", "").strip() or "None"
+          linux_hash = os.environ.get("LINUX_HASH", "").strip() or "None"
           asset_windows = "PatchOpsIII.exe"
           asset_linux = "PatchOpsIII.AppImage"
           base_url = f"https://github.com/{repo}/releases/download/{version}"
@@ -204,6 +209,7 @@ jobs:
               "WINDOWS_VT_URL": windows_vt,
               "LINUX_VT_URL": linux_vt,
               "FEATURES_LIST": format_lines(os.environ.get("FEATURES", "")),
+              "CHANGES_LIST": format_lines(os.environ.get("CHANGES", "")),
               "FIXES_LIST": format_lines(os.environ.get("FIXES", "")),
               "KNOWN_ISSUES_LIST": format_lines(os.environ.get("KNOWN_ISSUES", "")),
               "NEXT_STEPS_LIST": format_lines(os.environ.get("NEXT_STEPS", "")),
