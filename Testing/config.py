@@ -5,9 +5,11 @@ import json
 import stat
 from PySide6.QtWidgets import (
     QMessageBox, QWidget, QGroupBox, QVBoxLayout, QHBoxLayout, QLabel,
-    QComboBox, QPushButton, QFormLayout, QCheckBox, QSpinBox, QLineEdit,
+    QComboBox, QPushButton, QFormLayout, QCheckBox, QSpinBox, QLineEdit, QSlider,
     QSizePolicy
 )
+from PySide6.QtGui import QIntValidator
+from PySide6.QtCore import Qt, QTimer
 from utils import write_log
 
 def set_config_value(game_dir, key, value, comment, log_widget):
@@ -202,6 +204,13 @@ class GraphicsSettingsWidget(QWidget):
         self.preset_dict = {}
         self.init_ui()
 
+        self._pending_fov_value = None
+        self._last_applied_fov = None
+        self._fov_update_timer = QTimer(self)
+        self._fov_update_timer.setSingleShot(True)
+        self._fov_update_timer.setInterval(250)
+        self._fov_update_timer.timeout.connect(self._commit_pending_fov_value)
+
     def init_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -253,11 +262,26 @@ class GraphicsSettingsWidget(QWidget):
         self.fps_limiter_spin.valueChanged.connect(self.fps_limiter_changed)
         settings_form.addRow("FPS Limiter (0=Unlimited):", self.fps_limiter_spin)
 
-        self.fov_spin = QSpinBox()
-        self.fov_spin.setRange(65, 120)
-        self.fov_spin.setValue(80)
-        self.fov_spin.valueChanged.connect(self.fov_changed)
-        settings_form.addRow("FOV:", self.fov_spin)
+        self.fov_slider = QSlider(Qt.Horizontal)
+        self.fov_slider.setRange(65, 120)
+        self.fov_slider.setTickInterval(5)
+        self.fov_slider.setSingleStep(1)
+        self.fov_slider.setValue(80)
+        self.fov_slider.valueChanged.connect(self.on_fov_slider_changed)
+
+        self.fov_input = QLineEdit("80")
+        self.fov_input.setValidator(QIntValidator(65, 120, self.fov_input))
+        self.fov_input.setFixedWidth(60)
+        self.fov_input.editingFinished.connect(self.on_fov_input_edited)
+
+        fov_container = QWidget()
+        fov_layout = QHBoxLayout(fov_container)
+        fov_layout.setContentsMargins(0, 0, 0, 0)
+        fov_layout.setSpacing(8)
+        fov_layout.addWidget(self.fov_slider)
+        fov_layout.addWidget(self.fov_input)
+
+        settings_form.addRow("FOV:", fov_container)
 
         self.display_mode_combo = QComboBox()
         self.display_mode_combo.addItems(["Windowed", "Fullscreen", "Fullscreen Windowed"])
@@ -313,7 +337,16 @@ class GraphicsSettingsWidget(QWidget):
         status = check_essential_status(self.game_dir)
 
         self.fps_limiter_spin.setValue(status.get("max_fps", 165))
-        self.fov_spin.setValue(status.get("fov", 80))
+        self._fov_update_timer.stop()
+        fov_value = status.get("fov", 80)
+        self.fov_slider.blockSignals(True)
+        self.fov_slider.setValue(fov_value)
+        self.fov_slider.blockSignals(False)
+        self.fov_input.blockSignals(True)
+        self.fov_input.setText(str(fov_value))
+        self.fov_input.blockSignals(False)
+        self._last_applied_fov = fov_value
+        self._pending_fov_value = None
         self.display_mode_combo.setCurrentIndex(status.get("display_mode", 1))
         self.resolution_edit.setText(status.get("resolution", "2560x1440"))
         self.refresh_rate_spin.setValue(status.get("refresh_rate", 165))
@@ -339,8 +372,46 @@ class GraphicsSettingsWidget(QWidget):
     def fps_limiter_changed(self):
         set_config_value(self.game_dir, "MaxFPS", str(self.fps_limiter_spin.value()), "0 to 1000", self.log_widget)
 
-    def fov_changed(self):
-        set_config_value(self.game_dir, "FOV", str(self.fov_spin.value()), "65 to 120", self.log_widget)
+    def on_fov_slider_changed(self, value):
+        self.fov_input.blockSignals(True)
+        self.fov_input.setText(str(value))
+        self.fov_input.blockSignals(False)
+        self._pending_fov_value = value
+        self._fov_update_timer.start()
+
+    def on_fov_input_edited(self):
+        text = self.fov_input.text().strip()
+        if not text:
+            self.fov_input.setText(str(self.fov_slider.value()))
+            return
+        try:
+            value = int(text)
+        except ValueError:
+            value = self.fov_slider.value()
+        value = max(65, min(120, value))
+        if str(value) != text:
+            self.fov_input.setText(str(value))
+        if self.fov_slider.value() != value:
+            self.fov_slider.blockSignals(True)
+            self.fov_slider.setValue(value)
+            self.fov_slider.blockSignals(False)
+        self._pending_fov_value = value
+        self._commit_pending_fov_value()
+
+    def _commit_pending_fov_value(self):
+        if self._pending_fov_value is None:
+            return
+        value = self._pending_fov_value
+        self._pending_fov_value = None
+        self._apply_fov_value(value)
+
+    def _apply_fov_value(self, value):
+        self._fov_update_timer.stop()
+        if self._last_applied_fov == value:
+            return
+        self._last_applied_fov = value
+        self._pending_fov_value = None
+        set_config_value(self.game_dir, "FOV", str(value), "65 to 120", self.log_widget)
 
     def display_mode_changed(self):
         mode_index = self.display_mode_combo.currentIndex()
