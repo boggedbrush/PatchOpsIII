@@ -23,7 +23,11 @@ def write_log(message, category="Info", log_widget=None, log_file="PatchOpsIII.l
         else:
             color = "blue"
         html_message = f'<span style="color:{color};">{full_message}</span>'
-        log_widget.append(html_message)
+        handler = getattr(log_widget, "handle_write_log", None)
+        if callable(handler):
+            handler(full_message=full_message, category=category, html_message=html_message, plain_message=message)
+        else:
+            log_widget.append(html_message)
     
     with open(log_file, "a") as f:
         f.write(full_message + "\n")

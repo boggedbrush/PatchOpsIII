@@ -288,10 +288,18 @@ def check_t7_patch_status(game_dir):
                     result["friends_only"] = line.strip().split("=", 1)[1] == "1"
     return result
 
+class _WorkerLogForwarder:
+    def __init__(self, signal):
+        self._signal = signal
+
+    def handle_write_log(self, *, full_message, category, html_message, plain_message):
+        self._signal.emit(plain_message, category, html_message)
+
+
 class InstallT7PatchWorker(QThread):
     finished = Signal()
     error = Signal(str)
-    log_message = Signal(str, str)  # Signal to send log messages to the GUI
+    log_message = Signal(str, str, str)  # Signal to send log messages to the GUI
     patch_installed = Signal()
 
     def __init__(self, game_dir, mod_files_dir):
@@ -300,35 +308,31 @@ class InstallT7PatchWorker(QThread):
         self.mod_files_dir = mod_files_dir
 
     def run(self):
+        log_forwarder = _WorkerLogForwarder(self.log_message)
         try:
-            # Pass None to log_widget in helper functions, as logging to GUI is done via signal
-            log_widget_for_file = None 
-
             if sys.platform.startswith("win"):
-                add_defender_exclusion(self.mod_files_dir, log_widget_for_file)
-                add_defender_exclusion(self.game_dir, log_widget_for_file)
+                add_defender_exclusion(self.mod_files_dir, log_forwarder)
+                add_defender_exclusion(self.game_dir, log_forwarder)
             else:
-                write_log("Linux detected. Skipping antivirus exclusion. Please add an exclusion in your antivirus settings if needed.", "Warning", log_widget_for_file)
-                self.log_message.emit("Linux detected. Skipping antivirus exclusion. Please add an exclusion in your antivirus settings if needed.", "Warning")
-            
-            write_log("Downloading T7 Patch...", "Info", log_widget_for_file)
-            self.log_message.emit("Downloading T7 Patch...", "Info")
+                write_log("Linux detected. Skipping antivirus exclusion. Please add an exclusion in your antivirus settings if needed.", "Warning", log_forwarder)
+
+            write_log("Downloading T7 Patch...", "Info", log_forwarder)
             zip_url = "https://github.com/shiversoftdev/t7patch/releases/download/Current/Linux.Steamdeck.and.Manual.Windows.Install.zip"
             zip_dest = os.path.join(self.mod_files_dir, "T7Patch.zip")
             source_dir = os.path.join(self.mod_files_dir, "linux")
-            
+
             if os.path.exists(zip_dest):
                 os.remove(zip_dest)
             if os.path.exists(source_dir):
                 shutil.rmtree(source_dir)
-            
-            download_file(zip_url, zip_dest, log_widget_for_file)
-            self.log_message.emit("Downloaded T7 Patch successfully.", "Success")
-            
+
+            download_file(zip_url, zip_dest, log_forwarder)
+            write_log("Downloaded T7 Patch successfully.", "Success", log_forwarder)
+
             with zipfile.ZipFile(zip_dest, "r") as zf:
                 zf.extractall(self.mod_files_dir)
-            self.log_message.emit("Extracted T7 Patch successfully.", "Success")
-            
+            write_log("Extracted T7 Patch successfully.", "Success", log_forwarder)
+
             if os.path.exists(source_dir):
                 for root, dirs, files in os.walk(source_dir):
                     rel_path = os.path.relpath(root, source_dir)
@@ -338,35 +342,33 @@ class InstallT7PatchWorker(QThread):
                         if file.lower() == "t7patch.conf" and os.path.exists(os.path.join(dest, file)):
                             continue
                         shutil.copy2(os.path.join(root, file), dest)
-                
+
                 try:
                     os.remove(zip_dest)
                     shutil.rmtree(source_dir)
                 except Exception:
                     pass
-                
-                write_log("Installing LPC files...", "Info", log_widget_for_file)
-                self.log_message.emit("Installing LPC files...", "Info")
-                if not install_lpc_files(self.game_dir, self.mod_files_dir, log_widget_for_file):
+
+                write_log("Installing LPC files...", "Info", log_forwarder)
+                if not install_lpc_files(self.game_dir, self.mod_files_dir, log_forwarder):
                     raise Exception("Failed to install LPC files.")
-                self.log_message.emit("Installed LPC files successfully.", "Success")
-                
+                write_log("Installed LPC files successfully.", "Success", log_forwarder)
+
                 self.patch_installed.emit()
 
                 if sys.platform == "linux":
-                    write_log("Applying Linux launch options...", "Info", log_widget_for_file)
-                    self.log_message.emit("Applying Linux launch options...", "Info")
-                    apply_launch_options('WINEDLLOVERRIDES="dsound=n,b" %command%', log_widget_for_file)
-                    self.log_message.emit("Linux launch options applied.", "Success")
+                    write_log("Applying Linux launch options...", "Info", log_forwarder)
+                    apply_launch_options('WINEDLLOVERRIDES="dsound=n,b" %command%', log_forwarder)
+                    write_log("Linux launch options applied.", "Success", log_forwarder)
             else:
                 raise Exception("Could not find extracted files.")
 
-            self.log_message.emit("T7 Patch installation complete.", "Success")
+            write_log("T7 Patch installation complete.", "Success", log_forwarder)
             self.finished.emit()
         except Exception as e:
-            write_log(f"Error during T7 Patch installation: {e}", "Error", log_widget_for_file)
-            self.log_message.emit(f"Error during T7 Patch installation: {e}", "Error")
+            write_log(f"Error during T7 Patch installation: {e}", "Error", log_forwarder)
             self.error.emit(str(e))
+
 
 def uninstall_t7_patch(game_dir, mod_files_dir, log_widget):
     warning = ("WARNING: It is HIGHLY recommended to keep the T7 Patch installed.\n\n"
@@ -377,9 +379,8 @@ def uninstall_t7_patch(game_dir, mod_files_dir, log_widget):
     if reply == QMessageBox.Yes:
         try:
             # Files to remove from game directory
-            game_files = ['t7patch.dll', 't7patch.conf', 'discord_game_sdk.dll', 
-                         'dsound.dll', 't7patchloader.dll', 'zbr2.dll']
-            
+            game_files = ['t7patch.dll', 't7patch.conf', 'discord_game_sdk.dll', 'dsound.dll', 't7patchloader.dll', 'zbr2.dll']
+
             # Remove files from game directory
             removed_game = False
             for file in game_files:
@@ -399,7 +400,7 @@ def uninstall_t7_patch(game_dir, mod_files_dir, log_widget):
                     if os.path.exists(file_path):
                         os.remove(file_path)
                         removed_mod = True
-                
+
                 # Remove linux directory if empty
                 if not os.listdir(linux_dir):
                     os.rmdir(linux_dir)
@@ -414,17 +415,16 @@ def uninstall_t7_patch(game_dir, mod_files_dir, log_widget):
                 write_log("Removed t7patch files from BO3 Mod files directory", "Success", log_widget)
 
             write_log("T7 Patch has been completely uninstalled.", "Success", log_widget)
-            
+
             restore_lpc_backups(game_dir, log_widget)
-            
+
         except Exception as e:
             write_log(f"Error uninstalling T7 Patch: {e}", "Error", log_widget)
 
-# === GUI Class for T7 Patch Management ===
 
 class T7PatchWidget(QWidget):
     patch_uninstalled = Signal()  # Add signal for uninstall notification
-    
+
     def __init__(self, mod_files_dir, parent=None):
         super().__init__(parent)
         self.mod_files_dir = mod_files_dir
@@ -676,8 +676,13 @@ class T7PatchWidget(QWidget):
         self.worker.patch_installed.connect(self.on_patch_installed)
         self.worker.start()
 
-    def log_message_received(self, message, category):
-        write_log(message, category, self.log_widget)
+    def log_message_received(self, message, category, html_message=None):
+        if not self.log_widget:
+            return
+        if html_message:
+            self.log_widget.append(html_message)
+        else:
+            self.log_widget.append(message)
 
     def on_install_finished(self):
         self.patch_btn.setEnabled(True)
