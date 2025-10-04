@@ -6,15 +6,16 @@ import shutil
 import time
 import vdf
 import platform
+import argparse
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
     QPushButton, QLabel, QFileDialog, QTextEdit, QTabWidget, QSizePolicy,
     QGroupBox, QRadioButton, QButtonGroup, QCheckBox, QGridLayout
 )
 from PySide6.QtGui import QIcon, QDesktopServices
-from PySide6.QtCore import Qt, QUrl, QThread, Signal
+from PySide6.QtCore import Qt, QUrl, QThread, Signal, QTimer
 
-from t7_patch import T7PatchWidget
+from t7_patch import T7PatchWidget, is_admin
 from dxvk_manager import DXVKWidget
 from config import GraphicsSettingsWidget, AdvancedSettingsWidget
 from utils import write_log, apply_launch_options, find_steam_user_id, steam_userdata_path, app_id, launch_game_via_steam
@@ -66,6 +67,13 @@ def get_game_directory():
     if platform.system() == "Linux":
         return os.path.expanduser("~/.local/share/Steam/steamapps/common/Call of Duty Black Ops III")
     return r"C:\Program Files (x86)\Steam\steamapps\common\Call of Duty Black Ops III"
+
+def parse_cli_arguments():
+    parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    parser.add_argument("--install-t7", action="store_true")
+    parser.add_argument("--game-dir", type=str)
+    args, _ = parser.parse_known_args(sys.argv[1:])
+    return args
 
 DEFAULT_GAME_DIR = get_game_directory()
 
@@ -553,6 +561,8 @@ class MainWindow(QMainWindow):
         launch_game_via_steam(app_id, self.log_text)
 
 if __name__ == "__main__":
+    cli_args = parse_cli_arguments()
+    write_log(f"Process PID {os.getpid()} elevated={is_admin()}", "Info")
     app = QApplication(sys.argv)
     global_icon_path = resource_path("PatchOpsIII.ico")
     global_icon = QIcon(global_icon_path)
@@ -560,5 +570,22 @@ if __name__ == "__main__":
         write_log(f"Global icon not found or invalid: {global_icon_path}", "Warning")
     app.setWindowIcon(global_icon)
     window = MainWindow()
+
+    if getattr(cli_args, 'game_dir', None):
+        directory = cli_args.game_dir
+        window.game_dir_edit.setText(directory)
+        window.t7_patch_widget.set_game_directory(directory)
+        window.dxvk_widget.set_game_directory(directory)
+        window.graphics_widget.set_game_directory(directory)
+        window.advanced_widget.set_game_directory(directory)
+        window.qol_widget.set_game_directory(directory)
+
     window.show()
+
+    if getattr(cli_args, 'install_t7', False):
+        if is_admin():
+            QTimer.singleShot(0, window.t7_patch_widget.install_t7_patch)
+        else:
+            write_log("Elevation flag detected but process is not running with administrator rights. Skipping automatic T7 Patch install.", "Warning", window.log_text)
+
     sys.exit(app.exec())

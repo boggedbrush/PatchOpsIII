@@ -14,19 +14,46 @@ defender_warning_logged = False
 
 def is_admin():
     try:
-        return ctypes.windll.shell32.isUserAnAdmin()
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
     except Exception:
         return False
 
-def run_as_admin(extra_args=""):
-    script = sys.argv[0]
-    params = f'"{script}" {extra_args}'
+def run_as_admin(extra_args=None):
+    if not sys.platform.startswith("win"):
+        return False
+
+    if extra_args is None:
+        extra_args = []
+    elif isinstance(extra_args, str):
+        extra_args = [extra_args]
+    else:
+        extra_args = list(extra_args)
+
+    script = os.path.abspath(sys.argv[0])
+    if getattr(sys, "frozen", False):
+        executable = script
+        params_list = extra_args
+        working_dir = os.path.dirname(executable)
+    else:
+        executable = sys.executable
+        params_list = [script] + extra_args
+        working_dir = os.path.dirname(script)
+
+    params = subprocess.list2cmdline(params_list)
+
     try:
-        if sys.platform.startswith("win"):
-            ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1)
+        write_log(f"Attempting elevation via UAC: exe='{executable}' params='{params}'", "Info", None)
+        result = ctypes.windll.shell32.ShellExecuteW(None, "runas", executable, params, working_dir or None, 1)
+        if result <= 32:
+            raise PermissionError(f"ShellExecuteW failed with code {result}")
+        write_log(f"UAC elevation request dispatched successfully (code {result}).", "Info", None)
     except Exception as e:
         write_log(f"Failed to elevate privileges: {e}", "Error", None)
-    sys.exit(0)  # Exit immediately after requesting elevation
+        QMessageBox.critical(None, "Elevation Failed",
+                             "Unable to acquire administrator rights via UAC. Please run PatchOpsIII as administrator and try again.")
+        return False
+
+    sys.exit(0)
 
 def update_t7patch_conf(game_dir, new_name=None, new_password=None, friends_only=None, log_widget=None):
     conf_path = os.path.join(game_dir, "t7patch.conf")
@@ -636,9 +663,9 @@ class T7PatchWidget(QWidget):
             return
         
         if sys.platform.startswith("win") and not is_admin():
-            QMessageBox.information(None, "Elevation Required",
-                                    "This action requires administrator rights. The application will now restart with elevated privileges.")
-            run_as_admin("--install-t7")
+            write_log("Requesting elevation via UAC for T7 Patch installation...", "Info", self.log_widget)
+            if run_as_admin(["--install-t7", "--game-dir", self.game_dir]) is False:
+                write_log("Elevation request was cancelled or failed.", "Warning", self.log_widget)
             return
 
         self.patch_btn.setEnabled(False)
