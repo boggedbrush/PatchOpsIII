@@ -273,15 +273,14 @@ def set_launch_options(user_id, app_id, launch_options, log_widget):
         with open(config_path, "r", encoding="utf-8") as file:
             data = vdf.load(file)
         # Navigate to the apps section
-        steam_config = data.get("UserLocalConfigStore", {})
-        software = steam_config.get("Software", {})
-        valve = software.get("Valve", {})
-        steam = valve.get("Steam", {})
-        apps = steam.get("apps", {})
+        steam_config = data.setdefault("UserLocalConfigStore", {})
+        software = steam_config.setdefault("Software", {})
+        valve = software.setdefault("Valve", {})
+        steam = valve.setdefault("Steam", {})
+        apps = steam.setdefault("apps", {})
 
-        if app_id not in apps:
-            apps[app_id] = {}
-        current_options = apps[app_id].get("LaunchOptions", "")
+        app_entry = apps.setdefault(app_id, {})
+        current_options = app_entry.get("LaunchOptions", "")
         
         # Parse existing options
         wine_override = 'WINEDLLOVERRIDES="dsound=n,b"'
@@ -316,7 +315,7 @@ def set_launch_options(user_id, app_id, launch_options, log_widget):
         else:
             final_options = launch_options
 
-        apps[app_id]["LaunchOptions"] = final_options
+        app_entry["LaunchOptions"] = final_options
         
         write_log(f"Setting launch options to: {final_options}", "Info", log_widget)
 

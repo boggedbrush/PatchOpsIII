@@ -396,7 +396,7 @@ def uninstall_t7_patch(game_dir, mod_files_dir, log_widget):
             if os.path.exists(linux_dir):
                 for file in game_files:
                     file_path = os.path.join(linux_dir, file)
-                    if os.path.exists(file):
+                    if os.path.exists(file_path):
                         os.remove(file_path)
                         removed_mod = True
                 

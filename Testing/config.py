@@ -370,12 +370,17 @@ class GraphicsSettingsWidget(QWidget):
         self.initialize_status()
 
     def fps_limiter_changed(self):
+        if not self.game_dir:
+            return
         set_config_value(self.game_dir, "MaxFPS", str(self.fps_limiter_spin.value()), "0 to 1000", self.log_widget)
 
     def on_fov_slider_changed(self, value):
         self.fov_input.blockSignals(True)
         self.fov_input.setText(str(value))
         self.fov_input.blockSignals(False)
+        if not self.game_dir:
+            self._pending_fov_value = None
+            return
         self._pending_fov_value = value
         self._fov_update_timer.start()
 
@@ -396,10 +401,15 @@ class GraphicsSettingsWidget(QWidget):
             self.fov_slider.setValue(value)
             self.fov_slider.blockSignals(False)
         self._pending_fov_value = value
+        if not self.game_dir:
+            return
         self._commit_pending_fov_value()
 
     def _commit_pending_fov_value(self):
         if self._pending_fov_value is None:
+            return
+        if not self.game_dir:
+            self._pending_fov_value = None
             return
         value = self._pending_fov_value
         self._pending_fov_value = None
@@ -407,6 +417,10 @@ class GraphicsSettingsWidget(QWidget):
 
     def _apply_fov_value(self, value):
         self._fov_update_timer.stop()
+        if not self.game_dir:
+            self._last_applied_fov = value
+            self._pending_fov_value = None
+            return
         if self._last_applied_fov == value:
             return
         self._last_applied_fov = value
@@ -414,6 +428,8 @@ class GraphicsSettingsWidget(QWidget):
         set_config_value(self.game_dir, "FOV", str(value), "65 to 120", self.log_widget)
 
     def display_mode_changed(self):
+        if not self.game_dir:
+            return
         mode_index = self.display_mode_combo.currentIndex()
         set_config_value(
             self.game_dir,
@@ -424,10 +440,14 @@ class GraphicsSettingsWidget(QWidget):
         )
 
     def resolution_changed(self):
+        if not self.game_dir:
+            return
         res = self.resolution_edit.text().strip()
         set_config_value(self.game_dir, "WindowSize", res, "any text", self.log_widget)
 
     def refresh_rate_changed(self):
+        if not self.game_dir:
+            return
         set_config_value(
             self.game_dir,
             "RefreshRate",
@@ -437,6 +457,8 @@ class GraphicsSettingsWidget(QWidget):
         )
 
     def render_res_percent_changed(self):
+        if not self.game_dir:
+            return
         set_config_value(
             self.game_dir,
             "ResolutionPercent",
@@ -446,10 +468,14 @@ class GraphicsSettingsWidget(QWidget):
         )
 
     def vsync_changed(self):
+        if not self.game_dir:
+            return
         val = "1" if self.vsync_cb.isChecked() else "0"
         set_config_value(self.game_dir, "Vsync", val, "0 or 1", self.log_widget)
 
     def draw_fps_changed(self):
+        if not self.game_dir:
+            return
         val = "1" if self.draw_fps_cb.isChecked() else "0"
         set_config_value(self.game_dir, "DrawFPS", val, "0 or 1", self.log_widget)
 
