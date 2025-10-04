@@ -1,4 +1,4 @@
-name: Windows Testing Build
+name: Windows Build
 
 on:
   push:
@@ -43,7 +43,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-        working-directory: Testing
+        working-directory: .
     env:
       WINDOWS_DIST_DIR: dist\windows
       WINDOWS_BINARY: PatchOpsIII.exe
@@ -60,7 +60,7 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: Testing/requirements.txt
+          cache-dependency-path: requirements.txt
       - name: Determine version metadata
         id: version
         run: |
@@ -218,7 +218,7 @@ jobs:
         with:
           name: PatchOpsIII-windows
           path: |
-            Testing/${{ env.WINDOWS_DIST_DIR }}/${{ env.WINDOWS_BINARY }}
-            Testing/${{ env.WINDOWS_DIST_DIR }}/hash.log
-            Testing/${{ env.WINDOWS_DIST_DIR }}/PatchOpsIII.sig
+            ${{ env.WINDOWS_DIST_DIR }}/${{ env.WINDOWS_BINARY }}
+            ${{ env.WINDOWS_DIST_DIR }}/hash.log
+            ${{ env.WINDOWS_DIST_DIR }}/PatchOpsIII.sig
           if-no-files-found: ignore

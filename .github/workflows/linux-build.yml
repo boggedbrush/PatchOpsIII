@@ -1,4 +1,4 @@
-name: Linux Testing Build
+name: Linux Build
 
 on:
   push:
@@ -43,7 +43,7 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: Testing
+        working-directory: .
     env:
       LINUX_DIST_DIR: dist/linux
       LINUX_APPIMAGE: PatchOpsIII.AppImage
@@ -64,7 +64,7 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: Testing/requirements.txt
+          cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: |
           python -m pip install -r requirements.txt
@@ -230,8 +230,8 @@ jobs:
         with:
           name: PatchOpsIII-linux
           path: |
-            Testing/${{ env.LINUX_DIST_DIR }}/${{ env.LINUX_APPIMAGE }}
-            Testing/${{ env.LINUX_DIST_DIR }}/hash.log
-            Testing/${{ env.LINUX_DIST_DIR }}/${{ env.LINUX_APPIMAGE }}.sig
-            Testing/${{ env.LINUX_DIST_DIR }}/${{ env.LINUX_APPIMAGE }}.pem
+            ${{ env.LINUX_DIST_DIR }}/${{ env.LINUX_APPIMAGE }}
+            ${{ env.LINUX_DIST_DIR }}/hash.log
+            ${{ env.LINUX_DIST_DIR }}/${{ env.LINUX_APPIMAGE }}.sig
+            ${{ env.LINUX_DIST_DIR }}/${{ env.LINUX_APPIMAGE }}.pem
           if-no-files-found: ignore

@@ -1,36 +1,11 @@
 # Python bytecode caches
-Stable/__pycache__/
-Testing/__pycache__/
+__pycache__/
 
 # Mod Files:
-Stable/BO3 Mod Files/
-Testing/BO3 Mod Files/
-
-# Build folder:
-Stable/build/
-Testing/build/
-
-# Dist folder:
-Stable/dist/
-Testing/dist/
+BO3 Mod Files/
 
 # Virtual environment:
-Stable/.venv/
-Testing/.venv/
-Stable/.venv-linux/
-Testing/.venv-linux/
-
-# pyinstaller:
-Stable/pyinstaller-develop/
-Testing/pyinstaller-develop/
-Stable/pyinstaller-latest/
-Testing/pyinstaller-latest/
-
-# PyInstaller build zips
-Stable/pyinstaller-latest.zip
-Testing/pyinstaller-latest.zip
-Stable/pyinstaller-develop.zip
-Testing/pyinstaller-develop.zip
+.venv/
 
 # Build files:
 *.bat
@@ -45,9 +20,6 @@ Testing/pyinstaller-develop.zip
 # text files:
 *.txt
 !requirements.txt
-
-# PyInstaller spec files:
-*.spec
 
 # vdf files:
 *.vdf
