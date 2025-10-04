@@ -187,7 +187,7 @@ def open_steam(log_widget):
 
             write_log("Setting launch options...", "Info", log_widget)
             # (Place here any code that sets your launch options.)
-            
+
             write_log("Opening Steam...", "Info", log_widget)
             subprocess.Popen(["xdg-open", "steam://"],
                              stdout=subprocess.DEVNULL,
@@ -198,8 +198,21 @@ def open_steam(log_widget):
                 subprocess.Popen(["steam", "-silent"],
                                  stdout=subprocess.DEVNULL,
                                  stderr=subprocess.DEVNULL)
-        
-        # Poll for a stable Steam process
+
+        def steam_running():
+            if system == "Windows":
+                try:
+                    result = subprocess.run(["tasklist", "/FI", "IMAGENAME eq steam.exe"],
+                                            capture_output=True,
+                                            text=True,
+                                            timeout=5)
+                except (subprocess.SubprocessError, OSError):
+                    return False
+                output = (result.stdout or "").lower()
+                return "steam.exe" in output
+            return subprocess.call(["pgrep", "-x", "steam"],
+                                   stdout=subprocess.DEVNULL, timeout=5) == 0
+
         max_wait = 15      # maximum total wait time (seconds)
         poll_interval = 0.5  # poll every 0.5 seconds
         stable_duration = 2  # require Steam to be present for 2 consecutive seconds
@@ -207,13 +220,12 @@ def open_steam(log_widget):
         stable_time = 0
 
         while elapsed < max_wait:
-            if subprocess.call(["pgrep", "-x", "steam"],
-                               stdout=subprocess.DEVNULL, timeout=5) == 0:
+            if steam_running():
                 stable_time += poll_interval
                 if stable_time >= stable_duration:
                     break
             else:
-                if stable_time > 0:
+                if system != "Windows" and stable_time > 0:
                     # Try launching again if it vanished after being detected.
                     subprocess.Popen(["xdg-open", "steam://"],
                                      stdout=subprocess.DEVNULL,
@@ -222,16 +234,16 @@ def open_steam(log_widget):
             time.sleep(poll_interval)
             elapsed += poll_interval
 
-        # Final check: ensure Steam is running stably.
-        if stable_time >= stable_duration and subprocess.call(["pgrep", "-x", "steam"],
-                                                            stdout=subprocess.DEVNULL, timeout=5) == 0:
+        if stable_time >= stable_duration and steam_running():
             write_log("Steam launched successfully", "Success", log_widget)
         else:
-            write_log("Steam did not launch successfully", "Error", log_widget)
+            level = "Warning" if system == "Windows" else "Error"
+            write_log("Steam did not launch successfully", level, log_widget)
     except Exception as e:
         write_log(f"Failed to open Steam: {e}", "Error", log_widget)
         write_log("Please start Steam manually", "Info", log_widget)
-        
+
+
 def launch_game_via_steam(app_id, log_widget=None):
     uri = f"steam://rungameid/{app_id}"
     system = platform.system()
@@ -281,42 +293,51 @@ def set_launch_options(user_id, app_id, launch_options, log_widget):
 
         app_entry = apps.setdefault(app_id, {})
         current_options = app_entry.get("LaunchOptions", "")
-        
+
         # Parse existing options
         wine_override = 'WINEDLLOVERRIDES="dsound=n,b"'
         command_marker = "%command%"
-        fs_game_pattern = r'\+set fs_game \S+'
-        
-        # Keep WINE override if it exists and we're not explicitly setting it
-        if wine_override in current_options and wine_override not in launch_options:
-            launch_options = f"{wine_override} {command_marker} {launch_options}"
-        
-        # If we're adding WINE override, remove any existing one
-        elif wine_override in launch_options and wine_override in current_options:
-            current_options = current_options.replace(wine_override, "").strip()
-        
-        # If the new options contain fs_game, remove any existing fs_game parameters
-        if '+set fs_game' in launch_options:
-            current_options = re.sub(fs_game_pattern, '', current_options).strip()
-        
-        # Keep existing options that aren't fs_game or WINE related
-        current_parts = [opt for opt in current_options.split() 
-                        if opt != wine_override 
-                        and opt != command_marker]
-        
-        # Combine options, ensuring no duplicates
-        if current_parts:
-            final_options = " ".join(filter(None, [
-                wine_override if wine_override in launch_options else "",
-                command_marker if command_marker in launch_options else "",
-                " ".join(current_parts),
-                launch_options.replace(wine_override, "").replace(command_marker, "").strip()
-            ])).strip()
-        else:
-            final_options = launch_options
+        fs_game_pattern = r'\+set\s+fs_game\s+\S+'
 
+        def strip_token(option_str, token):
+            if not option_str or not token:
+                return option_str
+            return re.sub(rf'(?<!\S){re.escape(token)}(?!\S)', '', option_str)
+
+        def normalize(option_str):
+            if not option_str:
+                return ''
+            return re.sub(r'\s+', ' ', option_str).strip()
+
+        # Always remove existing fs_game entries from the stored options
+        cleaned_current = re.sub(fs_game_pattern, '', current_options).strip()
+
+        has_current_wine = wine_override in cleaned_current
+        has_current_command = command_marker in cleaned_current
+        has_new_wine = wine_override in launch_options
+        has_new_command = command_marker in launch_options
+
+        cleaned_current = strip_token(strip_token(cleaned_current, wine_override), command_marker)
+        cleaned_launch = strip_token(strip_token(launch_options, wine_override), command_marker)
+
+        include_wine = has_new_wine or has_current_wine
+        include_command = has_new_command or has_current_command
+        if include_wine and not include_command:
+            include_command = True
+
+        segments = []
+        if include_wine:
+            segments.append(wine_override)
+        if include_command:
+            segments.append(command_marker)
+        if cleaned_current:
+            segments.append(normalize(cleaned_current))
+        if cleaned_launch:
+            segments.append(normalize(cleaned_launch))
+
+        final_options = normalize(' '.join(segments))
         app_entry["LaunchOptions"] = final_options
-        
+
         write_log(f"Setting launch options to: {final_options}", "Info", log_widget)
 
         with open(config_path, "w", encoding="utf-8") as file:
@@ -326,6 +347,7 @@ def set_launch_options(user_id, app_id, launch_options, log_widget):
         write_log(f"Error updating launch options: {e}", "Error", log_widget)
         restore_config_file(config_path, log_widget)
         return False
+
 
 def apply_launch_options(launch_option, log_widget):
     user_id = find_steam_user_id()
