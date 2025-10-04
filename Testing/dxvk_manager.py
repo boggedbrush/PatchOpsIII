@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import os, shutil, tarfile, requests, sys, zipfile
+import os, shutil, tarfile, requests, zipfile
 from urllib.parse import urlsplit
 from PySide6.QtWidgets import QMessageBox, QWidget, QGroupBox, QHBoxLayout, QPushButton, QLabel, QVBoxLayout, QSizePolicy
 from PySide6.QtCore import QEvent
@@ -15,7 +15,7 @@ def get_latest_release():
     r.raise_for_status()
     releases = r.json()
     if not releases:
-        sys.exit("No releases found!")
+        raise RuntimeError("No releases returned from DXVK-GPLAsync API")
     return releases[0]  # Assumes releases are sorted latest first
 
 def get_download_url(release):
@@ -29,7 +29,7 @@ def get_download_url(release):
             if source.get("format") == "zip":
                 return source.get("url")
         return sources[0].get("url")
-    sys.exit("No downloadable asset found!")
+    raise RuntimeError("No downloadable asset found in DXVK-GPLAsync release metadata")
 
 def download_file(url, filename):
     print(f"Downloading from {url}")

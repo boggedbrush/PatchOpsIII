@@ -2,6 +2,7 @@
 import sys
 import os
 import re
+import errno
 import shutil
 import time
 import vdf
@@ -75,11 +76,57 @@ def parse_cli_arguments():
     args, _ = parser.parse_known_args(sys.argv[1:])
     return args
 
+def _show_install_location_error(message):
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(None, message, "PatchOpsIII", 0x10 | 0x1000)
+        except Exception:
+            pass
+    else:
+        print(message, file=sys.stderr)
+    raise SystemExit(message)
+
+
+def _assert_directory_is_writable(path, error_message):
+    test_file = os.path.join(path, ".patchops_write_test")
+    try:
+        with open(test_file, "w", encoding="utf-8") as handle:
+            handle.write("patchops-permission-check")
+    except OSError as exc:
+        if exc.errno in (errno.EACCES, errno.EPERM, errno.EROFS):
+            _show_install_location_error(error_message)
+        else:
+            raise
+    finally:
+        try:
+            if os.path.exists(test_file):
+                os.remove(test_file)
+        except OSError:
+            pass
+
+
+def _ensure_install_location_writable(app_dir, mod_files_dir):
+    error_message = (
+        "Error: It seems this directory is not owned by the current user. "
+        "Please put the program in a user directory or in the same directory as BlackOps3.exe"
+    )
+    try:
+        os.makedirs(mod_files_dir, exist_ok=True)
+    except OSError as exc:
+        if exc.errno in (errno.EACCES, errno.EPERM, errno.EROFS):
+            _show_install_location_error(error_message)
+        else:
+            raise
+    _assert_directory_is_writable(app_dir, error_message)
+    _assert_directory_is_writable(mod_files_dir, error_message)
+
+
+APPLICATION_PATH = get_application_path()
 DEFAULT_GAME_DIR = get_game_directory()
 
-MOD_FILES_DIR = os.path.join(get_application_path(), "BO3 Mod Files")
-if not os.path.exists(MOD_FILES_DIR):
-    os.makedirs(MOD_FILES_DIR)
+MOD_FILES_DIR = os.path.join(APPLICATION_PATH, "BO3 Mod Files")
+_ensure_install_location_writable(APPLICATION_PATH, MOD_FILES_DIR)
 
 class ApplyLaunchOptionsWorker(QThread):
     finished = Signal()
