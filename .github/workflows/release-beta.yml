@@ -177,7 +177,7 @@ jobs:
               raise SystemExit(f"Template not found: {template_path}")
           text = template_path.read_text(encoding="utf-8")
           
-          def format_lines(value, default="- None"):
+          def format_lines(value, default=""):
               import re
               normalized = value.replace(' - **', '\n- **')
               normalized = re.sub(r' {2,}-', lambda m: '\n' + ' ' * (len(m.group(0)) - 1) + '-', normalized)
