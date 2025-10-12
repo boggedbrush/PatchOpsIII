@@ -23,6 +23,28 @@ from dxvk_manager import DXVKWidget
 from config import GraphicsSettingsWidget, AdvancedSettingsWidget
 from utils import write_log, apply_launch_options, find_steam_user_id, steam_userdata_path, app_id, launch_game_via_steam
 
+
+def _nuitka_parent_directory():
+    """Resolve the original folder of a Nuitka onefile executable."""
+    parent = os.environ.get("NUITKA_ONEFILE_PARENT")
+    if not parent:
+        return None
+
+    parent = os.path.abspath(parent)
+
+    if os.path.isdir(parent):
+        return parent
+
+    if os.path.isfile(parent):
+        return os.path.dirname(parent)
+
+    fallback = os.path.dirname(parent)
+    if fallback and os.path.isdir(fallback):
+        return fallback
+
+    return None
+
+
 def resource_path(relative_path):
     """Resolve bundled assets while supporting PyInstaller and Nuitka."""
     candidates = []
@@ -36,9 +58,9 @@ def resource_path(relative_path):
         nuitka_temp = os.environ.get("NUITKA_ONEFILE_TEMP")
         if nuitka_temp:
             candidates.append(os.path.join(nuitka_temp, relative_path))
-        nuitka_parent = os.environ.get("NUITKA_ONEFILE_PARENT")
-        if nuitka_parent:
-            candidates.append(os.path.join(nuitka_parent, relative_path))
+        nuitka_parent_dir = _nuitka_parent_directory()
+        if nuitka_parent_dir:
+            candidates.append(os.path.join(nuitka_parent_dir, relative_path))
 
     candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path))
     candidates.append(os.path.join(os.path.abspath("."), relative_path))
@@ -56,11 +78,9 @@ def resource_path(relative_path):
 def get_application_path():
     """Get the real application path for both script and frozen executables."""
     if getattr(sys, "frozen", False):
-        parent_dir = os.environ.get("NUITKA_ONEFILE_PARENT")
+        parent_dir = _nuitka_parent_directory()
         if parent_dir:
-            parent_dir = os.path.abspath(parent_dir)
-            if os.path.isdir(parent_dir):
-                return parent_dir
+            return parent_dir
         return os.path.dirname(os.path.abspath(sys.executable))
     return os.path.dirname(os.path.abspath(__file__))
 
