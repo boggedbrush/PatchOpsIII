@@ -63,7 +63,7 @@ GAME_EXECUTABLE_NAMES = ("BlackOpsIII.exe", "BlackOps3.exe")
 
 
 def _settings_file_path():
-    return os.path.join(get_application_path(), "patchops_settings.json")
+    return os.path.join(get_application_path(), "PatchOpsIII_settings.json")
 
 
 def _has_game_executable(directory):
