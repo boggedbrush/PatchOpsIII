@@ -54,9 +54,14 @@ def resource_path(relative_path):
     return os.path.join(os.path.abspath("."), relative_path)
 
 def get_application_path():
-    """Get the actual application path whether running as script or frozen exe"""
-    if getattr(sys, 'frozen', False):
-        return os.path.dirname(sys.executable)
+    """Get the real application path for both script and frozen executables."""
+    if getattr(sys, "frozen", False):
+        parent_dir = os.environ.get("NUITKA_ONEFILE_PARENT")
+        if parent_dir:
+            parent_dir = os.path.abspath(parent_dir)
+            if os.path.isdir(parent_dir):
+                return parent_dir
+        return os.path.dirname(os.path.abspath(sys.executable))
     return os.path.dirname(os.path.abspath(__file__))
 
 GAME_EXECUTABLE_NAMES = ("BlackOpsIII.exe", "BlackOps3.exe")
