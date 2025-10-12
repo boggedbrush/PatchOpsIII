@@ -24,25 +24,48 @@ from config import GraphicsSettingsWidget, AdvancedSettingsWidget
 from utils import write_log, apply_launch_options, find_steam_user_id, steam_userdata_path, app_id, launch_game_via_steam
 
 
-def _nuitka_parent_directory():
-    """Resolve the original folder of a Nuitka onefile executable."""
-    parent = os.environ.get("NUITKA_ONEFILE_PARENT")
-    if not parent:
+def _normalize_dir(path):
+    """Return a valid directory path derived from the given value."""
+    if not path:
         return None
 
-    parent = os.path.abspath(parent)
+    candidate = os.path.abspath(path)
+    if os.path.isdir(candidate):
+        return candidate
 
-    if os.path.isdir(parent):
+    if os.path.isfile(candidate):
+        parent = os.path.dirname(candidate)
+        if os.path.isdir(parent):
+            return parent
+
+    parent = os.path.dirname(candidate)
+    if parent and os.path.isdir(parent):
         return parent
 
-    if os.path.isfile(parent):
-        return os.path.dirname(parent)
-
-    fallback = os.path.dirname(parent)
-    if fallback and os.path.isdir(fallback):
-        return fallback
-
     return None
+
+
+def _frozen_base_directory():
+    """Resolve the persistent location of a frozen executable."""
+    if not getattr(sys, "frozen", False):
+        return None
+
+    env_keys = (
+        "NUITKA_ONEFILE_PARENT",
+        "NUITKA_EXE_PATH",
+        "NUITKA_PACKAGE_HOME",
+    )
+
+    for key in env_keys:
+        base_dir = _normalize_dir(os.environ.get(key))
+        if base_dir:
+            return base_dir
+
+    argv_dir = _normalize_dir(sys.argv[0])
+    if argv_dir:
+        return argv_dir
+
+    return _normalize_dir(sys.executable)
 
 
 def resource_path(relative_path):
@@ -54,13 +77,13 @@ def resource_path(relative_path):
         candidates.append(os.path.join(meipass, relative_path))
 
     if getattr(sys, "frozen", False):
-        candidates.append(os.path.join(os.path.dirname(sys.executable), relative_path))
+        frozen_base = _frozen_base_directory()
+        if frozen_base:
+            candidates.append(os.path.join(frozen_base, relative_path))
+        candidates.append(os.path.join(os.path.dirname(os.path.abspath(sys.executable)), relative_path))
         nuitka_temp = os.environ.get("NUITKA_ONEFILE_TEMP")
         if nuitka_temp:
             candidates.append(os.path.join(nuitka_temp, relative_path))
-        nuitka_parent_dir = _nuitka_parent_directory()
-        if nuitka_parent_dir:
-            candidates.append(os.path.join(nuitka_parent_dir, relative_path))
 
     candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path))
     candidates.append(os.path.join(os.path.abspath("."), relative_path))
@@ -78,9 +101,9 @@ def resource_path(relative_path):
 def get_application_path():
     """Get the real application path for both script and frozen executables."""
     if getattr(sys, "frozen", False):
-        parent_dir = _nuitka_parent_directory()
-        if parent_dir:
-            return parent_dir
+        base_dir = _frozen_base_directory()
+        if base_dir:
+            return base_dir
         return os.path.dirname(os.path.abspath(sys.executable))
     return os.path.dirname(os.path.abspath(__file__))
 
