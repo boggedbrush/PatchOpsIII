@@ -8,10 +8,12 @@ import time
 import vdf
 import platform
 import argparse
+import json
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
     QPushButton, QLabel, QFileDialog, QTextEdit, QTabWidget, QSizePolicy,
-    QGroupBox, QRadioButton, QButtonGroup, QCheckBox, QGridLayout
+    QGroupBox, QRadioButton, QButtonGroup, QCheckBox, QGridLayout,
+    QMessageBox
 )
 from PySide6.QtGui import QIcon, QDesktopServices
 from PySide6.QtCore import Qt, QUrl, QThread, Signal, QTimer
@@ -57,11 +59,77 @@ def get_application_path():
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
+GAME_EXECUTABLE_NAMES = ("BlackOpsIII.exe", "BlackOps3.exe")
+
+
+def _settings_file_path():
+    return os.path.join(get_application_path(), "patchops_settings.json")
+
+
+def _has_game_executable(directory):
+    if not directory or not os.path.isdir(directory):
+        return False
+    for executable in GAME_EXECUTABLE_NAMES:
+        if os.path.exists(os.path.join(directory, executable)):
+            return True
+    return False
+
+
+def _load_saved_game_directory():
+    settings_path = _settings_file_path()
+    if not os.path.exists(settings_path):
+        return None
+
+    try:
+        with open(settings_path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    saved_dir = data.get("game_directory")
+    if saved_dir and _has_game_executable(saved_dir):
+        return saved_dir
+    return None
+
+
+def save_game_directory(directory):
+    settings_path = _settings_file_path()
+    data = {}
+
+    if os.path.exists(settings_path):
+        try:
+            with open(settings_path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            data = {}
+
+    data["game_directory"] = directory
+
+    try:
+        with open(settings_path, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=4)
+        return True
+    except OSError as exc:
+        write_log(f"Failed to save game directory: {exc}", "Error")
+        return False
+
+
+def find_game_executable(directory):
+    for executable in GAME_EXECUTABLE_NAMES:
+        candidate = os.path.join(directory, executable)
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
 def get_game_directory():
-    # First check if BlackOps3.exe is in the same directory as the application
+    saved_dir = _load_saved_game_directory()
+    if saved_dir:
+        return saved_dir
+
+    # First check if the game executable is in the same directory as the application
     app_dir = get_application_path()
-    local_exe = os.path.join(app_dir, "BlackOps3.exe")
-    if os.path.exists(local_exe):
+    if find_game_executable(app_dir):
         return app_dir
 
     # Fall back to Steam default path
@@ -418,6 +486,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PatchOpsIII")
+        self._t7_just_uninstalled = False
 
         icon_path = resource_path("PatchOpsIII.ico")
         icon = QIcon(icon_path)
@@ -557,19 +626,11 @@ class MainWindow(QMainWindow):
 
         # Initialize with the default directory
         game_dir = self.game_dir_edit.text().strip()
-        self.t7_patch_widget.set_game_directory(game_dir)
+        self._apply_game_directory(game_dir)
         self.t7_patch_widget.set_log_widget(self.log_text)
-
-        self.dxvk_widget.set_game_directory(game_dir)
         self.dxvk_widget.set_log_widget(self.log_text)
-
-        self.graphics_widget.set_game_directory(game_dir)
         self.graphics_widget.set_log_widget(self.log_text)
-
-        self.advanced_widget.set_game_directory(game_dir)
         self.advanced_widget.set_log_widget(self.log_text)
-
-        self.qol_widget.set_game_directory(game_dir)
         self.qol_widget.set_log_widget(self.log_text)
 
     def on_tab_changed(self, index):
@@ -584,28 +645,59 @@ class MainWindow(QMainWindow):
         directory = QFileDialog.getExistingDirectory(
             self, "Select Black Ops III Game Directory", self.game_dir_edit.text()
         )
-        if directory:
-            self.game_dir_edit.setText(directory)
-            if not getattr(self, '_t7_just_uninstalled', False):
-                self.t7_patch_widget.set_game_directory(directory)
-            self._t7_just_uninstalled = False
-            self.dxvk_widget.set_game_directory(directory)
-            self.graphics_widget.set_game_directory(directory)
-            self.advanced_widget.set_game_directory(directory)
-            self.qol_widget.set_game_directory(directory)
+        if not directory:
+            return
+
+        if not find_game_executable(directory):
+            message = (
+                "BlackOpsIII.exe not found in the selected directory. "
+                "Please point the program to the folder containing BlackOpsIII.exe."
+            )
+            QMessageBox.warning(self, "Invalid Game Directory", message)
+            write_log(message, "Error", self.log_text)
+            return
+
+        self._apply_game_directory(directory, save=True)
+        write_log(f"Game directory set to {directory}", "Success", self.log_text)
 
     def on_t7_patch_uninstalled(self):
         self._t7_just_uninstalled = True
 
     def launch_game(self):
         game_dir = self.game_dir_edit.text().strip()
-        game_exe_path = os.path.join(game_dir, "BlackOps3.exe")
+        game_exe_path = find_game_executable(game_dir)
 
-        if not os.path.exists(game_exe_path):
-            write_log(f"Error: BlackOps3.exe not found at {game_exe_path}", "Error", self.log_text)
+        if not game_exe_path:
+            write_log(
+                "Error: BlackOpsIII.exe not found. Please point the program to the folder containing BlackOpsIII.exe.",
+                "Error",
+                self.log_text,
+            )
             return
 
         launch_game_via_steam(app_id, self.log_text)
+
+    def _apply_game_directory(self, directory, save=False):
+        if not directory:
+            return
+
+        self.game_dir_edit.setText(directory)
+
+        if save:
+            if not save_game_directory(directory):
+                write_log(
+                    "Failed to remember the selected game directory.",
+                    "Warning",
+                    self.log_text,
+                )
+
+        if not self._t7_just_uninstalled:
+            self.t7_patch_widget.set_game_directory(directory)
+        self._t7_just_uninstalled = False
+        self.dxvk_widget.set_game_directory(directory)
+        self.graphics_widget.set_game_directory(directory)
+        self.advanced_widget.set_game_directory(directory)
+        self.qol_widget.set_game_directory(directory)
 
 if __name__ == "__main__":
     cli_args = parse_cli_arguments()
@@ -620,12 +712,15 @@ if __name__ == "__main__":
 
     if getattr(cli_args, 'game_dir', None):
         directory = cli_args.game_dir
-        window.game_dir_edit.setText(directory)
-        window.t7_patch_widget.set_game_directory(directory)
-        window.dxvk_widget.set_game_directory(directory)
-        window.graphics_widget.set_game_directory(directory)
-        window.advanced_widget.set_game_directory(directory)
-        window.qol_widget.set_game_directory(directory)
+        if find_game_executable(directory):
+            window._apply_game_directory(directory, save=True)
+            write_log(f"Game directory set via CLI to {directory}", "Success", window.log_text)
+        else:
+            message = (
+                "BlackOpsIII.exe not found in the CLI-provided directory. "
+                "Please point the program to the folder containing BlackOpsIII.exe."
+            )
+            write_log(message, "Error", window.log_text)
 
     window.show()
 
