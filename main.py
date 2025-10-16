@@ -5,6 +5,7 @@ import re
 import errno
 import shutil
 import time
+import tempfile
 import vdf
 import platform
 import argparse
@@ -45,11 +46,87 @@ def _normalize_dir(path):
     return None
 
 
+def _get_true_executable_path():
+    """Get the absolute path to the running executable using OS-specific methods.
+
+    This function uses platform-specific APIs to reliably determine the actual
+    location of the executable, bypassing limitations of sys.executable and
+    sys.argv which may point to temporary extraction directories in frozen builds.
+
+    Returns:
+        str: Absolute directory path of the executable, or None if detection fails
+    """
+    system = platform.system()
+
+    if system == "Windows":
+        try:
+            import ctypes
+            # Use kernel32.GetModuleFileNameW for reliable path on Windows
+            buffer = ctypes.create_unicode_buffer(32768)
+            get_module_filename = ctypes.windll.kernel32.GetModuleFileNameW
+            get_module_filename(None, buffer, len(buffer))
+            exe_path = buffer.value
+            if exe_path and os.path.exists(exe_path):
+                write_log(f"Resolved Windows executable path: {exe_path}", "Info", None)
+                return os.path.dirname(exe_path)
+        except Exception as e:
+            write_log(f"Windows path resolution failed: {e}", "Warning", None)
+
+    elif system == "Linux":
+        try:
+            # Read /proc/self/exe symlink for true executable path
+            exe_path = os.path.realpath('/proc/self/exe')
+            if exe_path and os.path.exists(exe_path):
+                write_log(f"Resolved Linux executable path: {exe_path}", "Info", None)
+                return os.path.dirname(exe_path)
+        except Exception as e:
+            write_log(f"Linux path resolution failed: {e}", "Warning", None)
+
+    elif system == "Darwin":
+        # macOS support (optional - only if needed in future)
+        try:
+            import ctypes
+            from ctypes.util import find_library
+
+            libc = ctypes.CDLL(find_library('c'))
+            buffer = ctypes.create_string_buffer(1024)
+            size = ctypes.c_uint32(len(buffer))
+            if libc._NSGetExecutablePath(buffer, ctypes.byref(size)) == 0:
+                exe_path = os.path.realpath(buffer.value.decode())
+                if exe_path and os.path.exists(exe_path):
+                    write_log(f"Resolved macOS executable path: {exe_path}", "Info", None)
+                    return os.path.dirname(exe_path)
+        except Exception as e:
+            write_log(f"macOS path resolution failed: {e}", "Warning", None)
+
+    write_log(f"Platform-specific path resolution not available for {system}", "Warning", None)
+    return None
+
+
 def _frozen_base_directory():
-    """Resolve the persistent location of a frozen executable."""
+    """Resolve the persistent location of a frozen executable.
+
+    Priority order:
+    1. Platform-specific OS API (most reliable)
+    2. Nuitka environment variables
+    3. sys.argv[0] (if not in temp directory)
+    4. sys.executable (if not in temp directory)
+
+    Returns:
+        str: Absolute directory path, or None if unable to resolve
+    """
     if not getattr(sys, "frozen", False):
         return None
 
+    temp_dir = tempfile.gettempdir()
+
+    # Priority 1: Use platform-specific API
+    true_path = _get_true_executable_path()
+    if true_path and not true_path.startswith(temp_dir):
+        write_log(f"Using platform-specific path: {true_path}", "Info", None)
+        return true_path
+
+    # Priority 2: Check Nuitka environment variables
     env_keys = (
         "NUITKA_ONEFILE_PARENT",
         "NUITKA_EXE_PATH",
@@ -57,15 +134,30 @@ def _frozen_base_directory():
     )
 
     for key in env_keys:
-        base_dir = _normalize_dir(os.environ.get(key))
-        if base_dir:
-            return base_dir
+        env_path = os.environ.get(key)
+        if env_path:
+            normalized = _normalize_dir(env_path)
+            if normalized and not normalized.startswith(temp_dir):
+                write_log(f"Using Nuitka environment variable {key}: {normalized}", "Info", None)
+                return normalized
 
-    argv_dir = _normalize_dir(sys.argv[0])
-    if argv_dir:
-        return argv_dir
+    # Priority 3: Try sys.argv[0]
+    if sys.argv and sys.argv[0]:
+        argv_path = os.path.abspath(sys.argv[0])
+        if os.path.isfile(argv_path) and not argv_path.startswith(temp_dir):
+            argv_dir = os.path.dirname(argv_path)
+            write_log(f"Using sys.argv[0]: {argv_dir}", "Info", None)
+            return argv_dir
 
-    return _normalize_dir(sys.executable)
+    # Priority 4: Last resort - sys.executable (but avoid temp directories)
+    exe_path = os.path.abspath(sys.executable)
+    if not exe_path.startswith(temp_dir):
+        exe_dir = os.path.dirname(exe_path)
+        write_log(f"Using sys.executable: {exe_dir}", "Warning", None)
+        return exe_dir
+
+    write_log("Could not resolve frozen executable path outside temp directory", "Error", None)
+    return None
 
 
 def resource_path(relative_path):
@@ -99,13 +191,35 @@ def resource_path(relative_path):
     return os.path.join(os.path.abspath("."), relative_path)
 
 def get_application_path():
-    """Get the real application path for both script and frozen executables."""
+    """Get the real application path for both script and frozen executables.
+
+    This function determines where the application is actually installed,
+    ensuring mod files and settings are stored in the correct location.
+
+    Returns:
+        str: Absolute path to the application directory
+
+    Raises:
+        SystemExit: If unable to determine a valid application path
+    """
     if getattr(sys, "frozen", False):
         base_dir = _frozen_base_directory()
-        if base_dir:
+        if base_dir and os.path.exists(base_dir):
+            write_log(f"Application path (frozen): {base_dir}", "Info", None)
             return base_dir
-        return os.path.dirname(os.path.abspath(sys.executable))
-    return os.path.dirname(os.path.abspath(__file__))
+
+        # If we got here, detection failed
+        error_msg = (
+            "Could not determine application installation directory. "
+            "Please ensure the executable is in a writable location (not Program Files or temp directories). "
+            f"Attempted path: {base_dir or 'unknown'}"
+        )
+        _show_install_location_error(error_msg)
+    else:
+        # Development mode
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        write_log(f"Application path (development): {base_dir}", "Info", None)
+        return base_dir
 
 GAME_EXECUTABLE_NAMES = ("BlackOpsIII.exe", "BlackOps3.exe")
 
@@ -160,6 +274,48 @@ def save_game_directory(directory):
     except OSError as exc:
         write_log(f"Failed to save game directory: {exc}", "Error")
         return False
+
+
+def _migrate_settings_if_needed(current_path):
+    """Migrate settings from old location if they exist.
+
+    This handles cases where the application previously detected the wrong path
+    (e.g., in AppData temp directories) and needs to migrate settings to the
+    correct location.
+
+    Args:
+        current_path: The newly detected correct application path
+    """
+    current_settings = os.path.join(current_path, "PatchOpsIII_settings.json")
+
+    # If settings already exist in current location, no migration needed
+    if os.path.exists(current_settings):
+        return
+
+    # Check potential old locations
+    temp_dir = tempfile.gettempdir()
+
+    # Search for settings files in temp directory tree
+    old_settings_found = []
+    try:
+        for root, dirs, files in os.walk(temp_dir):
+            if "PatchOpsIII_settings.json" in files:
+                old_path = os.path.join(root, "PatchOpsIII_settings.json")
+                # Only consider files modified in last 30 days
+                if os.path.getmtime(old_path) > time.time() - (30 * 24 * 60 * 60):
+                    old_settings_found.append(old_path)
+    except (OSError, PermissionError):
+        pass
+
+    if old_settings_found:
+        # Use most recently modified settings file
+        old_settings = max(old_settings_found, key=os.path.getmtime)
+        try:
+            import shutil
+            shutil.copy2(old_settings, current_settings)
+            write_log(f"Migrated settings from {old_settings} to {current_settings}", "Success", None)
+        except Exception as e:
+            write_log(f"Failed to migrate settings: {e}", "Warning", None)
 
 
 def find_game_executable(directory):
@@ -242,6 +398,10 @@ APPLICATION_PATH = get_application_path()
 DEFAULT_GAME_DIR = get_game_directory()
 
 MOD_FILES_DIR = os.path.join(APPLICATION_PATH, "BO3 Mod Files")
+
+# Migrate settings from old location if needed
+_migrate_settings_if_needed(APPLICATION_PATH)
+
 _ensure_install_location_writable(APPLICATION_PATH, MOD_FILES_DIR)
 
 class ApplyLaunchOptionsWorker(QThread):
