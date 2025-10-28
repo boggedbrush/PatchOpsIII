@@ -47,6 +47,7 @@ jobs:
     env:
       LINUX_DIST_DIR: dist/linux
       LINUX_APPIMAGE: PatchOpsIII.AppImage
+      LINUX_BINARY: PatchOpsIII
       VT_CLI_ARCHIVE: vt-cli.zip
       COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
       COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
@@ -132,14 +133,59 @@ jobs:
             --output-dir="$LINUX_DIST_DIR" \
             --output-filename="$LINUX_APPIMAGE" \
             main.py
-      - name: Ensure AppImage is executable
+      - name: Prepare binary
         run: |
           target="$LINUX_DIST_DIR/$LINUX_APPIMAGE"
+          binary="$LINUX_DIST_DIR/$LINUX_BINARY"
           if [ ! -f "$target" ]; then
             echo "$target was not produced" >&2
             exit 1
           fi
-          chmod +x "$target"
+          mv "$target" "$binary"
+          chmod +x "$binary"
+      - name: Create AppDir
+        run: |
+          APPDIR="$LINUX_DIST_DIR/AppDir"
+          mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+          cp "$LINUX_DIST_DIR/$LINUX_BINARY" "$APPDIR/usr/bin/PatchOpsIII"
+          cat > "$APPDIR/usr/share/applications/PatchOpsIII.desktop" <<'DESK'
+          [Desktop Entry]
+          Type=Application
+          Name=PatchOpsIII
+          Exec=PatchOpsIII
+          Icon=PatchOpsIII
+          Categories=Utility;
+          DESK
+          cp PatchOpsIII.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/PatchOpsIII.png"
+          # Make sure AppRun exists if linuxdeployqt needs it (optional)
+          cat > "$APPDIR/AppRun" <<'SH'
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "$0")")"
+          exec "$HERE/usr/bin/PatchOpsIII" "$@"
+          SH
+          chmod +x "$APPDIR/AppRun"
+      - name: Build proper AppImage with linuxdeployqt
+        run: |
+          APPDIR="$LINUX_DIST_DIR/AppDir"
+          cd "$LINUX_DIST_DIR"
+          curl -Lo linuxdeployqt.AppImage "https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-x86_64.AppImage"
+          chmod +x linuxdeployqt.AppImage
+          ./linuxdeployqt.AppImage "$APPDIR/usr/share/applications/PatchOpsIII.desktop" -appimage
+          # linuxdeployqt will create PatchOpsIII-x86_64.AppImage or similar in cwd. Rename to expected artifact.
+          # Find the generated AppImage and move/rename it:
+          gen=$(ls ./*.AppImage 2>/dev/null | grep -i PatchOpsIII | head -n1 || true)
+          if [ -z "$gen" ]; then
+            echo "linuxdeployqt did not produce an AppImage" >&2
+            ls -al
+            exit 1
+          fi
+          mv "$gen" "$LINUX_APPIMAGE"
+          chmod +x "$LINUX_APPIMAGE"
+      - name: Smoke-test AppImage
+        run: |
+          target="$LINUX_DIST_DIR/$LINUX_APPIMAGE"
+          "$target" --appimage-extract >/dev/null 2>&1 || { echo "AppImage extract failed" >&2; exit 1; }
+          rm -rf squashfs-root || true
       - name: Install cosign (optional)
         if: ${{ env.COSIGN_PRIVATE_KEY != '' }}
         uses: sigstore/cosign-installer@v3.4.0
