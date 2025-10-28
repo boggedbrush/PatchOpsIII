@@ -1,5 +1,12 @@
 #!/usr/bin/env python
-import os, shutil, tarfile, requests, zipfile
+import importlib.util
+import os
+import shutil
+import sys
+import tarfile
+import zipfile
+
+import requests
 from urllib.parse import urlsplit
 from PySide6.QtWidgets import QMessageBox, QWidget, QGroupBox, QHBoxLayout, QPushButton, QLabel, QVBoxLayout, QSizePolicy
 from PySide6.QtCore import QEvent
@@ -22,6 +29,13 @@ def get_download_url(release):
     assets = release.get("assets", {})
     links = assets.get("links", [])
     if links:
+        # Prefer archives we can extract natively before falling back to anything else
+        preferred_order = (".zip", ".tar.xz", ".tar.gz", ".tar.bz2", ".tar.zst", ".tzst")
+        for suffix in preferred_order:
+            for link in links:
+                url = link.get("url", "")
+                if url.lower().endswith(suffix):
+                    return url
         return links[0]["url"]
     sources = assets.get("sources", [])
     if sources:
@@ -30,6 +44,50 @@ def get_download_url(release):
                 return source.get("url")
         return sources[0].get("url")
     raise RuntimeError("No downloadable asset found in DXVK-GPLAsync release metadata")
+
+
+def _load_zstandard():
+    if "zstandard" in sys.modules:
+        return sys.modules["zstandard"]
+
+    spec = importlib.util.find_spec("zstandard")
+    if spec is None:
+        raise ModuleNotFoundError(
+            "The 'zstandard' package is required to unpack .tar.zst archives."
+        )
+
+    module = importlib.util.module_from_spec(spec)
+    loader = spec.loader
+    if loader is None:
+        raise ImportError("Unable to load the 'zstandard' module")
+    loader.exec_module(module)
+    sys.modules["zstandard"] = module
+    return module
+
+
+def extract_archive(archive_path, extract_dir):
+    lower_name = archive_path.lower()
+    if lower_name.endswith(".zip"):
+        with zipfile.ZipFile(archive_path, "r") as zip_ref:
+            zip_ref.extractall(extract_dir)
+        return
+
+    if lower_name.endswith((".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz")):
+        with tarfile.open(archive_path, "r:*") as tar:
+            tar.extractall(path=extract_dir)
+        return
+
+    if lower_name.endswith((".tar.zst", ".tzst")):
+        zstandard = _load_zstandard()
+        with open(archive_path, "rb") as compressed:
+            dctx = zstandard.ZstdDecompressor()
+            with dctx.stream_reader(compressed) as reader:
+                with tarfile.open(fileobj=reader, mode="r|") as tar:
+                    tar.extractall(path=extract_dir)
+        return
+
+    # Let shutil attempt to handle any other known formats
+    shutil.unpack_archive(archive_path, extract_dir)
 
 def download_file(url, filename):
     print(f"Downloading from {url}")
@@ -102,12 +160,7 @@ def manage_dxvk_async(game_dir, action, log_widget, mod_files_dir):
 
                 # Extract files based on archive type
                 try:
-                    if dxvk_archive.endswith('.tar.gz'):
-                        with tarfile.open(dxvk_archive, "r:gz") as tar:
-                            tar.extractall(path=extract_dir)
-                    elif dxvk_archive.endswith('.zip'):
-                        with zipfile.ZipFile(dxvk_archive, 'r') as zip_ref:
-                            zip_ref.extractall(extract_dir)
+                    extract_archive(dxvk_archive, extract_dir)
                     write_log("Extracted DXVK-GPLAsync successfully.", "Success", log_widget)
                 except Exception as e:
                     write_log(f"Failed to extract DXVK-GPLAsync: {str(e)}", "Error", log_widget)
