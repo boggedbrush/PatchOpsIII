@@ -3,10 +3,13 @@
 on:
   workflow_dispatch:
     inputs:
-      tag:
-        description: Tag (e.g., v1.0.4-beta) to release when running manually
-        required: true
+      release_notes_file:
+        description: |
+          Release notes file name (leave blank or set to "latest" to auto-select the newest notes).
+          Provide a file that lives under `Release Notes/`.
+        required: false
         type: string
+        default: latest
       source_ref:
         description: Source branch or tag to tag from
         type: string
@@ -15,26 +18,6 @@ on:
         description: Create or update the tag before building (true/false)
         type: string
         default: "true"
-      features:
-        description: New features and improvements (one per line)
-        type: string
-        default: ""
-      fixes:
-        description: Bug fixes (one per line)
-        type: string
-        default: ""
-      changes:
-        description: Other changes and improvements (one per line)
-        type: string
-        default: ""
-      known_issues:
-        description: Known issues (one per line)
-        type: string
-        default: ""
-      next_steps:
-        description: Roadmap notes (one per line)
-        type: string
-        default: ""
 
 permissions:
   contents: write
@@ -46,11 +29,184 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
+      base_version: ${{ steps.metadata.outputs.base_version }}
+      release_title: ${{ steps.metadata.outputs.release_title }}
+      notes_file: ${{ steps.metadata.outputs.notes_file }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Determine release metadata
+        id: metadata
+        env:
+          RELEASE_NOTES_FILE: ${{ inputs.release_notes_file }}
+        run: |
+          python <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          choice = os.environ.get("RELEASE_NOTES_FILE", "").strip()
+
+          repo_root = Path.cwd()
+          notes_dir = repo_root / "Release Notes"
+          if not notes_dir.is_dir():
+              raise SystemExit("Release Notes directory not found in the repository.")
+
+          candidates = [
+              path.relative_to(repo_root)
+              for path in notes_dir.rglob("*.md")
+              if path.is_file() and path.name.lower() != "template.md"
+          ]
+
+          if not candidates:
+              raise SystemExit("No release notes files found under 'Release Notes/'.")
+
+          metadata = {}
+          version_regex = re.compile(r"\bv?(?P<body>[0-9][\w.\-]*)", re.IGNORECASE)
+
+          def load_metadata(rel_path: Path):
+              abs_path = repo_root / rel_path
+              heading = None
+              with abs_path.open("r", encoding="utf-8") as handle:
+                  for raw_line in handle:
+                      stripped = raw_line.strip()
+                      if stripped.startswith("#"):
+                          heading = stripped.lstrip("#").strip()
+                          break
+
+              version_token = None
+              for target in (heading or "", rel_path.stem):
+                  if not target:
+                      continue
+                  match = version_regex.search(target)
+                  if match:
+                      version_token = match.group(0)
+                      if not version_token.lower().startswith("v"):
+                          version_token = f"v{match.group('body')}"
+                      break
+
+              metadata[rel_path] = {"heading": heading, "version": version_token}
+              return metadata[rel_path]
+
+          for candidate in candidates:
+              load_metadata(candidate)
+
+          def sort_key(rel_path: Path):
+              info = metadata[rel_path]
+              token = (info["version"] or "").lower()
+              if token.startswith("v"):
+                  token = token[1:]
+              base_part, _, suffix_part = token.partition("-")
+              number_values = tuple(int(part) for part in re.findall(r"\d+", base_part)) or (0,)
+              stability = 1 if not suffix_part else 0
+              return (number_values, stability, token, rel_path.name.lower())
+
+          normalized_choice = choice.casefold()
+          selected_rel = None
+          if normalized_choice and normalized_choice != "latest":
+              for candidate in candidates:
+                  candidate_names = {
+                      candidate.name.casefold(),
+                      candidate.stem.casefold(),
+                      candidate.as_posix().casefold(),
+                  }
+                  candidate_version = metadata[candidate]["version"]
+                  if candidate_version:
+                      version_key = candidate_version.casefold()
+                      candidate_names.add(version_key)
+                      candidate_names.add(version_key.removeprefix("v"))
+                  heading = metadata[candidate]["heading"]
+                  if heading:
+                      candidate_names.add(heading.casefold())
+                      candidate_names.add(heading.replace("Release Notes", "").strip().casefold())
+                  if normalized_choice in candidate_names:
+                      selected_rel = candidate
+                      break
+
+              if selected_rel is None:
+                  raw_path = Path(choice)
+                  candidate_paths = []
+                  if raw_path.is_absolute():
+                      candidate_paths.append(raw_path)
+                  else:
+                      candidate_paths.append(repo_root / raw_path)
+                      candidate_paths.append(notes_dir / raw_path)
+                      if raw_path.suffix == "":
+                          candidate_paths.append((repo_root / raw_path).with_suffix(".md"))
+                          candidate_paths.append((notes_dir / raw_path).with_suffix(".md"))
+
+                  selected_abs = None
+                  seen = set()
+                  for possible in candidate_paths:
+                      if possible is None:
+                          continue
+                      resolved = possible.resolve()
+                      key = resolved.as_posix()
+                      if key in seen:
+                          continue
+                      seen.add(key)
+                      if resolved.is_file():
+                          selected_abs = resolved
+                          break
+
+                  if selected_abs is None:
+                      available = ", ".join(sorted(path.name for path in candidates))
+                      raise SystemExit(
+                          f"Release notes file not found for selection '{choice}'. Available files: {available}"
+                      )
+
+                  try:
+                      selected_abs.relative_to(notes_dir.resolve())
+                  except ValueError as exc:
+                      raise SystemExit("Release notes must live under 'Release Notes/'.") from exc
+
+                  if selected_abs.name.lower() == "template.md":
+                      raise SystemExit("Template release notes cannot be used for beta releases.")
+
+                  selected_rel = selected_abs.relative_to(repo_root.resolve())
+                  load_metadata(selected_rel)
+
+          if selected_rel is None:
+              selected_rel = max(candidates, key=sort_key)
+
+          selected_abs = repo_root / selected_rel
+          info = metadata[selected_rel]
+          version_token = info["version"]
+          if not version_token:
+              raise SystemExit("Could not determine the version from the release notes file.")
+
+          base_version = re.sub(r"(?i)-beta$", "", version_token)
+          tag_name = f"{base_version}-beta"
+          release_title = f"PatchOpsIII {tag_name}"
+
+          print(f"Selected release notes: {selected_rel.as_posix()}")
+
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              lines = [
+                  "# Available release notes",
+                  "",
+                  "| File | Version | Heading |",
+                  "| --- | --- | --- |",
+              ]
+              for candidate in sorted(candidates, key=sort_key, reverse=True):
+                  candidate_info = metadata[candidate]
+                  lines.append(
+                      f"| `{candidate.as_posix()}` | {candidate_info['version'] or '—'} | {candidate_info['heading'] or '—'} |"
+                  )
+              lines.append("")
+              lines.append(f"**Selected:** `{selected_rel.as_posix()}` → {tag_name}")
+              with open(summary_path, "a", encoding="utf-8") as summary_file:
+                  summary_file.write("\n".join(lines) + "\n")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"tag={tag_name}\n")
+              fh.write(f"base_version={base_version}\n")
+              fh.write(f"release_title={release_title}\n")
+              fh.write(f"notes_file={selected_rel.as_posix()}\n")
+          PY
       - name: Configure git
         run: |
           git config user.name "${{ github.actor }}"
@@ -58,7 +214,7 @@ jobs:
       - name: Create or verify tag
         id: tag
         env:
-          TAG_NAME: ${{ inputs.tag }}
+          TAG_NAME: ${{ steps.metadata.outputs.tag }}
           SOURCE_REF: ${{ inputs.source_ref }}
           CREATE_TAG: ${{ inputs.create_tag }}
         run: |
@@ -154,74 +310,75 @@ jobs:
           done
       - name: Prepare release notes
         env:
-          VERSION: ${{ needs.prepare.outputs.tag }}
+          TAG: ${{ needs.prepare.outputs.tag }}
           WINDOWS_HASH: ${{ needs.build-windows.outputs.hash }}
           WINDOWS_VT_URL: ${{ needs.build-windows.outputs.vt_url }}
           LINUX_HASH: ${{ needs.build-linux.outputs.hash }}
           LINUX_VT_URL: ${{ needs.build-linux.outputs.vt_url }}
           REPO: ${{ github.repository }}
-          FEATURES: ${{ inputs.features }}
-          FIXES: ${{ inputs.fixes }}
-          CHANGES: ${{ inputs.changes }}
-          KNOWN_ISSUES: ${{ inputs.known_issues }}
-          NEXT_STEPS: ${{ inputs.next_steps }}
+          RELEASE_NOTES_SOURCE: ${{ needs.prepare.outputs.notes_file }}
+          RELEASE_TITLE: ${{ needs.prepare.outputs.release_title }}
         run: |
           python <<'PY'
           from pathlib import Path
           import os
-          
+
           repo = os.environ["REPO"]
-          version = os.environ["VERSION"]
-          template_path = Path("Release Notes") / "template.md"
-          if not template_path.exists():
-              raise SystemExit(f"Template not found: {template_path}")
-          text = template_path.read_text(encoding="utf-8")
-          
-          def format_lines(value, default=""):
-              import re
-              normalized = value.replace(' - **', '\n- **')
-              normalized = re.sub(r' {2,}-', lambda m: '\n' + ' ' * (len(m.group(0)) - 1) + '-', normalized)
-              formatted = []
-              for raw_line in normalized.splitlines():
-                  if not raw_line.strip():
-                      continue
-                  stripped = raw_line.lstrip()
-                  if stripped.startswith(('-', '*', '+')):
-                      formatted.append(raw_line.rstrip())
-                  else:
-                      formatted.append(f"- {stripped}")
-              if not formatted:
-                  return default
-              return "\n".join(formatted)
-          
+          repo_root = Path.cwd()
+          tag = os.environ["TAG"]
+          release_title = os.environ["RELEASE_TITLE"]
+          source_path = Path(os.environ["RELEASE_NOTES_SOURCE"])
+          if not source_path.is_absolute():
+              source_path = repo_root / source_path
+          source_path = source_path.resolve()
+
+          try:
+              source_path.relative_to(repo_root)
+          except ValueError as exc:
+              raise SystemExit("Release notes must live within the repository.") from exc
+
+          if not source_path.exists():
+              raise SystemExit(f"Source release notes not found: {source_path}")
+
           windows_vt = os.environ.get("WINDOWS_VT_URL", "").strip() or "https://www.virustotal.com/"
           linux_vt = os.environ.get("LINUX_VT_URL", "").strip() or "https://www.virustotal.com/"
           windows_hash = os.environ.get("WINDOWS_HASH", "").strip() or "None"
           linux_hash = os.environ.get("LINUX_HASH", "").strip() or "None"
           asset_windows = "PatchOpsIII.exe"
           asset_linux = "PatchOpsIII.AppImage"
-          base_url = f"https://github.com/{repo}/releases/download/{version}"
+          base_url = f"https://github.com/{repo}/releases/download/{tag}"
           windows_download = f"{base_url}/{asset_windows}"
           linux_download = f"{base_url}/{asset_linux}"
-          
+
+          text = source_path.read_text(encoding="utf-8").splitlines()
+          heading_updated = False
+          heading_line = f"# {release_title} Release Notes"
+          for idx, line in enumerate(text):
+              if line.strip().startswith("#"):
+                  text[idx] = heading_line
+                  heading_updated = True
+                  break
+          if not heading_updated:
+              text.insert(0, heading_line)
+              text.insert(1, "")
+
           replacements = {
-              "VERSION": version,
-              "WINDOWS_VT_URL": windows_vt,
-              "LINUX_VT_URL": linux_vt,
-              "FEATURES_LIST": format_lines(os.environ.get("FEATURES", "")),
-              "CHANGES_LIST": format_lines(os.environ.get("CHANGES", "")),
-              "FIXES_LIST": format_lines(os.environ.get("FIXES", "")),
-              "KNOWN_ISSUES_LIST": format_lines(os.environ.get("KNOWN_ISSUES", "")),
-              "NEXT_STEPS_LIST": format_lines(os.environ.get("NEXT_STEPS", "")),
-              "WINDOWS_DOWNLOAD_URL": windows_download,
-              "LINUX_DOWNLOAD_URL": linux_download,
-              "WINDOWS_SHA256": windows_hash,
-              "LINUX_SHA256": linux_hash,
+              "{{WINDOWS_VT_URL}}": windows_vt,
+              "{{LINUX_VT_URL}}": linux_vt,
+              "{{WINDOWS_SHA256}}": windows_hash,
+              "{{LINUX_SHA256}}": linux_hash,
+              "{{WINDOWS_DOWNLOAD_URL}}": windows_download,
+              "{{LINUX_DOWNLOAD_URL}}": linux_download,
           }
-          for key, value in replacements.items():
-              text = text.replace(f"{{{{{key}}}}}", value)
-          
-          Path("release-notes.md").write_text(text + "\n", encoding="utf-8")
+
+          final_text = "\n".join(text)
+          for placeholder, value in replacements.items():
+              final_text = final_text.replace(placeholder, value)
+
+          if not final_text.endswith("\n"):
+              final_text += "\n"
+
+          Path("release-notes.md").write_text(final_text, encoding="utf-8")
           PY
       - name: Organize release assets
         env:
@@ -255,7 +412,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
-          name: PatchOpsIII ${{ needs.prepare.outputs.tag }}
+          name: ${{ needs.prepare.outputs.release_title }}
           prerelease: true
           body_path: release-notes.md
           files: |
