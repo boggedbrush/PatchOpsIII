@@ -207,8 +207,9 @@ jobs:
             ls -al
             exit 1
           fi
-          mv "$gen" "$LINUX_DIST_DIR/$LINUX_APPIMAGE"
-          chmod +x "$LINUX_DIST_DIR/$LINUX_APPIMAGE"
+          target="$PWD/$LINUX_APPIMAGE"
+          mv "$gen" "$target"
+          chmod +x "$target"
 
       - name: Smoke-test AppImage
         run: |
