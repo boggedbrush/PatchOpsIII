@@ -28,6 +28,7 @@ The latest release of **PatchOpsIII** is here! Version **1.0.4** brings signific
 
 ## 🛠 **Fixes:**
 - Addressed various minor bugs and stability issues.
+- Fixed DXVK-GPLAsync auto-installation failures caused by new upstream archive formats by preferring extractable assets and supporting `.tar.zst` packages out of the box.
 
 ---
 
