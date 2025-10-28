@@ -248,14 +248,14 @@ jobs:
 
   build-windows:
     needs: prepare
-    uses: ./.github/workflows/windows-testing-build.yml
+    uses: ./.github/workflows/windows-build.yml
     with:
       ref: ${{ needs.prepare.outputs.tag }}
     secrets: inherit
 
   build-linux:
     needs: prepare
-    uses: ./.github/workflows/linux-testing-build.yml
+    uses: ./.github/workflows/linux-build.yml
     with:
       ref: ${{ needs.prepare.outputs.tag }}
     secrets: inherit
