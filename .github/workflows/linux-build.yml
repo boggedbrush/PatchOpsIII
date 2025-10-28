@@ -171,7 +171,7 @@ jobs:
           cd "$LD"
           # Preferred: set URL to the correct release asset. If you don't know the exact asset name,
           # use the Releases API or host a known-good copy in your repo/releases.
-          LDD_URL="https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-x86_64.AppImage"
+          LDD_URL="https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage"
           # download and fail on http errors
           curl -fsSL -o linuxdeployqt.AppImage "$LDD_URL" || { echo "Failed to download linuxdeployqt from $LDD_URL"; ls -l; exit 1; }
           chmod +x linuxdeployqt.AppImage
@@ -202,7 +202,7 @@ jobs:
           echo "linuxdeployqt.AppImage file info:"
           ls -l "$LINUX_DIST_DIR/linuxdeployqt.AppImage" || true
           head -n 20 "$LINUX_DIST_DIR/linuxdeployqt.AppImage" || true
-          curl -I "https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-x86_64.AppImage" || true
+          curl -I "https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage" || true
       - name: Smoke-test AppImage
         run: |
           target="$LINUX_DIST_DIR/$LINUX_APPIMAGE"
