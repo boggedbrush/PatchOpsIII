@@ -35,7 +35,7 @@ permissions:
 jobs:
   build-linux:
     name: Build Linux AppImage
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     outputs:
       hash: ${{ steps.compute_hash.outputs.hash }}
       vt_url: ${{ steps.compute_hash.outputs.vt_url }}
@@ -56,6 +56,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+
+      # ...keep your existing setup-python / install deps / Nuitka build steps here...
+      # (these existing steps should remain unchanged and produce dist/linux/PatchOpsIII)
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -133,8 +136,10 @@ jobs:
             --output-dir="$LINUX_DIST_DIR" \
             --output-filename="$LINUX_APPIMAGE" \
             main.py
+
       - name: Prepare binary
         run: |
+          set -euo pipefail
           target="$LINUX_DIST_DIR/$LINUX_APPIMAGE"
           binary="$LINUX_DIST_DIR/$LINUX_BINARY"
           if [ ! -f "$target" ]; then
@@ -143,45 +148,49 @@ jobs:
           fi
           mv "$target" "$binary"
           chmod +x "$binary"
+
       - name: Create AppDir
         run: |
+          set -euo pipefail
           APPDIR="$LINUX_DIST_DIR/AppDir"
           mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
           cp "$LINUX_DIST_DIR/$LINUX_BINARY" "$APPDIR/usr/bin/PatchOpsIII"
           cat > "$APPDIR/usr/share/applications/PatchOpsIII.desktop" <<'DESK'
-          [Desktop Entry]
-          Type=Application
-          Name=PatchOpsIII
-          Exec=PatchOpsIII
-          Icon=PatchOpsIII
-          Categories=Utility;
-          DESK
+[Desktop Entry]
+Type=Application
+Name=PatchOpsIII
+Exec=PatchOpsIII
+Icon=PatchOpsIII
+Categories=Utility;
+DESK
           cp PatchOpsIII.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/PatchOpsIII.png"
-          # Make sure AppRun exists if linuxdeployqt needs it (optional)
           cat > "$APPDIR/AppRun" <<'SH'
-          #!/bin/sh
-          HERE="$(dirname "$(readlink -f "$0")")"
-          exec "$HERE/usr/bin/PatchOpsIII" "$@"
-          SH
+#!/bin/sh
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/usr/bin/PatchOpsIII" "$@"
+SH
           chmod +x "$APPDIR/AppRun"
+
+      - name: Install packaging dependencies (Jammy)
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl file zsync libfuse2 squashfs-tools
+
       - name: Download and verify linuxdeployqt
         run: |
           set -euo pipefail
-          LD="$LINUX_DIST_DIR"
-          cd "$LD"
-          # Preferred: set URL to the correct release asset. If you don't know the exact asset name,
-          # use the Releases API or host a known-good copy in your repo/releases.
-          LDD_URL="https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage"
-          # download and fail on http errors
-          curl -fsSL -o linuxdeployqt.AppImage "$LDD_URL" || { echo "Failed to download linuxdeployqt from $LDD_URL"; ls -l; exit 1; }
+          cd "$LINUX_DIST_DIR"
+          LDD_URL="https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-x86_64.AppImage"
+          curl -fsSL -o linuxdeployqt.AppImage "$LDD_URL" || { echo "Failed to download linuxdeployqt"; ls -l; exit 1; }
           chmod +x linuxdeployqt.AppImage
-          # quick sanity checks: must be an ELF/AppImage (not an HTML error)
           file linuxdeployqt.AppImage | tee linuxdeployqt.file.txt
-          if ! file linuxdeployqt.AppImage | grep -qi -e 'ELF' -e 'AppImage' ; then
-            echo "linuxdeployqt download appears invalid. Showing first 16 bytes for debugging:"
-            head -c 256 linuxdeployqt.AppImage | sed -n '1,6p' || true
+          if ! file linuxdeployqt.AppImage | grep -qi -e 'ELF' -e 'AppImage'; then
+            echo "linuxdeployqt download appears invalid. Showing head for debugging:" >&2
+            head -c 512 linuxdeployqt.AppImage | sed -n '1,6p' || true
             exit 1
           fi
+
       - name: Build AppImage with linuxdeployqt
         run: |
           set -euo pipefail
@@ -196,17 +205,12 @@ jobs:
           fi
           mv "$gen" "$LINUX_DIST_DIR/$LINUX_APPIMAGE"
           chmod +x "$LINUX_DIST_DIR/$LINUX_APPIMAGE"
-      - name: Debug linuxdeployqt download (optional)
-        if: failure()
-        run: |
-          echo "linuxdeployqt.AppImage file info:"
-          ls -l "$LINUX_DIST_DIR/linuxdeployqt.AppImage" || true
-          head -n 20 "$LINUX_DIST_DIR/linuxdeployqt.AppImage" || true
-          curl -I "https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage" || true
+
       - name: Smoke-test AppImage
         run: |
+          set -euo pipefail
           target="$LINUX_DIST_DIR/$LINUX_APPIMAGE"
-          "$target" --appimage-extract >/dev/null 2>&1 || { echo "AppImage extract failed" >&2; exit 1; }
+          "$target" --appimage-extract >/dev/null 2>&1 || { echo "AppImage smoke-test failed" >&2; file "$target"; head -c 256 "$target" | sed -n '1,6p' || true; exit 1; }
           rm -rf squashfs-root || true
       - name: Install cosign (optional)
         if: ${{ env.COSIGN_PRIVATE_KEY != '' }}
