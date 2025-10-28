@@ -164,23 +164,45 @@ jobs:
           exec "$HERE/usr/bin/PatchOpsIII" "$@"
           SH
           chmod +x "$APPDIR/AppRun"
-      - name: Build proper AppImage with linuxdeployqt
+      - name: Download and verify linuxdeployqt
         run: |
+          set -euo pipefail
+          LD="$LINUX_DIST_DIR"
+          cd "$LD"
+          # Preferred: set URL to the correct release asset. If you don't know the exact asset name,
+          # use the Releases API or host a known-good copy in your repo/releases.
+          LDD_URL="https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-x86_64.AppImage"
+          # download and fail on http errors
+          curl -fsSL -o linuxdeployqt.AppImage "$LDD_URL" || { echo "Failed to download linuxdeployqt from $LDD_URL"; ls -l; exit 1; }
+          chmod +x linuxdeployqt.AppImage
+          # quick sanity checks: must be an ELF/AppImage (not an HTML error)
+          file linuxdeployqt.AppImage | tee linuxdeployqt.file.txt
+          if ! file linuxdeployqt.AppImage | grep -qi -e 'ELF' -e 'AppImage' ; then
+            echo "linuxdeployqt download appears invalid. Showing first 16 bytes for debugging:"
+            head -c 256 linuxdeployqt.AppImage | sed -n '1,6p' || true
+            exit 1
+          fi
+      - name: Build AppImage with linuxdeployqt
+        run: |
+          set -euo pipefail
           APPDIR="$LINUX_DIST_DIR/AppDir"
           cd "$LINUX_DIST_DIR"
-          curl -Lo linuxdeployqt.AppImage "https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-x86_64.AppImage"
-          chmod +x linuxdeployqt.AppImage
-          ./linuxdeployqt.AppImage "$APPDIR/usr/share/applications/PatchOpsIII.desktop" -appimage
-          # linuxdeployqt will create PatchOpsIII-x86_64.AppImage or similar in cwd. Rename to expected artifact.
-          # Find the generated AppImage and move/rename it:
+          ./linuxdeployqt.AppImage "$APPDIR/usr/share/applications/PatchOpsIII.desktop" -appimage || { echo "linuxdeployqt failed"; ls -al; exit 1; }
           gen=$(ls ./*.AppImage 2>/dev/null | grep -i PatchOpsIII | head -n1 || true)
           if [ -z "$gen" ]; then
             echo "linuxdeployqt did not produce an AppImage" >&2
             ls -al
             exit 1
           fi
-          mv "$gen" "$LINUX_APPIMAGE"
-          chmod +x "$LINUX_APPIMAGE"
+          mv "$gen" "$LINUX_DIST_DIR/$LINUX_APPIMAGE"
+          chmod +x "$LINUX_DIST_DIR/$LINUX_APPIMAGE"
+      - name: Debug linuxdeployqt download (optional)
+        if: failure()
+        run: |
+          echo "linuxdeployqt.AppImage file info:"
+          ls -l "$LINUX_DIST_DIR/linuxdeployqt.AppImage" || true
+          head -n 20 "$LINUX_DIST_DIR/linuxdeployqt.AppImage" || true
+          curl -I "https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-x86_64.AppImage" || true
       - name: Smoke-test AppImage
         run: |
           target="$LINUX_DIST_DIR/$LINUX_APPIMAGE"
