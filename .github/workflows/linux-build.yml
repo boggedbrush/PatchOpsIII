@@ -192,9 +192,15 @@ jobs:
       - name: Build AppImage with linuxdeployqt
         run: |
           set -euo pipefail
-          APPDIR="$LINUX_DIST_DIR/AppDir"
           cd "$LINUX_DIST_DIR"
-          ./linuxdeployqt.AppImage "$APPDIR/usr/share/applications/PatchOpsIII.desktop" -appimage || { echo "linuxdeployqt failed"; ls -al; exit 1; }
+          APPDIR="$PWD/AppDir"
+          DESKTOP="$APPDIR/usr/share/applications/PatchOpsIII.desktop"
+          if [ ! -f "$DESKTOP" ]; then
+            echo "Desktop file missing: $DESKTOP" >&2
+            find "$APPDIR" -maxdepth 3 -type f -print || true
+            exit 1
+          fi
+          ./linuxdeployqt.AppImage "$DESKTOP" -appimage || { echo "linuxdeployqt failed"; ls -al; exit 1; }
           gen=$(ls ./*.AppImage 2>/dev/null | grep -i PatchOpsIII | head -n1 || true)
           if [ -z "$gen" ]; then
             echo "linuxdeployqt did not produce an AppImage" >&2
