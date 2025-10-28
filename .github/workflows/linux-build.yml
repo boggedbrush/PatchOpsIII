@@ -57,8 +57,6 @@ jobs:
         with:
           ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
 
-      # ...keep your existing setup-python / install deps / Nuitka build steps here...
-      # (these existing steps should remain unchanged and produce dist/linux/PatchOpsIII)
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -155,20 +153,20 @@ jobs:
           APPDIR="$LINUX_DIST_DIR/AppDir"
           mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
           cp "$LINUX_DIST_DIR/$LINUX_BINARY" "$APPDIR/usr/bin/PatchOpsIII"
-          cat > "$APPDIR/usr/share/applications/PatchOpsIII.desktop" <<'DESK'
-[Desktop Entry]
-Type=Application
-Name=PatchOpsIII
-Exec=PatchOpsIII
-Icon=PatchOpsIII
-Categories=Utility;
-DESK
+          printf '%s\n' \
+            '[Desktop Entry]' \
+            'Type=Application' \
+            'Name=PatchOpsIII' \
+            'Exec=PatchOpsIII' \
+            'Icon=PatchOpsIII' \
+            'Categories=Utility;' \
+            > "$APPDIR/usr/share/applications/PatchOpsIII.desktop"
           cp PatchOpsIII.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/PatchOpsIII.png"
-          cat > "$APPDIR/AppRun" <<'SH'
-#!/bin/sh
-HERE="$(dirname "$(readlink -f "$0")")"
-exec "$HERE/usr/bin/PatchOpsIII" "$@"
-SH
+          printf '%s\n' \
+            '#!/bin/sh' \
+            'HERE="$(dirname "$(readlink -f "$0")")"' \
+            'exec "$HERE/usr/bin/PatchOpsIII" "$@"' \
+            > "$APPDIR/AppRun"
           chmod +x "$APPDIR/AppRun"
 
       - name: Install packaging dependencies (Jammy)
@@ -181,7 +179,7 @@ SH
         run: |
           set -euo pipefail
           cd "$LINUX_DIST_DIR"
-          LDD_URL="https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-x86_64.AppImage"
+          LDD_URL="https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage"
           curl -fsSL -o linuxdeployqt.AppImage "$LDD_URL" || { echo "Failed to download linuxdeployqt"; ls -l; exit 1; }
           chmod +x linuxdeployqt.AppImage
           file linuxdeployqt.AppImage | tee linuxdeployqt.file.txt
