@@ -58,7 +58,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y desktop-file-utils libfuse2 patchelf
+          sudo apt-get install -y appstream desktop-file-utils file libfuse2 patchelf
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -74,12 +74,26 @@ jobs:
           set -euo pipefail
           mkdir -p tools
           cd tools
-          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          curl -fL --retry 3 -o linuxdeploy-plugin-python-x86_64.AppImage \
-            https://github.com/niess/linuxdeploy-plugin-python/releases/download/continuous/linuxdeploy-plugin-python-x86_64.AppImage
-          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-python-x86_64.AppImage appimagetool-x86_64.AppImage
+          curl -fL --retry 3 -o appimagetool-x86_64.AppImage \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
           ln -sf appimagetool-x86_64.AppImage appimagetool
+      - name: Extract Python runtime AppDir
+        run: |
+          set -euo pipefail
+          APPDIR="$PWD/AppDir"
+          RUNTIME_APPIMAGE="python3.11.14-cp311-cp311-manylinux2014_x86_64.AppImage"
+          RUNTIME_URL="https://github.com/niess/python-appimage/releases/download/python3.11/$RUNTIME_APPIMAGE"
+          RUNTIME_DIR="$PWD/tools/python-runtime"
+          rm -rf "$APPDIR" "$RUNTIME_DIR"
+          mkdir -p "$RUNTIME_DIR"
+          curl -fL --retry 3 -o "$RUNTIME_DIR/$RUNTIME_APPIMAGE" "$RUNTIME_URL"
+          chmod +x "$RUNTIME_DIR/$RUNTIME_APPIMAGE"
+          (cd "$RUNTIME_DIR" && "./$RUNTIME_APPIMAGE" --appimage-extract)
+          mv "$RUNTIME_DIR/squashfs-root" "$APPDIR"
+          rm -f "$APPDIR"/python*.desktop "$APPDIR"/python*.png
+          rm -f "$APPDIR"/usr/share/applications/python*.desktop
+          find "$APPDIR/usr/share/icons" -type f -name 'python*.png' -delete
       - name: Generate AppImage icon
         run: |
           python <<'PY'
@@ -103,12 +117,14 @@ jobs:
         run: |
           set -euo pipefail
           APPDIR="$PWD/AppDir"
-          rm -rf "$APPDIR"
           mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/patchopsiii" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/256x256/apps" "$LINUX_DIST_DIR"
           install -Dm755 packaging/linux/AppRun "$APPDIR/AppRun"
           install -Dm755 packaging/linux/PatchOpsIII.sh "$APPDIR/usr/bin/PatchOpsIII"
+          install -Dm644 packaging/linux/PatchOpsIII.desktop "$APPDIR/PatchOpsIII.desktop"
           install -Dm644 packaging/linux/PatchOpsIII.desktop "$APPDIR/usr/share/applications/PatchOpsIII.desktop"
+          install -Dm644 PatchOpsIII.png "$APPDIR/PatchOpsIII.png"
           install -Dm644 PatchOpsIII.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/PatchOpsIII.png"
+          install -Dm644 PatchOpsIII.png "$APPDIR/.DirIcon"
           install -Dm644 PatchOpsIII.ico "$APPDIR/usr/share/patchopsiii/PatchOpsIII.ico"
           install -Dm644 presets.json "$APPDIR/usr/share/patchopsiii/presets.json"
           install -Dm644 config.py "$APPDIR/usr/share/patchopsiii/config.py"
@@ -116,22 +132,28 @@ jobs:
           install -Dm644 main.py "$APPDIR/usr/share/patchopsiii/main.py"
           install -Dm644 t7_patch.py "$APPDIR/usr/share/patchopsiii/t7_patch.py"
           install -Dm644 utils.py "$APPDIR/usr/share/patchopsiii/utils.py"
-      - name: Build AppImage with linuxdeploy
+      - name: Install Python dependencies into AppDir
         env:
-          APPIMAGE_EXTRACT_AND_RUN: '1'
-          PYTHON_VERSION: '3.11.7'
+          PIP_DISABLE_PIP_VERSION_CHECK: '1'
+          PYTHONNOUSERSITE: '1'
+        run: |
+          set -euo pipefail
+          APPDIR="$PWD/AppDir"
+          PYTHON_BIN="$APPDIR/opt/python3.11/bin/python3.11"
+          if [ ! -x "$PYTHON_BIN" ]; then
+            echo "Bundled Python runtime not found at $PYTHON_BIN" >&2
+            exit 1
+          fi
+          "$PYTHON_BIN" -m pip install --upgrade pip
+          "$PYTHON_BIN" -m pip install --no-compile --no-warn-script-location \
+            --target "$APPDIR/opt/python3.11/lib/python3.11/site-packages" \
+            -r requirements.txt
+      - name: Build AppImage
         run: |
           set -euo pipefail
           APPDIR="$PWD/AppDir"
           export PATH="$PWD/tools:$PATH"
-          export LINUXDEPLOY_PLUGINS_DIR="$PWD/tools"
-          export PIP_REQUIREMENTS="$PWD/requirements.txt"
-          tools/linuxdeploy-x86_64.AppImage \
-            --appdir "$APPDIR" \
-            --plugin python \
-            -d "$APPDIR/usr/share/applications/PatchOpsIII.desktop" \
-            -i "$APPDIR/usr/share/icons/hicolor/256x256/apps/PatchOpsIII.png" \
-            --output appimage
+          tools/appimagetool-x86_64.AppImage "$APPDIR" "$LINUX_APPIMAGE"
       - name: Collect AppImage artifact
         run: |
           set -euo pipefail
