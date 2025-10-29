@@ -59,7 +59,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang
+          sudo apt-get install -y clang patchelf
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
