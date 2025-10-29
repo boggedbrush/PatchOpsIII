@@ -47,7 +47,6 @@ jobs:
     env:
       LINUX_DIST_DIR: dist/linux
       LINUX_APPIMAGE: PatchOpsIII.AppImage
-      LINUX_BINARY: PatchOpsIII
       VT_CLI_ARCHIVE: vt-cli.zip
       COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
       COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
@@ -135,81 +134,36 @@ jobs:
             --output-filename="$LINUX_APPIMAGE" \
             main.py
 
-      - name: Prepare binary
+      - name: Verify Nuitka footer
         run: |
           set -euo pipefail
-          target="$LINUX_DIST_DIR/$LINUX_APPIMAGE"
-          binary="$LINUX_DIST_DIR/$LINUX_BINARY"
-          if [ ! -f "$target" ]; then
-            echo "$target was not produced" >&2
-            exit 1
-          fi
-          mv "$target" "$binary"
-          chmod +x "$binary"
+          python <<'PY'
+          import pathlib
+          import struct
 
-      - name: Create AppDir
-        run: |
-          set -euo pipefail
-          APPDIR="$LINUX_DIST_DIR/AppDir"
-          mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
-          cp "$LINUX_DIST_DIR/$LINUX_BINARY" "$APPDIR/usr/bin/PatchOpsIII"
-          printf '%s\n' \
-            '[Desktop Entry]' \
-            'Type=Application' \
-            'Name=PatchOpsIII' \
-            'Exec=PatchOpsIII' \
-            'Icon=PatchOpsIII' \
-            'Categories=Utility;' \
-            > "$APPDIR/usr/share/applications/PatchOpsIII.desktop"
-          cp PatchOpsIII.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/PatchOpsIII.png"
-          printf '%s\n' \
-            '#!/bin/sh' \
-            'HERE="$(dirname "$(readlink -f "$0")")"' \
-            'exec "$HERE/usr/bin/PatchOpsIII" "$@"' \
-            > "$APPDIR/AppRun"
-          chmod +x "$APPDIR/AppRun"
+          path = pathlib.Path('${{ env.LINUX_DIST_DIR }}/${{ env.LINUX_APPIMAGE }}')
+          if not path.is_file():
+              raise SystemExit(f"{path} was not produced")
 
-      - name: Install packaging dependencies (Jammy)
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y curl file zsync libfuse2 squashfs-tools
+          data = path.read_bytes()
+          if len(data) < 11:
+              raise SystemExit("AppImage is unexpectedly small")
 
-      - name: Download and verify linuxdeployqt
-        run: |
-          set -euo pipefail
-          cd "$LINUX_DIST_DIR"
-          LDD_URL="https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage"
-          curl -fsSL -o linuxdeployqt.AppImage "$LDD_URL" || { echo "Failed to download linuxdeployqt"; ls -l; exit 1; }
-          chmod +x linuxdeployqt.AppImage
-          file linuxdeployqt.AppImage | tee linuxdeployqt.file.txt
-          if ! file linuxdeployqt.AppImage | grep -qi -e 'ELF' -e 'AppImage'; then
-            echo "linuxdeployqt download appears invalid. Showing head for debugging:" >&2
-            head -c 512 linuxdeployqt.AppImage | sed -n '1,6p' || true
-            exit 1
-          fi
+          footer = data[-8:]
+          length = struct.unpack('<Q', footer)[0]
+          if length <= 0 or length > len(data):
+              raise SystemExit(f"Unexpected payload length: {length}")
 
-      - name: Build AppImage with linuxdeployqt
-        run: |
-          set -euo pipefail
-          cd "$LINUX_DIST_DIR"
-          APPDIR="$PWD/AppDir"
-          DESKTOP="$APPDIR/usr/share/applications/PatchOpsIII.desktop"
-          if [ ! -f "$DESKTOP" ]; then
-            echo "Desktop file missing: $DESKTOP" >&2
-            find "$APPDIR" -maxdepth 3 -type f -print || true
-            exit 1
-          fi
-          ./linuxdeployqt.AppImage "$DESKTOP" -appimage || { echo "linuxdeployqt failed"; ls -al; exit 1; }
-          gen=$(ls ./*.AppImage 2>/dev/null | grep -i PatchOpsIII | head -n1 || true)
-          if [ -z "$gen" ]; then
-            echo "linuxdeployqt did not produce an AppImage" >&2
-            ls -al
-            exit 1
-          fi
-          target="$PWD/$LINUX_APPIMAGE"
-          mv "$gen" "$target"
-          chmod +x "$target"
+          payload_start = len(data) - 8 - length
+          if payload_start < 0:
+              raise SystemExit("Computed payload start before file")
+
+          magic = data[payload_start:payload_start + 3]
+          if magic != b'KAX':
+              raise SystemExit(f"Invalid payload magic: {magic!r}")
+
+          print(f"Footer OK (payload length {length} bytes, magic {magic!r})")
+          PY
 
       - name: Smoke-test AppImage
         run: |
