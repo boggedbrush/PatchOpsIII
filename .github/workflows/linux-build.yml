@@ -58,36 +58,27 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang
+          sudo apt-get install -y desktop-file-utils libfuse2 patchelf
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
           cache-dependency-path: requirements.txt
-      - name: Install dependencies
+      - name: Install build dependencies
         run: |
-          python -m pip install -r requirements.txt
-          python -m pip install --upgrade nuitka pillow
-      - name: Cache Nuitka build artifacts
-        id: cache-nuitka
-        uses: actions/cache@v4
-        with:
-          path: |
-            PatchOpsIII.build
-            PatchOpsIII.dist
-            PatchOpsIII.onefile-build
-            .nuitka-cache
-          key: nuitka-${{ runner.os }}-${{ github.sha }}
-      - name: Prepare build directories
+          python -m pip install --upgrade pip
+          python -m pip install pillow
+      - name: Download AppImage tooling
         run: |
-          rm -rf dist build
-          if [ '${{ steps.cache-nuitka.outputs.cache-hit }}' != 'true' ]; then
-            rm -rf PatchOpsIII.build PatchOpsIII.dist PatchOpsIII.onefile-build .nuitka-cache
-          fi
-          rm -f PatchOpsIII.spec
-          rm -f PatchOpsIII.png
-          mkdir -p "$LINUX_DIST_DIR"
+          set -euo pipefail
+          mkdir -p tools
+          cd tools
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-python/releases/download/continuous/linuxdeploy-plugin-python-x86_64.AppImage
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-python-x86_64.AppImage appimagetool-x86_64.AppImage
+          ln -sf appimagetool-x86_64.AppImage appimagetool
       - name: Generate AppImage icon
         run: |
           python <<'PY'
@@ -107,31 +98,48 @@ jobs:
               image.seek(frame_index)
           image.convert('RGBA').save(png_path, format='PNG')
           PY
-      - name: Build AppImage with Nuitka
+      - name: Assemble AppDir contents
         run: |
-          python -m nuitka \
-            --onefile \
-            --onefile-no-compression \
-            --clang \
-            --lto=yes \
-            --assume-yes-for-downloads \
-            --enable-plugins=pyside6 \
-            --include-qt-plugins=sensible,platforms \
-            --nofollow-import-to=PySide6.QtWebEngineCore \
-            --nofollow-import-to=PySide6.QtWebEngineWidgets \
-            --nofollow-import-to=PySide6.QtWebEngine \
-            --nofollow-import-to=PySide6.QtWebEngineQuick \
-            --nofollow-import-to=PySide6.QtMultimedia \
-            --nofollow-import-to=PySide6.QtMultimediaWidgets \
-            --nofollow-import-to=PySide6.QtOpenGLWidgets \
-            --include-package=vdf \
-            --include-package=requests \
-            --include-data-file=presets.json=presets.json \
-            --include-data-file=PatchOpsIII.ico=PatchOpsIII.ico \
-            --linux-icon=PatchOpsIII.png \
-            --output-dir="$LINUX_DIST_DIR" \
-            --output-filename="$LINUX_APPIMAGE" \
-            main.py
+          set -euo pipefail
+          APPDIR="$PWD/AppDir"
+          rm -rf "$APPDIR"
+          mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/patchopsiii" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/256x256/apps" "$LINUX_DIST_DIR"
+          install -Dm755 packaging/linux/AppRun "$APPDIR/AppRun"
+          install -Dm755 packaging/linux/PatchOpsIII.sh "$APPDIR/usr/bin/PatchOpsIII"
+          install -Dm644 packaging/linux/PatchOpsIII.desktop "$APPDIR/usr/share/applications/PatchOpsIII.desktop"
+          install -Dm644 PatchOpsIII.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/PatchOpsIII.png"
+          install -Dm644 PatchOpsIII.ico "$APPDIR/usr/share/patchopsiii/PatchOpsIII.ico"
+          install -Dm644 presets.json "$APPDIR/usr/share/patchopsiii/presets.json"
+          install -Dm644 config.py "$APPDIR/usr/share/patchopsiii/config.py"
+          install -Dm644 dxvk_manager.py "$APPDIR/usr/share/patchopsiii/dxvk_manager.py"
+          install -Dm644 main.py "$APPDIR/usr/share/patchopsiii/main.py"
+          install -Dm644 t7_patch.py "$APPDIR/usr/share/patchopsiii/t7_patch.py"
+          install -Dm644 utils.py "$APPDIR/usr/share/patchopsiii/utils.py"
+      - name: Build AppImage with linuxdeploy
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+          PYTHON_VERSION: '3.11.7'
+        run: |
+          set -euo pipefail
+          APPDIR="$PWD/AppDir"
+          export PATH="$PWD/tools:$PATH"
+          export LINUXDEPLOY_PLUGINS_DIR="$PWD/tools"
+          export PIP_REQUIREMENTS="$PWD/requirements.txt"
+          tools/linuxdeploy-x86_64.AppImage \
+            --appdir "$APPDIR" \
+            --plugin python \
+            -d "$APPDIR/usr/share/applications/PatchOpsIII.desktop" \
+            -i "$APPDIR/usr/share/icons/hicolor/256x256/apps/PatchOpsIII.png" \
+            --output appimage
+      - name: Collect AppImage artifact
+        run: |
+          set -euo pipefail
+          APPIMAGE_PATH=$(ls -1 PatchOpsIII*.AppImage | head -n1)
+          if [ -z "$APPIMAGE_PATH" ]; then
+            echo "No AppImage produced" >&2
+            exit 1
+          fi
+          mv "$APPIMAGE_PATH" "$LINUX_DIST_DIR/$LINUX_APPIMAGE"
       - name: Ensure AppImage is executable
         run: |
           target="$LINUX_DIST_DIR/$LINUX_APPIMAGE"
