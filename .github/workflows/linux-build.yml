@@ -69,15 +69,21 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install pillow
-      - name: Download AppImage tooling
+      - name: Download static appimagetool (go-appimage)
         run: |
           set -euo pipefail
           mkdir -p tools
-          cd tools
-          curl -fL --retry 3 -o appimagetool-x86_64.AppImage \
-            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x appimagetool-x86_64.AppImage
-          ln -sf appimagetool-x86_64.AppImage appimagetool
+          python <<'PY'
+          import json, urllib.request, os, sys
+          url = 'https://api.github.com/repos/probonopd/go-appimage/releases/tags/continuous'
+          with urllib.request.urlopen(url) as r:
+              data = json.load(r)
+          asset = next(a for a in data['assets']
+                       if 'appimagetool' in a['name'] and 'x86_64' in a['name'] and a['name'].endswith('.AppImage'))
+          out = os.path.join('tools', 'appimagetool')
+          urllib.request.urlretrieve(asset['browser_download_url'], out)
+          os.chmod(out, 0o755)
+          PY
       - name: Extract Python runtime AppDir
         run: |
           set -euo pipefail
@@ -152,8 +158,13 @@ jobs:
         run: |
           set -euo pipefail
           APPDIR="$PWD/AppDir"
-          export PATH="$PWD/tools:$PATH"
-          tools/appimagetool-x86_64.AppImage "$APPDIR" "$LINUX_APPIMAGE"
+          tools/appimagetool "$APPDIR" "$LINUX_APPIMAGE"
+      - name: Produce portable tarball (extracted)
+        run: |
+          set -euo pipefail
+          mkdir -p "$LINUX_DIST_DIR"
+          ./"$LINUX_APPIMAGE" --appimage-extract
+          tar -C squashfs-root -cJf "$LINUX_DIST_DIR/PatchOpsIII-portable.tar.xz" .
       - name: Collect AppImage artifact
         run: |
           set -euo pipefail
