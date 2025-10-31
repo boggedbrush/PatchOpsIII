@@ -1,128 +1,124 @@
-# Overview  
-PatchOpsIII is a Python-based application developed by [boggedbrush](https://github.com/boggedbrush/PatchOpsIII). The project is designed to streamline and optimize operations through a robust and versatile framework. The application features a tabbed interface (`Mods`, `Graphics`, & `Advanced`) with both dark and light mode support. The application is packaged using PyInstaller to support both Linux (coming soon) and Windows environments.  
+# PatchOpsIII
+
+[![Latest Release](https://img.shields.io/github/v/release/boggedbrush/PatchOpsIII?style=for-the-badge&color=0a84ff)](https://github.com/boggedbrush/PatchOpsIII/releases)
+[![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/boggedbrush/PatchOpsIII/total?style=for-the-badge&color=34c759)](https://github.com/boggedbrush/PatchOpsIII/releases)
+[![GitHub Stars](https://img.shields.io/github/stars/boggedbrush/PatchOpsIII?style=for-the-badge&color=ff9f0a)](https://github.com/boggedbrush/PatchOpsIII/stargazers)
+[![GitHub Issues](https://img.shields.io/github/issues/boggedbrush/PatchOpsIII?style=for-the-badge&color=ff453a)](https://github.com/boggedbrush/PatchOpsIII/issues)
+[![License](https://img.shields.io/github/license/boggedbrush/PatchOpsIII?style=for-the-badge&color=5e5ce6)](LICENSE)
+
+> **PatchOpsIII** is a modern, full-featured control center for Call of Duty: Black Ops III modding, maintenance, and performance tuning.
+
+---
 
 ![Program Screenshot](https://github.com/user-attachments/assets/a79e7273-4274-4a43-8d4d-e81a12cbd1ff)
 
 ---
 
-# Features  
+## Table of Contents
+- [Overview](#overview)
+- [Key Features](#key-features)
+  - [Mods Tab](#mods-tab)
+  - [Graphics Tab](#graphics-tab)
+  - [Advanced Tab](#advanced-tab)
+  - [Terminal & Logging](#terminal--logging)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Screenshots](#screenshots)
+- [Known Issues](#known-issues)
+- [Support](#support)
+- [Special Thanks](#special-thanks)
+- [License](#license)
+- [Star History](#star-history)
 
-## 1. Mods Tab
+## Overview
+PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popular community tools and quality-of-life tweaks in a single polished interface. The Python application ships with dark/light themes, tabbed navigation (Mods, Graphics, Advanced), and PyInstaller builds for Windows with Linux support in active development. Whether you are securing your game with T7 Patch, chasing peak framerates with DXVK, or fine-tuning launch options, PatchOpsIII consolidates every workflow into one cohesive experience.
 
-### 1.1 Game Directory  
-- Allows users to specify their game directory. The default behavior is to search within the same directory, and then the default directory:  
-  
-  - `C:\Program Files (x86)\Steam\steamapps\common\Call of Duty Black Ops III`
-  
-- If the directory isn't found, users can manually select the game's installation folder using the "Browse" button at the top right.  
+## Key Features
 
-### 1.2 T7Patch Management  
-- The **T7 Patch** is a community-developed modification for *Call of Duty: Black Ops III* that addresses various security vulnerabilities and performance issues within the game.  
+### Mods Tab
+- **Smart Game Directory Detection:** Automatically locates your Black Ops III installation or lets you browse manually.
+- **T7 Patch Management:** Install, update, configure gamertags and colors, apply network passwords, toggle Friends Only mode, deploy LPC fixes, and cleanly uninstall.
+- **DXVK-GPLAsync Integration:** Deploy and remove Vulkan-based shader compilation to reduce stutter and latency.
+- **Workshop Helper:** One-click access to curated Steam Workshop mods and documentation.
+- **Launch Profiles:** Preset command-line configurations for Offline play, All-around Enhancement Lite, and Ultimate Experience Mod.
 
-**Key Benefits:**  
-- Fixes remote code execution (RCE) vulnerabilities  
-- Prevents potential exploits  
-- Resolves FPS-related problems  
+### Graphics Tab
+- **Preset Loader:** Apply curated JSON presets to instantly switch between visual configurations.
+- **Convenience Sliders:** Tweak FOV, display mode, resolution, refresh rate, render resolution %, V-Sync, and FPS counters.
+- **Intro Skip & FPS Limiter:** Automate `.mkv` renames and adjust FPS limits from 0–1000 for faster load times and smoother gameplay.
 
-**PatchOpsIII enables users to:**
-- Install and update the T7 Patch  
-- Update their gamertag  
-- Set their gamertag color
-- Configure network password
-- Toggle Friends Only Mode
-- Install LPC to resolve A.B.C errors
-- Uninstall T7Patch when needed
+### Advanced Tab
+- **Power Tweaks:** Toggle SmoothFramerate, unlock full VRAM usage, reduce CPU pressure, manage frame latency, and expose hidden graphics options by editing `config.ini` safely.
+- **Stutter Fixes:** Automate DirectX DLL renaming to keep shader compilation modern and responsive.
+- **Config Safeguards:** Set configuration files read-only to preserve your optimized setup.
 
-- This management only needs to run once and does not require `t7patch.exe` to remain open in the background. Implementing the T7 Patch is crucial for maintaining game security and performance, as it safeguards against known exploits and enhances overall stability.  
+### Terminal & Logging
+- Embedded console view provides live feedback on every action.
+- Automatic `PatchOpsIII.log` generation captures a detailed audit trail for troubleshooting and support.
 
-You can learn more about the T7 Patch [here](https://github.com/shiversoftdev/t7patch).  
+## Installation
+1. **Download:** Grab the latest release from the [Releases page](https://github.com/boggedbrush/PatchOpsIII/releases).
+2. **Extract:** Unzip the package to a preferred folder outside of your game directory.
+3. **Run:** Launch `PatchOpsIII.exe` on Windows (or the corresponding binary for other platforms as they become available).
+4. **Dependencies:** The packaged build bundles all required Python dependencies; no additional setup is needed.
 
-### 1.3 DXVK-GPLAsync Management  
-**Shader compilation stuttering** is a common issue in PC gaming, causing noticeable delays when new shaders are compiled during gameplay. DXVK-GPLAsync offers a solution by converting **DirectX** calls to **Vulkan** with asynchronous shader compilation, reducing stutters and enhancing overall performance.  
+### Developer Setup
+```bash
+# clone the repository
+ git clone https://github.com/boggedbrush/PatchOpsIII.git
+ cd PatchOpsIII
 
-**Feature Highlights:**  
-- Install/uninstall `dxvk-gplasync`  
-- Minimize in-game stuttering caused by real-time shader compilation  
-- Enhance performance and reduce latency, especially for stutter-prone games  
+# create a virtual environment
+ python -m venv .venv
+ source .venv/bin/activate  # On Windows use: .venv\Scripts\activate
 
-Learn more about [DXVK](https://www.pcgamingwiki.com/wiki/DXVK), [DXVK-GPLAsync](https://gitlab.com/Ph42oN/dxvk-gplasync), and [shader stutter](https://youtu.be/f7yml1y3fDE?si=NpwybZNqIRVhxmL7).  
+# install dependencies
+ pip install -r requirements.txt
 
-### 1.4 Quality of Life Features
-- **Skip All Intro Videos:** Bypass all game intro videos
-- **Launch Options:** Support for various mod configurations:
-  - Play Offline
-  - All-around Enhancement Lite
-  - Ultimate Experience Mod
-- **Clickable Help:** Access detailed information and download links for Steam Workshop mods
+# run the application
+ python main.py
+```
 
----
+## Quick Start
+1. Launch PatchOpsIII and verify your Black Ops III directory.
+2. Apply the **T7 Patch** to secure multiplayer connectivity and remove RCE vulnerabilities.
+3. Enable **DXVK-GPLAsync** for async shader compilation and reduced stutter.
+4. Choose a graphics preset or dial in custom display options.
+5. Visit the **Advanced** tab to unlock VRAM, tweak frame latency, and set your config to read-only once satisfied.
 
-![Graphics Tab Screenshot](https://github.com/user-attachments/assets/1188883e-7bf2-464e-a4a7-5f9806806fb2)
-
-
-## 2. Graphics Tab
-
-### 2.1 Graphic Presets  
-Allows users to apply graphics presets from pre-configured JSON files for quick and easy configuration.  
-
-### 2.2 Basic Settings  
-- **Skip Intro Video:** Renames `BO3_Global_Logo_LogoSequence.mkv` to `.bak`, skipping the intro cutscene. [Skip intro videos](https://www.pcgamingwiki.com/wiki/Call_of_Duty:_Black_Ops_III#Skip_intro_videos)  
-- **FPS Limiter:** Set the FPS limiter from **0-1000** (previously **24-1000**). Setting to **0** can improve loading speed. [Increased loading speed](https://www.pcgamingwiki.com/wiki/Call_of_Duty:_Black_Ops_III#Increased_loading_speed_levels)  
-- **Convenience Settings:** Adjust:  
-  - Field of View (FOV)  
-  - Display Mode  
-  - Resolution  
-  - Refresh Rate  
-  - Render Resolution %  
-  - Enable V-Sync  
-  - Show FPS Counter  
-
----
-
-![Advanced Tab Screenshot](https://github.com/user-attachments/assets/0c6ba5d4-f86a-4645-9b07-a5667c8305b9)
-
-## 3. Advanced Tab
-
-### 3.1 Advanced Settings  
-- **Smooth Framerate:** Changes `SmoothFramerate` from **0** to **1** in `config.ini`. [Frame rate isn't smooth](https://www.pcgamingwiki.com/wiki/Call_of_Duty:_Black_Ops_III#Frame_rate_isn.27t_smooth)  
-- **Use Full VRAM:** Sets `VideoMemory` to **1** and `StreamMinResident` to **0** in `config.ini`. [Use full VRAM](https://www.pcgamingwiki.com/wiki/Call_of_Duty:_Black_Ops_III#Game_does_not_take_advantage_of_the_entire_VRAM_amount_available)  
-- **Lower Latency:** Modifies `MaxFrameLatency` in `config.ini` to allow between **0 (System Level)** and **4** queued frames. [Improve responsiveness](https://www.pcgamingwiki.com/wiki/Call_of_Duty:_Black_Ops_III#Game_isn.27t_responsive_enough)  
-- **Reduce CPU Usage:** Toggles `SerializeRender` from **0** to **2**, recommended for older/weaker CPUs. [High CPU usage](https://www.pcgamingwiki.com/wiki/Call_of_Duty:_Black_Ops_III#CPU_usage_sometimes_goes_too_high_on_some_configurations)  
-- **Reduce Stuttering:** Renames `d3dcompiler_46.dll` to `.bak` to enforce the latest DirectX11 version. [Stuttering issues](https://www.pcgamingwiki.com/wiki/Call_of_Duty:_Black_Ops_III#Stuttering)  
-- **Unlock All Graphics Options:** Sets `RestrictGraphicsOptions` from **1** to **0** in `config.ini`. [Unlock settings](https://www.pcgamingwiki.com/wiki/Call_of_Duty:_Black_Ops_III#Make_all_settings_available)  
-- **Lock `config.ini` (read-only):** Prevents unintended changes by setting `config.ini` to **read-only**.  
-
-## 4. Terminal/Log Window  
-Displays logs in a terminal view, providing transparency about what operations succeeded or failed.  
-
-- **Log Creation:** On startup, a `PatchOpsIII.log` file is generated with full session logs.  
-- **Troubleshooting:** Users can easily identify issues through detailed log messages.
-
----
+## Screenshots
+<table>
+  <tr>
+    <td align="center"><img src="https://github.com/user-attachments/assets/a79e7273-4274-4a43-8d4d-e81a12cbd1ff" alt="Mods Tab" /></td>
+    <td align="center"><img src="https://github.com/user-attachments/assets/1188883e-7bf2-464e-a4a7-5f9806806fb2" alt="Graphics Tab" /></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2"><img src="https://github.com/user-attachments/assets/0c6ba5d4-f86a-4645-9b07-a5667c8305b9" alt="Advanced Tab" /></td>
+  </tr>
+</table>
 
 ## Known Issues
-- All-around Enhancement Mod (full version) may have compatibility issues with launch options
-- Launch options stability may vary between users
-- Some features are still under testing
+- Full version of the All-around Enhancement Mod may conflict with certain launch options.
+- Launch option stability can vary between systems; experiment to find a stable configuration.
+- A few advanced toggles remain in beta testing—report issues via GitHub.
 
----
+## Support
+- 📚 Explore detailed usage notes in the [project wiki](wiki/home.md).
+- 🐛 Report bugs or request features through [GitHub Issues](https://github.com/boggedbrush/PatchOpsIII/issues).
+- 💬 Join the community discussion on Discord *(coming soon)*.
 
-This project wouldn't exist without the hard work and contributions of other projects:
+## Special Thanks
+This project would not be possible without the incredible work of the broader community:
 
-- **t7patch:**  
+- **t7patch** – Security and stability backbone for Black Ops III multiplayer.  
   [https://github.com/shiversoftdev/t7patch](https://github.com/shiversoftdev/t7patch)
-
-- **dxvk-gplasync:**  
+- **dxvk-gplasync** – Vulkan translation layer with async shader compilation.  
   [https://gitlab.com/Ph42oN/dxvk-gplasync](https://gitlab.com/Ph42oN/dxvk-gplasync)
+- **ValvePython/vdf** – Reliable Steam VDF parsing utilities used throughout PatchOpsIII.  
+  [https://github.com/ValvePython/vdf](https://github.com/ValvePython/vdf)
 
----
+## License
+PatchOpsIII is released under the [MIT License](LICENSE).
 
-# Contributing
-
-Contributions are welcome! Fork the repo and submit pull requests. Please follow the existing code style and include tests for new features.
-
----
-
-# License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+## Star History
+[![Star History Chart](https://api.star-history.com/svg?repos=boggedbrush/PatchOpsIII&type=Date)](https://star-history.com/#boggedbrush/PatchOpsIII&Date)
