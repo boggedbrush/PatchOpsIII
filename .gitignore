@@ -23,3 +23,7 @@ BO3 Mod Files/
 
 # vdf files:
 *.vdf
+
+# Added by cargo
+
+/target
