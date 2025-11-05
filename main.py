@@ -254,7 +254,7 @@ GAME_EXECUTABLE_NAMES = ("BlackOpsIII.exe", "BlackOps3.exe")
 
 
 def _settings_file_path():
-    base_path = APPLICATION_PATH if 'APPLICATION_PATH' in globals() and APPLICATION_PATH else get_application_path()
+    base_path = STORAGE_PATH if 'STORAGE_PATH' in globals() and STORAGE_PATH else get_application_path()
     return os.path.join(base_path, "PatchOpsIII_settings.json")
 
 
@@ -414,6 +414,13 @@ def _ensure_install_location_writable(app_dir, mod_files_dir):
         "Please put the program in a user directory or in the same directory as BlackOps3.exe"
     )
     try:
+        os.makedirs(app_dir, exist_ok=True)
+    except OSError as exc:
+        if exc.errno in (errno.EACCES, errno.EPERM, errno.EROFS):
+            _show_install_location_error(error_message)
+        else:
+            raise
+    try:
         os.makedirs(mod_files_dir, exist_ok=True)
     except OSError as exc:
         if exc.errno in (errno.EACCES, errno.EPERM, errno.EROFS):
@@ -424,15 +431,59 @@ def _ensure_install_location_writable(app_dir, mod_files_dir):
     _assert_directory_is_writable(mod_files_dir, error_message)
 
 
+def _is_directory_writable(path):
+    test_file = os.path.join(path, ".patchops_write_test")
+    try:
+        os.makedirs(path, exist_ok=True)
+        with open(test_file, "w", encoding="utf-8") as handle:
+            handle.write("ok")
+        return True
+    except OSError as exc:
+        if exc.errno in (errno.EACCES, errno.EPERM, errno.EROFS):
+            return False
+        raise
+    finally:
+        try:
+            if os.path.exists(test_file):
+                os.remove(test_file)
+        except OSError:
+            pass
+
+
+def _default_storage_directory():
+    home = os.path.expanduser("~")
+    if platform.system() == "Windows":
+        roaming = os.environ.get("APPDATA")
+        if not roaming:
+            roaming = os.path.join(home, "AppData", "Roaming")
+        return os.path.join(roaming, "PatchOpsIII")
+    xdg_data = os.environ.get("XDG_DATA_HOME")
+    if not xdg_data:
+        xdg_data = os.path.join(home, ".local", "share")
+    return os.path.join(xdg_data, "PatchOpsIII")
+
+
 APPLICATION_PATH = get_application_path()
+STORAGE_PATH = APPLICATION_PATH
+if not _is_directory_writable(STORAGE_PATH):
+    fallback_storage = _default_storage_directory()
+    STORAGE_PATH = fallback_storage
+    write_log(
+        f"Application directory {APPLICATION_PATH} is not writable; using storage directory {STORAGE_PATH}",
+        "Warning",
+        None,
+    )
+else:
+    write_log(f"Using application directory {APPLICATION_PATH} for storage", "Info", None)
+
 DEFAULT_GAME_DIR = get_game_directory()
 
-MOD_FILES_DIR = os.path.join(APPLICATION_PATH, "BO3 Mod Files")
+MOD_FILES_DIR = os.path.join(STORAGE_PATH, "BO3 Mod Files")
 
 # Migrate settings from old location if needed
-_migrate_settings_if_needed(APPLICATION_PATH)
+_migrate_settings_if_needed(STORAGE_PATH)
 
-_ensure_install_location_writable(APPLICATION_PATH, MOD_FILES_DIR)
+_ensure_install_location_writable(STORAGE_PATH, MOD_FILES_DIR)
 
 class ApplyLaunchOptionsWorker(QThread):
     finished = Signal()
@@ -937,7 +988,9 @@ class MainWindow(QMainWindow):
         self.advanced_widget.set_game_directory(directory)
         self.qol_widget.set_game_directory(directory)
 
-if __name__ == "__main__":
+
+def main() -> int:
+    """Launch the PatchOpsIII GUI and return its exit code."""
     cli_args = parse_cli_arguments()
     write_log(f"Process PID {os.getpid()} elevated={is_admin()}", "Info")
     app = QApplication(sys.argv)
@@ -948,11 +1001,15 @@ if __name__ == "__main__":
     app.setWindowIcon(global_icon)
     window = MainWindow()
 
-    if getattr(cli_args, 'game_dir', None):
+    if getattr(cli_args, "game_dir", None):
         directory = cli_args.game_dir
         if find_game_executable(directory):
             window._apply_game_directory(directory, save=True)
-            write_log(f"Game directory set via CLI to {directory}", "Success", window.log_text)
+            write_log(
+                f"Game directory set via CLI to {directory}",
+                "Success",
+                window.log_text,
+            )
         else:
             message = (
                 "BlackOpsIII.exe not found in the CLI-provided directory. "
@@ -962,10 +1019,19 @@ if __name__ == "__main__":
 
     window.show()
 
-    if getattr(cli_args, 'install_t7', False):
+    if getattr(cli_args, "install_t7", False):
         if is_admin():
             QTimer.singleShot(0, window.t7_patch_widget.install_t7_patch)
         else:
-            write_log("Elevation flag detected but process is not running with administrator rights. Skipping automatic T7 Patch install.", "Warning", window.log_text)
+            write_log(
+                "Elevation flag detected but process is not running with administrator rights. "
+                "Skipping automatic T7 Patch install.",
+                "Warning",
+                window.log_text,
+            )
 
-    sys.exit(app.exec())
+    return app.exec()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
