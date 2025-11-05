@@ -21,6 +21,9 @@ NUITKA_ARGS=(
 if [ -d "assets" ]; then
   NUITKA_ARGS+=("--include-data-files=assets/**=assets/")
 fi
+if [ -f "presets.json" ]; then
+  NUITKA_ARGS+=("--include-data-files=presets.json=presets.json")
+fi
 
 python -m nuitka "${NUITKA_ARGS[@]}"
 
@@ -59,7 +62,7 @@ export PATH="$TOOLS_DIR:$PATH"
 export APPIMAGE_EXTRACT_AND_RUN=1
 
 # 4) Embed update metadata + build
-export UPDATE_INFORMATION="gh-releases-zsync|boggedbrush|PatchOpsIII|latest|PatchOpsIII-*x86_64.AppImage.zsync"
+export UPDATE_INFORMATION="gh-releases-zsync|boggedbrush|PatchOpsIII|latest|PatchOpsIII.AppImage.zsync"
 export LDAI_UPDATE_INFORMATION="$UPDATE_INFORMATION"
 
 LINUXDEPLOY_CMD=("$TOOLS_DIR/linuxdeploy-x86_64.AppImage" --appdir "$APPDIR")

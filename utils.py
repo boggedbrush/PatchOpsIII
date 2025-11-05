@@ -3,11 +3,37 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 import vdf
 import platform
 
-def write_log(message, category="Info", log_widget=None, log_file="PatchOpsIII.log"):
+DEFAULT_LOG_FILENAME = "PatchOpsIII.log"
+
+def get_app_data_dir():
+    system = platform.system()
+    home = os.path.expanduser("~")
+
+    if system == "Windows":
+        base = os.environ.get("APPDATA") or os.path.join(home, "AppData", "Roaming")
+    elif system == "Darwin":
+        base = os.path.join(home, "Library", "Application Support")
+    else:
+        base = os.environ.get("XDG_DATA_HOME") or os.path.join(home, ".local", "share")
+
+    return os.path.join(base, "PatchOpsIII")
+
+def _resolve_log_path(log_file):
+    if not log_file:
+        log_file = DEFAULT_LOG_FILENAME
+
+    if os.path.isabs(log_file):
+        return log_file
+
+    filename = os.path.basename(log_file) or DEFAULT_LOG_FILENAME
+    return os.path.join(get_app_data_dir(), filename)
+
+def write_log(message, category="Info", log_widget=None, log_file=DEFAULT_LOG_FILENAME):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     full_message = f"{timestamp} - {category}: {message}"
     if log_widget:
@@ -28,9 +54,19 @@ def write_log(message, category="Info", log_widget=None, log_file="PatchOpsIII.l
             handler(full_message=full_message, category=category, html_message=html_message, plain_message=message)
         else:
             log_widget.append(html_message)
-    
-    with open(log_file, "a") as f:
-        f.write(full_message + "\n")
+
+    log_path = _resolve_log_path(log_file)
+    try:
+        directory = os.path.dirname(log_path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(full_message + "\n")
+    except Exception as exc:
+        try:
+            print(f"Failed to write log entry to {log_path}: {exc}", file=sys.stderr)
+        except Exception:
+            pass
 
 def _find_windows_steam_root():
     candidates = []
@@ -125,42 +161,105 @@ def find_steam_user_id():
         return None
     return user_ids[0]
 
+def get_backup_locations():
+    user_backup_dir = os.path.join(get_app_data_dir(), "backups")
+    module_backup_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backups")
+    locations = [user_backup_dir]
+    if os.path.normpath(module_backup_dir) != os.path.normpath(user_backup_dir):
+        locations.append(module_backup_dir)
+    return locations
+
 def backup_config_file(config_path, log_widget):
-    backup_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backups")
-    os.makedirs(backup_dir, exist_ok=True)
-    backup_file_path = os.path.join(backup_dir, "localconfig_backup.vdf")
-    
+    backup_dirs = get_backup_locations()
+    primary_dir = backup_dirs[0]
+    try:
+        os.makedirs(primary_dir, exist_ok=True)
+    except Exception as e:
+        write_log(f"Failed to prepare backup directory '{primary_dir}': {e}", "Error", log_widget)
+        return False
+
+    backup_file_path = os.path.join(primary_dir, "localconfig_backup.vdf")
+
     try:
         shutil.copy2(config_path, backup_file_path)  # copy2 preserves metadata
-        write_log(f"Config backup created in program directory", "Success", log_widget)
+        write_log(f"Config backup created at {backup_file_path}", "Success", log_widget)
         return True
     except Exception as e:
         write_log(f"Failed to create backup: {e}", "Error", log_widget)
         return False
 
 def restore_config_file(config_path, log_widget):
-    backup_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backups", "localconfig_backup.vdf")
-    if os.path.exists(backup_file_path):
+    for directory in get_backup_locations():
+        backup_file_path = os.path.join(directory, "localconfig_backup.vdf")
+        if not os.path.exists(backup_file_path):
+            continue
         try:
             shutil.copy2(backup_file_path, config_path)
             write_log("Config restored from backup", "Success", log_widget)
             return True
         except Exception as e:
-            write_log(f"Failed to restore backup: {e}", "Error", log_widget)
+            write_log(f"Failed to restore backup from {backup_file_path}: {e}", "Error", log_widget)
             return False
-    else:
-        write_log("No backup file found", "Warning", log_widget)
+    write_log("No backup file found", "Warning", log_widget)
+    return False
+
+def is_steam_running():
+    system = platform.system()
+    try:
+        if system == "Windows":
+            result = subprocess.run(
+                ["tasklist", "/FI", "IMAGENAME eq steam.exe"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            output = (result.stdout or "").lower()
+            return "steam.exe" in output
+        return subprocess.call(
+            ["pgrep", "-x", "steam"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5
+        ) == 0
+    except (subprocess.SubprocessError, OSError):
         return False
 
 def close_steam(log_widget):
     system = platform.system()
     try:
         if system == "Windows":
-            subprocess.run(["taskkill", "/F", "/IM", "steam.exe"], check=True, timeout=10)
+            result = subprocess.run(
+                ["taskkill", "/F", "/IM", "steam.exe"],
+                check=False,
+                timeout=10,
+                capture_output=True,
+                text=True
+            )
+            if result.returncode != 0:
+                if not is_steam_running():
+                    write_log("Steam was not running.", "Info", log_widget)
+                else:
+                    write_log(f"Failed to close Steam: {result.stderr.strip() or result.stdout.strip()}", "Error", log_widget)
+                    return
         elif system == "Linux":
-            subprocess.run(["pkill", "steam"], check=True, timeout=10)
+            result = subprocess.run(
+                ["pkill", "steam"],
+                check=False,
+                timeout=10,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            if result.returncode == 1:
+                write_log("Steam was not running.", "Info", log_widget)
+            elif result.returncode != 0:
+                write_log(f"Failed to close Steam (return code {result.returncode}).", "Error", log_widget)
+                return
         time.sleep(5)
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+    except subprocess.TimeoutExpired:
+        write_log("Timed out while attempting to close Steam.", "Warning", log_widget)
+    except FileNotFoundError as e:
+        write_log(f"Steam control command not found: {e}", "Error", log_widget)
+    except subprocess.SubprocessError as e:
         write_log(f"Failed to close Steam: {e}", "Error", log_widget)
 
 def open_steam(log_widget):
@@ -251,10 +350,16 @@ def open_steam(log_widget):
 def launch_game_via_steam(app_id, log_widget=None):
     uri = f"steam://rungameid/{app_id}"
     system = platform.system()
+    last_error = None
+
     try:
         if system == "Windows":
             if steam_exe_path and os.path.exists(steam_exe_path):
-                subprocess.Popen([steam_exe_path, "-applaunch", app_id])
+                subprocess.Popen(
+                    [steam_exe_path, "-applaunch", str(app_id)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
             else:
                 write_log("Steam executable path not found; attempting to use system URI handler.", "Warning", log_widget)
                 try:
@@ -262,10 +367,75 @@ def launch_game_via_steam(app_id, log_widget=None):
                 except AttributeError:
                     subprocess.Popen(["cmd", "/c", "start", "", uri])
         elif system == "Linux":
-            if shutil.which("xdg-open"):
-                subprocess.Popen(["xdg-open", uri])
-            else:
-                subprocess.Popen([steam_exe_path or "steam", uri])
+            commands = []
+
+            steam_cmd = None
+            if steam_exe_path:
+                if os.path.isabs(steam_exe_path) and os.path.exists(steam_exe_path):
+                    steam_cmd = steam_exe_path
+                else:
+                    steam_cmd = shutil.which(steam_exe_path)
+            if not steam_cmd:
+                steam_cmd = shutil.which("steam")
+
+            if steam_cmd:
+                commands.append(
+                    {
+                        "cmd": [steam_cmd, "-applaunch", str(app_id)],
+                        "description": f"{os.path.basename(steam_cmd)} -applaunch"
+                    }
+                )
+
+            xdg = shutil.which("xdg-open")
+            if xdg:
+                commands.append(
+                    {
+                        "cmd": [xdg, uri],
+                        "description": "xdg-open steam URI",
+                        "check": True
+                    }
+                )
+
+            # Fallback if nothing else is available
+            if not commands:
+                commands.append(
+                    {
+                        "cmd": [steam_exe_path or "steam", uri],
+                        "description": "steam URI fallback"
+                    }
+                )
+
+            for entry in commands:
+                try:
+                    if entry.get("check"):
+                        result = subprocess.run(
+                            entry["cmd"],
+                            check=False,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL
+                        )
+                        if result.returncode != 0:
+                            last_error = f"{entry['cmd'][0]} exited with code {result.returncode}"
+                            continue
+                    else:
+                        subprocess.Popen(
+                            entry["cmd"],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL
+                        )
+                    write_log(
+                        f"Launched Black Ops III via Steam (AppID: {app_id}) using {entry['description']}",
+                        "Success",
+                        log_widget
+                    )
+                    return
+                except FileNotFoundError:
+                    last_error = f"{entry['cmd'][0]} not found"
+                    continue
+                except Exception as exc:
+                    last_error = str(exc)
+                    continue
+            raise RuntimeError(last_error or "No suitable launcher command found")
         elif system == "Darwin":
             subprocess.Popen(["open", uri])
         else:
@@ -360,4 +530,3 @@ def apply_launch_options(launch_option, log_widget):
     close_steam(log_widget)
     set_launch_options(user_id, app_id, launch_option, log_widget)
     open_steam(log_widget)
-

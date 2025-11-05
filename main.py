@@ -188,12 +188,21 @@ def _frozen_base_directory():
 
 
 def resource_path(relative_path):
-    """Resolve bundled assets while supporting PyInstaller and Nuitka."""
+    """Resolve bundled assets while supporting PyInstaller, Nuitka, and AppImage."""
     candidates = []
 
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:
         candidates.append(os.path.join(meipass, relative_path))
+
+    appdir = os.environ.get("APPDIR")
+    if appdir:
+        candidates.extend([
+            os.path.join(appdir, relative_path),
+            os.path.join(appdir, "usr", relative_path),
+            os.path.join(appdir, "usr", "share", relative_path),
+            os.path.join(appdir, "usr", "share", "icons", "hicolor", "256x256", "apps", relative_path),
+        ])
 
     if _is_frozen_environment():
         frozen_base = _frozen_base_directory()
@@ -210,13 +219,40 @@ def resource_path(relative_path):
 
     seen = set()
     for candidate in candidates:
-        if candidate in seen:
+        normalized = os.path.normpath(candidate)
+        if normalized in seen:
             continue
-        seen.add(candidate)
+        seen.add(normalized)
         if os.path.exists(candidate):
             return candidate
 
-    return os.path.join(os.path.abspath("."), relative_path)
+    return None
+
+
+def load_application_icon():
+    """Return a QIcon and description for the application icon."""
+    theme_name = "patchopsiii"
+    if QIcon.hasThemeIcon(theme_name):
+        icon = QIcon.fromTheme(theme_name)
+        if not icon.isNull():
+            return icon, f"theme:{theme_name}"
+
+    icon_candidates = [
+        "PatchOpsIII.ico",
+        "patchopsiii.png",
+        os.path.join("icons", "patchopsiii.png"),
+        os.path.join("packaging", "appimage", "icons", "patchopsiii.png"),
+    ]
+
+    for candidate in icon_candidates:
+        resolved = resource_path(candidate)
+        if not resolved or not os.path.exists(resolved):
+            continue
+        icon = QIcon(resolved)
+        if not icon.isNull():
+            return icon, resolved
+
+    return QIcon(), None
 
 @lru_cache(maxsize=1)
 def get_application_path():
@@ -464,17 +500,24 @@ def _default_storage_directory():
 
 
 APPLICATION_PATH = get_application_path()
-STORAGE_PATH = APPLICATION_PATH
-if not _is_directory_writable(STORAGE_PATH):
-    fallback_storage = _default_storage_directory()
-    STORAGE_PATH = fallback_storage
-    write_log(
-        f"Application directory {APPLICATION_PATH} is not writable; using storage directory {STORAGE_PATH}",
-        "Warning",
-        None,
-    )
+preferred_storage = _default_storage_directory()
+if _is_directory_writable(preferred_storage):
+    STORAGE_PATH = preferred_storage
+    write_log(f"Using storage directory {STORAGE_PATH}", "Info", None)
 else:
-    write_log(f"Using application directory {APPLICATION_PATH} for storage", "Info", None)
+    STORAGE_PATH = APPLICATION_PATH
+    if _is_directory_writable(STORAGE_PATH):
+        write_log(
+            f"Preferred storage directory {preferred_storage} is not writable; using application directory {STORAGE_PATH}",
+            "Warning",
+            None,
+        )
+    else:
+        write_log(
+            f"Neither preferred storage directory {preferred_storage} nor application directory {APPLICATION_PATH} are writable.",
+            "Error",
+            None,
+        )
 
 DEFAULT_GAME_DIR = get_game_directory()
 
@@ -777,10 +820,12 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("PatchOpsIII")
         self._t7_just_uninstalled = False
 
-        icon_path = resource_path("PatchOpsIII.ico")
-        icon = QIcon(icon_path)
+        icon, icon_source = load_application_icon()
         if icon.isNull():
-            write_log(f"Icon not found or invalid: {icon_path}", "Warning")
+            if icon_source:
+                write_log(f"Icon not found or invalid: {icon_source}", "Warning")
+            else:
+                write_log("Icon not found in packaged resources", "Warning")
         self.setWindowIcon(icon)
         self.init_ui()
         
@@ -994,10 +1039,12 @@ def main() -> int:
     cli_args = parse_cli_arguments()
     write_log(f"Process PID {os.getpid()} elevated={is_admin()}", "Info")
     app = QApplication(sys.argv)
-    global_icon_path = resource_path("PatchOpsIII.ico")
-    global_icon = QIcon(global_icon_path)
+    global_icon, icon_source = load_application_icon()
     if global_icon.isNull():
-        write_log(f"Global icon not found or invalid: {global_icon_path}", "Warning")
+        if icon_source:
+            write_log(f"Global icon not found or invalid: {icon_source}", "Warning")
+        else:
+            write_log("Global icon not found in packaged resources", "Warning")
     app.setWindowIcon(global_icon)
     window = MainWindow()
 
