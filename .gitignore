@@ -9,7 +9,9 @@ BO3 Mod Files/
 
 # Build files:
 *.bat
-*.sh
+build/
+dist/
+src/
 
 # Log files:
 *.log

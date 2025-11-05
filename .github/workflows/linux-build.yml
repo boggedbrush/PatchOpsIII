@@ -45,8 +45,9 @@ jobs:
         shell: bash
         working-directory: .
     env:
-      LINUX_DIST_DIR: dist/linux
-      LINUX_APPIMAGE: PatchOpsIII.AppImage
+      OUTPUT_DIR: dist/appimage
+      APPIMAGE_NAME: PatchOpsIII.AppImage
+      ZSYNC_NAME: PatchOpsIII.AppImage.zsync
       VT_CLI_ARCHIVE: vt-cli.zip
       COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
       COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
@@ -55,91 +56,28 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
           cache: 'pip'
           cache-dependency-path: requirements.txt
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
+          python -m pip install -U pip
           python -m pip install -r requirements.txt
-          python -m pip install --upgrade nuitka pillow
-      - name: Cache Nuitka build artifacts
-        id: cache-nuitka
-        uses: actions/cache@v4
-        with:
-          path: |
-            PatchOpsIII.build
-            PatchOpsIII.dist
-            PatchOpsIII.onefile-build
-            .nuitka-cache
-          key: nuitka-${{ runner.os }}-${{ github.sha }}
-      - name: Prepare build directories
+          python -m pip install -U nuitka pyside6
+      - name: Build AppImage
+        run: bash scripts/build_appimage.sh
+      - name: Verify AppImage output
         run: |
-          rm -rf dist build
-          if [ '${{ steps.cache-nuitka.outputs.cache-hit }}' != 'true' ]; then
-            rm -rf PatchOpsIII.build PatchOpsIII.dist PatchOpsIII.onefile-build .nuitka-cache
-          fi
-          rm -f PatchOpsIII.spec
-          rm -f PatchOpsIII.png
-          mkdir -p "$LINUX_DIST_DIR"
-      - name: Generate AppImage icon
-        run: |
-          python <<'PY'
-          from pathlib import Path
-          from PIL import Image
-
-          ico_path = Path('PatchOpsIII.ico')
-          png_path = Path('PatchOpsIII.png')
-          image = Image.open(ico_path)
-          frame_index = 0
-          if getattr(image, 'n_frames', 1) > 1:
-              candidates = []
-              for idx in range(image.n_frames):
-                  image.seek(idx)
-                  candidates.append((idx, image.size[0] * image.size[1]))
-              frame_index = max(candidates, key=lambda item: item[1])[0]
-              image.seek(frame_index)
-          image.convert('RGBA').save(png_path, format='PNG')
-          PY
-      - name: Build AppImage with Nuitka
-        run: |
-          python -m nuitka \
-            --onefile \
-            --onefile-no-compression \
-            --clang \
-            --lto=yes \
-            --assume-yes-for-downloads \
-            --enable-plugins=pyside6 \
-            --include-qt-plugins=sensible,platforms \
-            --nofollow-import-to=PySide6.QtWebEngineCore \
-            --nofollow-import-to=PySide6.QtWebEngineWidgets \
-            --nofollow-import-to=PySide6.QtWebEngine \
-            --nofollow-import-to=PySide6.QtWebEngineQuick \
-            --nofollow-import-to=PySide6.QtMultimedia \
-            --nofollow-import-to=PySide6.QtMultimediaWidgets \
-            --nofollow-import-to=PySide6.QtOpenGLWidgets \
-            --include-package=vdf \
-            --include-package=requests \
-            --include-data-file=presets.json=presets.json \
-            --include-data-file=PatchOpsIII.ico=PatchOpsIII.ico \
-            --linux-icon=PatchOpsIII.png \
-            --output-dir="$LINUX_DIST_DIR" \
-            --output-filename="$LINUX_APPIMAGE" \
-            main.py
-      - name: Ensure AppImage is executable
-        run: |
-          target="$LINUX_DIST_DIR/$LINUX_APPIMAGE"
+          target="$OUTPUT_DIR/$APPIMAGE_NAME"
           if [ ! -f "$target" ]; then
             echo "$target was not produced" >&2
+            ls -R "$OUTPUT_DIR" || true
             exit 1
           fi
-          chmod +x "$target"
+          "$target" --appimage-updateinformation
       - name: Install cosign (optional)
         if: ${{ env.COSIGN_PRIVATE_KEY != '' }}
         uses: sigstore/cosign-installer@v3.4.0
@@ -148,7 +86,7 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "1"
         run: |
-          target="$LINUX_DIST_DIR/$LINUX_APPIMAGE"
+          target="$OUTPUT_DIR/$APPIMAGE_NAME"
           if [ ! -f "$target" ]; then
             echo "$target was not produced" >&2
             exit 1
@@ -159,13 +97,13 @@ jobs:
       - name: Compute AppImage hash
         id: compute_hash
         run: |
-          target="$LINUX_DIST_DIR/$LINUX_APPIMAGE"
+          target="$OUTPUT_DIR/$APPIMAGE_NAME"
           if [ ! -f "$target" ]; then
             echo "$target was not produced" >&2
             exit 1
           fi
           hash=$(sha256sum "$target" | cut -d ' ' -f1)
-          printf "%s\n" "$hash" > "$LINUX_DIST_DIR/hash.log"
+          printf "%s\n" "$hash" > "$OUTPUT_DIR/hash.log"
           echo "SHA256: $hash"
           vt_url="https://www.virustotal.com/gui/file/$hash"
           echo "LINUX_VT_URL=$vt_url" >> "$GITHUB_ENV"
@@ -224,14 +162,15 @@ jobs:
         env:
           VT_API_KEY: ${{ env.VT_API_KEY }}
         run: |
-          ./vt scan file "$LINUX_DIST_DIR/$LINUX_APPIMAGE" --wait --apikey "$VT_API_KEY"
+          ./vt scan file "$OUTPUT_DIR/$APPIMAGE_NAME" --wait --apikey "$VT_API_KEY"
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
         with:
           name: PatchOpsIII-linux
           path: |
-            ${{ env.LINUX_DIST_DIR }}/${{ env.LINUX_APPIMAGE }}
-            ${{ env.LINUX_DIST_DIR }}/hash.log
-            ${{ env.LINUX_DIST_DIR }}/${{ env.LINUX_APPIMAGE }}.sig
-            ${{ env.LINUX_DIST_DIR }}/${{ env.LINUX_APPIMAGE }}.pem
+            ${{ env.OUTPUT_DIR }}/${{ env.APPIMAGE_NAME }}
+            ${{ env.OUTPUT_DIR }}/${{ env.ZSYNC_NAME }}
+            ${{ env.OUTPUT_DIR }}/hash.log
+            ${{ env.OUTPUT_DIR }}/${{ env.APPIMAGE_NAME }}.sig
+            ${{ env.OUTPUT_DIR }}/${{ env.APPIMAGE_NAME }}.pem
           if-no-files-found: ignore

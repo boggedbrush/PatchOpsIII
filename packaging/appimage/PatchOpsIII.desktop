@@ -1,0 +1,7 @@
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Type=Application
+Name=PatchOpsIII
+Exec=PatchOpsIII
+Icon=patchopsiii
+Categories=Games;
