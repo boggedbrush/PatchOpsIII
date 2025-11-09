@@ -31,7 +31,7 @@
 - [Star History](#star-history)
 
 ## Overview
-PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popular community tools and quality-of-life tweaks in a single polished interface. The Python application ships with dark/light themes, tabbed navigation (Mods, Graphics, Advanced), and PyInstaller builds for Windows with Linux support in active development. Whether you are securing your game with T7 Patch, chasing peak framerates with DXVK, or fine-tuning launch options, PatchOpsIII consolidates every workflow into one cohesive experience.
+PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popular community tools and quality-of-life tweaks in a single polished interface. The Python application ships with dark/light themes, tabbed navigation (Mods, Graphics, Advanced), and Nuitka builds for Windows and Linux. Whether you are securing your game with T7 Patch, chasing peak framerates with DXVK, or fine-tuning launch options, PatchOpsIII consolidates every workflow into one cohesive experience.
 
 ## Key Features
 

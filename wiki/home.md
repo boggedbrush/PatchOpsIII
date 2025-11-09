@@ -1,7 +1,7 @@
 # PatchOpsIII Wiki  
 
 ## Overview  
-PatchOpsIII is a Python-based application developed by [boggedbrush](https://github.com/boggedbrush/PatchOpsIII). The project is designed to streamline and optimize operations through a robust and versatile framework. The application features a tabbed interface (`Mods`, `Graphics`, & `Advanced`) with both dark and light mode support. The application is packaged using PyInstaller to support both Linux (coming soon) and Windows environments.  
+PatchOpsIII is a Python-based application developed by [boggedbrush](https://github.com/boggedbrush/PatchOpsIII). The project is designed to streamline and optimize operations through a robust and versatile framework. The application features a tabbed interface (`Mods`, `Graphics`, & `Advanced`) with both dark and light mode support. The application is packaged using Nuitka to support both Linux and Windows environments.
 
 ![Program Screenshot](https://github.com/user-attachments/assets/a79e7273-4274-4a43-8d4d-e81a12cbd1ff)
 
