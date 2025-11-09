@@ -1,7 +1,7 @@
 # PatchOpsIII Wiki  
 
 ## Overview  
-PatchOpsIII is a Python-based application developed by [boggedbrush](https://github.com/boggedbrush/PatchOpsIII). The project is designed to streamline and optimize operations through a robust and versatile framework. The application features a tabbed interface (`Mods`, `Graphics`, & `Advanced`) with both dark and light mode support. The application is packaged using PyInstaller to support both Linux (coming soon) and Windows environments.  
+PatchOpsIII is a Python-based application developed by [boggedbrush](https://github.com/boggedbrush/PatchOpsIII). The project is designed to streamline and optimize operations through a robust and versatile framework. The application features a tabbed interface (`Mods`, `Graphics`, & `Advanced`) with both dark and light mode support. The application is packaged using Nuitka to support both Linux and Windows environments.
 
 ![Program Screenshot](https://github.com/user-attachments/assets/a79e7273-4274-4a43-8d4d-e81a12cbd1ff)
 
@@ -40,11 +40,11 @@ This management only needs to run once and does not require `t7patch.exe` to rem
 You can learn more about the T7 Patch [here](https://github.com/shiversoftdev/t7patch).  
 
 #### 1.3 DXVK-GPLAsync Management  
-**Shader compilation stuttering** is a common issue in PC gaming, causing noticeable delays when new shaders are compiled during gameplay. DXVK-GPLAsync offers a solution by converting **DirectX** calls to **Vulkan** with asynchronous shader compilation, reducing stutters and enhancing overall performance.  
+**Shader compilation stuttering** is a common issue in PC gaming, causing noticeable delays when new shaders are compiled during gameplay. DXVK-GPLAsync offers a solution by converting **DirectX** calls to **Vulkan** with asynchronous shader compilation, reducing stutters for consistently smooth frametimes.
 
 **Feature Highlights:**  
 - Install/uninstall `dxvk-gplasync`  
-- Minimize in-game stuttering caused by real-time shader compilation  
+- Minimize in-game stuttering caused by real-time shader compilation for smoother framerates
 - Enhance performance and reduce latency, especially for stutter-prone games  
 
 Learn more about [DXVK](https://www.pcgamingwiki.com/wiki/DXVK), [DXVK-GPLAsync](https://gitlab.com/Ph42oN/dxvk-gplasync), and [shader stutter](https://youtu.be/f7yml1y3fDE?si=NpwybZNqIRVhxmL7).  
@@ -53,8 +53,8 @@ Learn more about [DXVK](https://www.pcgamingwiki.com/wiki/DXVK), [DXVK-GPLAsync]
 - **Skip All Intro Videos:** Bypass all game intro videos
 - **Launch Options:** Support for various mod configurations:
   - Play Offline
-  - All-around Enhancement Lite
-  - Ultimate Experience Mod
+  - [All-around Enhancement Lite](https://steamcommunity.com/sharedfiles/filedetails/?id=2994481309)
+  - [Ultimate Experience Mod](https://steamcommunity.com/sharedfiles/filedetails/?id=2942053577)
 - **Clickable Help:** Access detailed information and download links for Steam Workshop mods
 
 ### 2. Graphics Tab
@@ -92,6 +92,6 @@ Displays logs in a terminal view, providing transparency about what operations s
 - **Troubleshooting:** Users can easily identify issues through detailed log messages.  
 
 ### Known Issues
-- All-around Enhancement Mod (full version) may have compatibility issues with launch options
+- [All-around Enhancement Mod](https://steamcommunity.com/sharedfiles/filedetails/?id=2631943123) (full version) currently crashes before launch, so it is not provided as a PatchOpsIII launch option
 - Launch options stability may vary between users
 - Some features are still under testing

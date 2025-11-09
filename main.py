@@ -188,7 +188,7 @@ def _frozen_base_directory():
 
 
 def resource_path(relative_path):
-    """Resolve bundled assets while supporting PyInstaller, Nuitka, and AppImage."""
+    """Resolve bundled assets in Nuitka and AppImage builds."""
     candidates = []
 
     meipass = getattr(sys, "_MEIPASS", None)
