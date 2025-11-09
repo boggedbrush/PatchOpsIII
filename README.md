@@ -31,16 +31,16 @@
 - [Star History](#star-history)
 
 ## Overview
-PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popular community tools and quality-of-life tweaks in a single polished interface. The Python application ships with dark/light themes, tabbed navigation (Mods, Graphics, Advanced), and PyInstaller builds for Windows with Linux support in active development. Whether you are securing your game with T7 Patch, chasing peak framerates with DXVK, or fine-tuning launch options, PatchOpsIII consolidates every workflow into one cohesive experience.
+PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popular community tools and quality-of-life tweaks in a single polished interface. The Python application ships with dark/light themes, tabbed navigation (Mods, Graphics, Advanced), and Nuitka builds for Windows and Linux. Whether you are securing your game with T7 Patch, smoothing shader compilation stutter with DXVK, or fine-tuning launch options, PatchOpsIII consolidates every workflow into one cohesive experience.
 
 ## Key Features
 
 ### Mods Tab
 - **Smart Game Directory Detection:** Automatically locates your Black Ops III installation or lets you browse manually.
 - **T7 Patch Management:** Install, update, configure gamertags and colors, apply network passwords, toggle Friends Only mode, deploy LPC fixes, and cleanly uninstall.
-- **DXVK-GPLAsync Integration:** Deploy and remove Vulkan-based shader compilation to reduce stutter and latency.
+- **DXVK-GPLAsync Integration:** Deploy and remove Vulkan-based shader compilation to smooth frametimes by reducing shader cache stutter.
 - **Workshop Helper:** One-click access to curated Steam Workshop mods and documentation.
-- **Launch Profiles:** Preset command-line configurations for Offline play, All-around Enhancement Lite, and Ultimate Experience Mod.
+- **Launch Profiles:** Preset command-line configurations for Offline play, [All-around Enhancement Lite](https://steamcommunity.com/sharedfiles/filedetails/?id=2994481309), and [Ultimate Experience Mod](https://steamcommunity.com/sharedfiles/filedetails/?id=2942053577).
 
 ### Graphics Tab
 - **Preset Loader:** Apply curated JSON presets to instantly switch between visual configurations.
@@ -82,7 +82,7 @@ PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popul
 ## Quick Start
 1. Launch PatchOpsIII and verify your Black Ops III directory.
 2. Apply the **T7 Patch** to secure multiplayer connectivity and remove RCE vulnerabilities.
-3. Enable **DXVK-GPLAsync** for async shader compilation and reduced stutter.
+3. Enable **DXVK-GPLAsync** for async shader compilation and smoother frametimes.
 4. Choose a graphics preset or dial in custom display options.
 5. Visit the **Advanced** tab to unlock VRAM, tweak frame latency, and set your config to read-only once satisfied.
 
@@ -98,7 +98,7 @@ PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popul
 </table>
 
 ## Known Issues
-- Full version of the All-around Enhancement Mod may conflict with certain launch options.
+- Full version of the [All-around Enhancement Mod](https://steamcommunity.com/sharedfiles/filedetails/?id=2631943123) currently crashes before the game finishes launching, so it is not exposed as a launch option in PatchOpsIII.
 - Launch option stability can vary between systems; experiment to find a stable configuration.
 - A few advanced toggles remain in beta testing—report issues via GitHub.
 
