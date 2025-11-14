@@ -821,6 +821,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PatchOpsIII")
+        self._system = platform.system()
         self._t7_just_uninstalled = False
         self.updater: Optional[WindowsUpdater] = None
         self._staged_release: Optional[ReleaseInfo] = None
@@ -852,14 +853,10 @@ class MainWindow(QMainWindow):
         # Connect tab changed signal
         self.tabs.currentChanged.connect(self.on_tab_changed)
 
-        system = platform.system()
-        if system == "Windows":
+        if self._system == "Windows":
             self._initialize_windows_updater()
-        else:
-            if getattr(self, "update_widget", None):
-                self.update_widget.hide()
-            if system == "Linux":
-                QTimer.singleShot(2500, self._auto_check_for_linux_updates)
+        elif self._system == "Linux":
+            QTimer.singleShot(2500, self._auto_check_for_linux_updates)
 
     def load_launch_options_state(self):
         # Get the Steam user ID and read current launch options
@@ -896,40 +893,61 @@ class MainWindow(QMainWindow):
 
         # Game Directory Section
         game_dir_widget = QWidget()
-        gd_layout = QHBoxLayout(game_dir_widget)
+        gd_layout = QVBoxLayout(game_dir_widget)
+        gd_layout.setContentsMargins(0, 0, 0, 0)
+        gd_layout.setSpacing(6)
+
+        directory_row = QHBoxLayout()
+        directory_row.setSpacing(10)
         self.game_dir_edit = QLineEdit(DEFAULT_GAME_DIR)
-        browse_btn = QPushButton("Browse")
-        browse_btn.clicked.connect(self.browse_game_dir)
-        
+        self.game_dir_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         label_text = (
             "Current Directory:" if DEFAULT_GAME_DIR == get_application_path()
             else "Game Directory:"
         )
-        gd_layout.addWidget(QLabel(label_text))
-        gd_layout.addWidget(self.game_dir_edit)
-        gd_layout.addWidget(browse_btn)
+        directory_row.addWidget(QLabel(label_text))
+        directory_row.addWidget(self.game_dir_edit, 1)
+
+        buttons_container = QWidget()
+        buttons_layout = QHBoxLayout(buttons_container)
+        buttons_layout.setContentsMargins(0, 0, 0, 0)
+        buttons_layout.setSpacing(10)
+        buttons_container.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+        browse_btn = QPushButton("Browse")
+        browse_btn.clicked.connect(self.browse_game_dir)
+        buttons_layout.addWidget(browse_btn)
 
         launch_game_btn = QPushButton("Launch Game")
         launch_game_btn.clicked.connect(self.launch_game)
-        gd_layout.addWidget(launch_game_btn)
+        buttons_layout.addWidget(launch_game_btn)
+
+        directory_row.addWidget(buttons_container)
+        gd_layout.addLayout(directory_row)
+
+        self.update_button = None
+        if self._system in ("Windows", "Linux"):
+            self.update_button = QPushButton(self._default_update_button_text)
+            self.update_button.clicked.connect(self.on_update_button_clicked)
+            self.update_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+            def _sync_update_button_width():
+                total_width = (
+                    browse_btn.sizeHint().width()
+                    + launch_game_btn.sizeHint().width()
+                    + buttons_layout.spacing()
+                )
+                self.update_button.setFixedWidth(total_width)
+
+            _sync_update_button_width()
+            QTimer.singleShot(0, _sync_update_button_width)
+
+            update_row = QHBoxLayout()
+            update_row.addStretch(1)
+            update_row.addWidget(self.update_button)
+            gd_layout.addLayout(update_row)
 
         main_layout.addWidget(game_dir_widget)
-
-        # Update Controls (Windows only)
-        self.update_widget = QWidget()
-        update_layout = QHBoxLayout(self.update_widget)
-        update_layout.setContentsMargins(0, 0, 0, 0)
-        update_layout.setSpacing(10)
-        self.update_button = QPushButton(self._default_update_button_text)
-        self.update_button.clicked.connect(self.on_update_button_clicked)
-        self.update_status_label = QLabel("Update status: Idle")
-        update_layout.addWidget(self.update_button)
-        update_layout.addWidget(self.update_status_label)
-        update_layout.addStretch(1)
-        if platform.system() == "Windows":
-            main_layout.addWidget(self.update_widget)
-        else:
-            self.update_widget.hide()
 
         # Individual widgets
         self.t7_patch_widget = T7PatchWidget(MOD_FILES_DIR)
@@ -1009,6 +1027,9 @@ class MainWindow(QMainWindow):
             tab_widget.layout().update()
 
     def on_update_button_clicked(self):
+        if self._system == "Linux":
+            self._manual_check_for_linux_updates()
+            return
         if not self.updater:
             return
         if self._staged_script_path:
@@ -1048,34 +1069,22 @@ class MainWindow(QMainWindow):
     def _on_update_check_started(self):
         if self.update_button:
             self.update_button.setEnabled(False)
-        if self.update_status_label:
-            self.update_status_label.setText("Checking for updates...")
 
     def _on_update_check_failed(self, message):
         self._reset_update_button()
-        if self.update_status_label:
-            self.update_status_label.setText("Update check failed.")
         QMessageBox.warning(self, "Update Check Failed", message)
 
     def _on_no_update_available(self):
         self._reset_update_button()
-        if self.update_status_label:
-            self.update_status_label.setText("No updates available.")
 
     def _on_update_available(self, release: ReleaseInfo):
         if self.update_button:
             self.update_button.setEnabled(True)
-        if self.update_status_label:
-            self.update_status_label.setText(f"Update available: {release.version}")
         self._staged_release = release
-        summary = release.body.strip().splitlines()
-        preview = "\n".join(summary[:6]) if summary else ""
         message = (
             f"PatchOpsIII {release.version} is available for download.\n\n"
             f"Would you like to download the update now?"
         )
-        if preview:
-            message += f"\n\n{preview}"
         if QMessageBox.question(self, "Update Available", message, QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
             self.updater.download_update(release)
         else:
@@ -1085,24 +1094,17 @@ class MainWindow(QMainWindow):
     def _on_download_started(self, release: ReleaseInfo):
         if self.update_button:
             self.update_button.setEnabled(False)
-        if self.update_status_label:
-            self.update_status_label.setText(f"Downloading {release.version}...")
 
     def _on_download_progress(self, percent: int):
-        if self.update_status_label:
-            self.update_status_label.setText(f"Downloading update... {percent}%")
+        pass
 
     def _on_download_failed(self, message: str):
         self._reset_update_button()
-        if self.update_status_label:
-            self.update_status_label.setText("Update download failed.")
         QMessageBox.critical(self, "Update Failed", message)
 
     def _on_update_staged(self, release: ReleaseInfo, script_path: str):
         self._staged_release = release
         self._staged_script_path = script_path
-        if self.update_status_label:
-            self.update_status_label.setText(f"Update ready: {release.version}")
         if self.update_button:
             self.update_button.setText("Install Update")
             self.update_button.setEnabled(True)
@@ -1118,6 +1120,12 @@ class MainWindow(QMainWindow):
             self.updater.check_for_updates(force=False)
 
     def _auto_check_for_linux_updates(self):
+        self._check_for_linux_updates()
+
+    def _manual_check_for_linux_updates(self):
+        self._check_for_linux_updates()
+
+    def _check_for_linux_updates(self):
         prompt_linux_update(
             self,
             APP_VERSION,

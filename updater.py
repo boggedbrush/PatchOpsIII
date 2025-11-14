@@ -116,33 +116,42 @@ def _select_windows_asset(release_data: dict) -> Optional[ReleaseInfo]:
 
 
 def _select_linux_asset(release_data: dict) -> Optional[ReleaseInfo]:
+    """Always return release metadata even when no AppImage asset exists."""
+
+    version = release_data.get("tag_name") or release_data.get("name") or "0.0.0"
+    name = release_data.get("name") or "PatchOpsIII"
+    body = release_data.get("body") or ""
+
     assets = release_data.get("assets", [])
-    preferred_asset = None
-    fallback_asset = None
+    selected = None
 
     for asset in assets:
-        name = asset.get("name", "")
-        if not name:
+        asset_name = asset.get("name", "")
+        if not asset_name:
             continue
-        lowered = name.lower()
+        lowered = asset_name.lower()
         if lowered.endswith(".appimage"):
-            preferred_asset = asset
+            selected = asset
             break
-        if lowered.endswith(".appimage.zsync") and fallback_asset is None:
-            fallback_asset = asset
+        if lowered.endswith(".appimage.zsync") and selected is None:
+            selected = asset
 
-    selected = preferred_asset or fallback_asset
     if not selected:
-        return None
+        return ReleaseInfo(
+            version=version,
+            name=name,
+            body=body,
+            asset_url="",
+            asset_name="",
+            asset_size=0,
+            asset_content_type="application/octet-stream",
+        )
 
-    download_url = selected.get("browser_download_url")
-    if not download_url:
-        return None
-
+    download_url = selected.get("browser_download_url") or ""
     return ReleaseInfo(
-        version=release_data.get("tag_name") or release_data.get("name") or "0.0.0",
-        name=release_data.get("name") or "PatchOpsIII",
-        body=release_data.get("body") or "",
+        version=version,
+        name=name,
+        body=body,
         asset_url=download_url,
         asset_name=selected.get("name", "PatchOpsIII.AppImage"),
         asset_size=selected.get("size") or 0,
@@ -530,14 +539,10 @@ def prompt_linux_update(
             log("No updates available for the Linux build.")
             return
 
-        summary = release.body.strip().splitlines()
-        preview = "\n".join(summary[:6]) if summary else ""
         message = (
             f"PatchOpsIII {release.version} is available for download.\n\n"
             "Would you like to launch Gear Lever to apply the update now?"
         )
-        if preview:
-            message += f"\n\n{preview}"
 
         response = QMessageBox.question(
             parent,
