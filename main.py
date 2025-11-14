@@ -11,6 +11,7 @@ import platform
 import argparse
 import json
 from functools import lru_cache
+from typing import Optional
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
     QPushButton, QLabel, QFileDialog, QTextEdit, QTabWidget, QSizePolicy,
@@ -23,7 +24,9 @@ from PySide6.QtCore import Qt, QUrl, QThread, Signal, QTimer
 from t7_patch import T7PatchWidget, is_admin
 from dxvk_manager import DXVKWidget
 from config import GraphicsSettingsWidget, AdvancedSettingsWidget
+from updater import ReleaseInfo, WindowsUpdater, prompt_linux_update
 from utils import write_log, apply_launch_options, find_steam_user_id, steam_userdata_path, app_id, launch_game_via_steam
+from version import APP_VERSION
 
 
 NUITKA_ENVIRONMENT_KEYS = (
@@ -819,6 +822,11 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("PatchOpsIII")
         self._t7_just_uninstalled = False
+        self.updater: Optional[WindowsUpdater] = None
+        self._staged_release: Optional[ReleaseInfo] = None
+        self._staged_script_path: Optional[str] = None
+        self._default_update_button_text = "Check for Updates"
+        self._linux_update_worker = None
 
         icon, icon_source = load_application_icon()
         if icon.isNull():
@@ -828,7 +836,7 @@ class MainWindow(QMainWindow):
                 write_log("Icon not found in packaged resources", "Warning")
         self.setWindowIcon(icon)
         self.init_ui()
-        
+
         # Load saved launch options state without applying
         self.load_launch_options_state()
         
@@ -840,9 +848,18 @@ class MainWindow(QMainWindow):
 
         if os.path.exists(os.path.join(get_application_path(), "BlackOps3.exe")):
             write_log("Black Ops III found in the same directory as PatchOpsIII", "Info", self.log_text)
-            
+
         # Connect tab changed signal
         self.tabs.currentChanged.connect(self.on_tab_changed)
+
+        system = platform.system()
+        if system == "Windows":
+            self._initialize_windows_updater()
+        else:
+            if getattr(self, "update_widget", None):
+                self.update_widget.hide()
+            if system == "Linux":
+                QTimer.singleShot(2500, self._auto_check_for_linux_updates)
 
     def load_launch_options_state(self):
         # Get the Steam user ID and read current launch options
@@ -891,12 +908,28 @@ class MainWindow(QMainWindow):
         gd_layout.addWidget(QLabel(label_text))
         gd_layout.addWidget(self.game_dir_edit)
         gd_layout.addWidget(browse_btn)
-        
+
         launch_game_btn = QPushButton("Launch Game")
         launch_game_btn.clicked.connect(self.launch_game)
         gd_layout.addWidget(launch_game_btn)
-        
+
         main_layout.addWidget(game_dir_widget)
+
+        # Update Controls (Windows only)
+        self.update_widget = QWidget()
+        update_layout = QHBoxLayout(self.update_widget)
+        update_layout.setContentsMargins(0, 0, 0, 0)
+        update_layout.setSpacing(10)
+        self.update_button = QPushButton(self._default_update_button_text)
+        self.update_button.clicked.connect(self.on_update_button_clicked)
+        self.update_status_label = QLabel("Update status: Idle")
+        update_layout.addWidget(self.update_button)
+        update_layout.addWidget(self.update_status_label)
+        update_layout.addStretch(1)
+        if platform.system() == "Windows":
+            main_layout.addWidget(self.update_widget)
+        else:
+            self.update_widget.hide()
 
         # Individual widgets
         self.t7_patch_widget = T7PatchWidget(MOD_FILES_DIR)
@@ -974,6 +1007,149 @@ class MainWindow(QMainWindow):
             if index == 2:
                 self.advanced_widget.refresh_settings()
             tab_widget.layout().update()
+
+    def on_update_button_clicked(self):
+        if not self.updater:
+            return
+        if self._staged_script_path:
+            self._prompt_install_staged_update()
+            return
+        if self._staged_release:
+            self.updater.download_update(self._staged_release)
+            return
+        self.updater.check_for_updates(force=True)
+
+    def _initialize_windows_updater(self):
+        self.updater = WindowsUpdater(
+            current_version=APP_VERSION,
+            install_dir=get_application_path(),
+            executable_path=sys.executable,
+            is_frozen=_is_frozen_environment(),
+            log_widget=self.log_text,
+        )
+        self.updater.check_started.connect(self._on_update_check_started)
+        self.updater.check_failed.connect(self._on_update_check_failed)
+        self.updater.no_update_available.connect(self._on_no_update_available)
+        self.updater.update_available.connect(self._on_update_available)
+        self.updater.download_started.connect(self._on_download_started)
+        self.updater.download_progress.connect(self._on_download_progress)
+        self.updater.download_failed.connect(self._on_download_failed)
+        self.updater.update_staged.connect(self._on_update_staged)
+        QTimer.singleShot(2500, self._auto_check_for_updates)
+
+    def _reset_update_button(self):
+        if not getattr(self, "update_button", None):
+            return
+        self.update_button.setText(self._default_update_button_text)
+        self.update_button.setEnabled(True)
+        self._staged_release = None
+        self._staged_script_path = None
+
+    def _on_update_check_started(self):
+        if self.update_button:
+            self.update_button.setEnabled(False)
+        if self.update_status_label:
+            self.update_status_label.setText("Checking for updates...")
+
+    def _on_update_check_failed(self, message):
+        self._reset_update_button()
+        if self.update_status_label:
+            self.update_status_label.setText("Update check failed.")
+        QMessageBox.warning(self, "Update Check Failed", message)
+
+    def _on_no_update_available(self):
+        self._reset_update_button()
+        if self.update_status_label:
+            self.update_status_label.setText("No updates available.")
+
+    def _on_update_available(self, release: ReleaseInfo):
+        if self.update_button:
+            self.update_button.setEnabled(True)
+        if self.update_status_label:
+            self.update_status_label.setText(f"Update available: {release.version}")
+        self._staged_release = release
+        summary = release.body.strip().splitlines()
+        preview = "\n".join(summary[:6]) if summary else ""
+        message = (
+            f"PatchOpsIII {release.version} is available for download.\n\n"
+            f"Would you like to download the update now?"
+        )
+        if preview:
+            message += f"\n\n{preview}"
+        if QMessageBox.question(self, "Update Available", message, QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
+            self.updater.download_update(release)
+        else:
+            if self.update_button:
+                self.update_button.setText("Download Update")
+
+    def _on_download_started(self, release: ReleaseInfo):
+        if self.update_button:
+            self.update_button.setEnabled(False)
+        if self.update_status_label:
+            self.update_status_label.setText(f"Downloading {release.version}...")
+
+    def _on_download_progress(self, percent: int):
+        if self.update_status_label:
+            self.update_status_label.setText(f"Downloading update... {percent}%")
+
+    def _on_download_failed(self, message: str):
+        self._reset_update_button()
+        if self.update_status_label:
+            self.update_status_label.setText("Update download failed.")
+        QMessageBox.critical(self, "Update Failed", message)
+
+    def _on_update_staged(self, release: ReleaseInfo, script_path: str):
+        self._staged_release = release
+        self._staged_script_path = script_path
+        if self.update_status_label:
+            self.update_status_label.setText(f"Update ready: {release.version}")
+        if self.update_button:
+            self.update_button.setText("Install Update")
+            self.update_button.setEnabled(True)
+        prompt = (
+            f"PatchOpsIII {release.version} has been downloaded and is ready to install.\n\n"
+            "Would you like to close the application and apply the update now?"
+        )
+        if QMessageBox.question(self, "Install Update", prompt, QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
+            self._prompt_install_staged_update()
+
+    def _auto_check_for_updates(self):
+        if self.updater and not self._staged_script_path:
+            self.updater.check_for_updates(force=False)
+
+    def _auto_check_for_linux_updates(self):
+        prompt_linux_update(
+            self,
+            APP_VERSION,
+            log_widget=self.log_text,
+        )
+
+    def _prompt_install_staged_update(self):
+        if not self.updater or not self._staged_release:
+            return
+        confirm = QMessageBox.question(
+            self,
+            "Install Update",
+            (
+                f"Install PatchOpsIII {self._staged_release.version} now?\n\n"
+                "The application will close while the update is applied."
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if confirm == QMessageBox.Yes:
+            self._apply_staged_update()
+
+    def _apply_staged_update(self):
+        if not self.updater:
+            return
+        try:
+            self.updater.apply_staged_update()
+        except Exception as exc:  # noqa: BLE001
+            write_log(f"Failed to launch update installer: {exc}", "Error", self.log_text)
+            QMessageBox.critical(self, "Update Error", str(exc))
+            self._reset_update_button()
+            return
+        QApplication.instance().quit()
 
     def browse_game_dir(self):
         directory = QFileDialog.getExistingDirectory(
