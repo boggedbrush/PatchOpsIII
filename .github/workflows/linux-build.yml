@@ -56,6 +56,31 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+      - name: Determine version from version.py
+        id: version
+        run: |
+          python <<'PY'
+          import os
+          import re
+          import runpy
+
+          data = runpy.run_path('version.py')
+          raw_version = str(data.get('APP_VERSION', '')).strip()
+          if not raw_version:
+              raise SystemExit('APP_VERSION is empty in version.py')
+
+          tagged = raw_version if raw_version.lower().startswith('v') else f'v{raw_version}'
+          normalized = re.sub(r"[^0-9.]", ".", raw_version)
+          normalized = re.sub(r"\.+", ".", normalized).strip(".") or "0.0.0"
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as fh:
+              fh.write(f'raw={raw_version}\n')
+              fh.write(f'tagged={tagged}\n')
+              fh.write(f'normalized={normalized}\n')
+
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as fh:
+              fh.write(f'PATCHOPSIII_VERSION={raw_version}\n')
+          PY
       - name: Setup Python
         uses: actions/setup-python@v5
         with:

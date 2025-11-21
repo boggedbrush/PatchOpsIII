@@ -21,6 +21,7 @@ from PySide6.QtWidgets import QMessageBox
 from utils import write_log
 
 GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/boggedbrush/PatchOpsIII/releases/latest"
+GITHUB_RELEASE_PAGE_URL = "https://github.com/boggedbrush/PatchOpsIII/releases/latest"
 CACHE_TTL_SECONDS = 15 * 60
 GEAR_LEVER_URL = "https://flathub.org/en/apps/it.mijorus.gearlever"
 
@@ -36,6 +37,7 @@ class ReleaseInfo:
     asset_name: str
     asset_size: int
     asset_content_type: str
+    page_url: str
     checksum_url: Optional[str] = None
 
 
@@ -111,6 +113,7 @@ def _select_windows_asset(release_data: dict) -> Optional[ReleaseInfo]:
         asset_name=asset_name,
         asset_size=selected.get("size") or 0,
         asset_content_type=selected.get("content_type") or "application/octet-stream",
+        page_url=release_data.get("html_url") or GITHUB_RELEASE_PAGE_URL,
         checksum_url=checksum_url,
     )
 
@@ -145,6 +148,7 @@ def _select_linux_asset(release_data: dict) -> Optional[ReleaseInfo]:
             asset_name="",
             asset_size=0,
             asset_content_type="application/octet-stream",
+            page_url=release_data.get("html_url") or GITHUB_RELEASE_PAGE_URL,
         )
 
     download_url = selected.get("browser_download_url") or ""
@@ -156,6 +160,7 @@ def _select_linux_asset(release_data: dict) -> Optional[ReleaseInfo]:
         asset_name=selected.get("name", "PatchOpsIII.AppImage"),
         asset_size=selected.get("size") or 0,
         asset_content_type=selected.get("content_type") or "application/octet-stream",
+        page_url=release_data.get("html_url") or GITHUB_RELEASE_PAGE_URL,
     )
 
 
@@ -285,6 +290,8 @@ class WindowsUpdater(QObject):
     def check_for_updates(self, *, force: bool = False) -> None:
         if platform.system() != "Windows":
             self.check_failed.emit("Windows updater is only available on Windows.")
+            return
+        if self._check_worker is not None:
             return
         if not force and self._cached_result and (time.time() - self._last_check) < CACHE_TTL_SECONDS:
             state, release = self._cached_result

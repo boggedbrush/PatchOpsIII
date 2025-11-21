@@ -1,4 +1,4 @@
-﻿name: Release Beta
+name: Release Stable
 
 on:
   workflow_dispatch:
@@ -29,7 +29,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
-      base_version: ${{ steps.metadata.outputs.base_version }}
       release_title: ${{ steps.metadata.outputs.release_title }}
       notes_file: ${{ steps.metadata.outputs.notes_file }}
     steps:
@@ -186,10 +185,10 @@ jobs:
                   try:
                       selected_abs.relative_to(notes_dir.resolve())
                   except ValueError as exc:
-                      raise SystemExit("Release notes must live under 'Release Notes/'.") from exc
+                      raise SystemExit("Release notes must live under 'Release Notes'.") from exc
 
                   if selected_abs.name.lower() == "template.md":
-                      raise SystemExit("Template release notes cannot be used for beta releases.")
+                      raise SystemExit("Template release notes cannot be used for stable releases.")
 
                   selected_rel = selected_abs.relative_to(repo_root.resolve())
                   load_metadata(selected_rel)
@@ -206,8 +205,7 @@ jobs:
           if not version_token.lower().startswith("v"):
               version_token = f"v{version_token}"
 
-          base_version = re.sub(r"(?i)-beta$", "", version_token)
-          tag_name = f"{base_version}-beta"
+          tag_name = version_token
           release_title = f"PatchOpsIII {tag_name}"
 
           print(f"Selected release notes: {selected_rel.as_posix()}")
@@ -232,7 +230,6 @@ jobs:
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
               fh.write(f"tag={tag_name}\n")
-              fh.write(f"base_version={base_version}\n")
               fh.write(f"release_title={release_title}\n")
               fh.write(f"notes_file={selected_rel.as_posix()}\n")
           PY
@@ -290,10 +287,10 @@ jobs:
     secrets: inherit
 
   release:
-    name: Publish beta release
+    name: Publish stable release
     runs-on: ubuntu-latest
     environment:
-      name: beta-release
+      name: stable-release
     needs:
       - prepare
       - build-windows
@@ -442,7 +439,7 @@ jobs:
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           name: ${{ needs.prepare.outputs.release_title }}
-          prerelease: true
+          prerelease: false
           body_path: release-notes.md
           files: |
             release/*

@@ -1081,11 +1081,20 @@ class MainWindow(QMainWindow):
         if self.update_button:
             self.update_button.setEnabled(True)
         self._staged_release = release
+        release_page = release.page_url or "https://github.com/boggedbrush/PatchOpsIII/releases/latest"
         message = (
-            f"PatchOpsIII {release.version} is available for download.\n\n"
-            f"Would you like to download the update now?"
+            f"<p>PatchOpsIII {release.version} is available for download.</p>"
+            f'<p><a href="{release_page}">Open the latest release on GitHub</a></p>'
+            "<p>Would you like to download the update now?</p>"
         )
-        if QMessageBox.question(self, "Update Available", message, QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("Update Available")
+        dialog.setTextFormat(Qt.RichText)
+        dialog.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        dialog.setText(message)
+        dialog.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        dialog.setDefaultButton(QMessageBox.Yes)
+        if dialog.exec() == QMessageBox.Yes:
             self.updater.download_update(release)
         else:
             if self.update_button:

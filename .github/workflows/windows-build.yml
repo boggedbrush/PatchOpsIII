@@ -61,21 +61,31 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
           cache-dependency-path: requirements.txt
-      - name: Determine version metadata
+      - name: Determine version from version.py
         id: version
         run: |
-          $ref = '${{ inputs.ref != '' && inputs.ref || github.ref }}'
-          if ($ref -match '^refs/tags/(.+)$') {
-            $version = $Matches[1]
-          } else {
-            $version = "0.0.${{ github.run_number }}"
-          }
-          $normalized = $version -replace '[^0-9\.]', '.'
-          if (-not ($normalized -match '^\d+\.\d+\.\d+(\.\d+)?$')) {
-            $normalized = '0.0.${{ github.run_number }}'
-          }
-          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "normalized=$normalized" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          python <<'PY'
+          import os
+          import re
+          import runpy
+
+          data = runpy.run_path('version.py')
+          raw_version = str(data.get('APP_VERSION', '')).strip()
+          if not raw_version:
+              raise SystemExit('APP_VERSION is empty in version.py')
+
+          tagged = raw_version if raw_version.lower().startswith('v') else f'v{raw_version}'
+          normalized = re.sub(r"[^0-9.]", ".", raw_version)
+          normalized = re.sub(r"\.+", ".", normalized).strip(".") or "0.0.0"
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as fh:
+              fh.write(f'raw={raw_version}\n')
+              fh.write(f'tagged={tagged}\n')
+              fh.write(f'normalized={normalized}\n')
+
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as fh:
+              fh.write(f'PATCHOPSIII_VERSION={raw_version}\n')
+          PY
       - name: Install dependencies
         run: |
           python -m pip install -r requirements.txt
