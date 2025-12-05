@@ -40,7 +40,7 @@ install -m644 packaging/appimage/icons/patchopsiii.png "$APPDIR/usr/share/icons/
 install -m644 packaging/appimage/icons/patchopsiii.png "$APPDIR/patchopsiii.png"
 
 # Copy Nuitka output
-cp -a build/nuitka/__main__.dist/* "$APPDIR/usr/"
+cp -a build/nuitka/main.dist/* "$APPDIR/usr/"
 
 # Prepare output directory
 OUTPUT_DIR=dist/appimage
