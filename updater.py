@@ -119,7 +119,7 @@ def _select_windows_asset(release_data: dict) -> Optional[ReleaseInfo]:
 
 
 def _select_linux_asset(release_data: dict) -> Optional[ReleaseInfo]:
-    """Always return release metadata even when no AppImage asset exists."""
+    """Return release metadata when an AppImage (or zsync) asset exists."""
 
     version = release_data.get("tag_name") or release_data.get("name") or "0.0.0"
     name = release_data.get("name") or "PatchOpsIII"
@@ -140,18 +140,12 @@ def _select_linux_asset(release_data: dict) -> Optional[ReleaseInfo]:
             selected = asset
 
     if not selected:
-        return ReleaseInfo(
-            version=version,
-            name=name,
-            body=body,
-            asset_url="",
-            asset_name="",
-            asset_size=0,
-            asset_content_type="application/octet-stream",
-            page_url=release_data.get("html_url") or GITHUB_RELEASE_PAGE_URL,
-        )
+        return None
 
     download_url = selected.get("browser_download_url") or ""
+    if not download_url:
+        return None
+
     return ReleaseInfo(
         version=version,
         name=name,
@@ -189,7 +183,7 @@ class UpdateCheckWorker(QThread):
                 self.finished.emit(None)
                 return
             release = self.asset_selector(release_data)
-            if not release:
+            if not release or not release.asset_url:
                 self.finished.emit(None)
                 return
             if _normalize_version(release.version) <= _normalize_version(self.current_version):
