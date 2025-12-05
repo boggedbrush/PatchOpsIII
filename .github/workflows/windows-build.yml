@@ -63,8 +63,9 @@ jobs:
           cache-dependency-path: requirements.txt
       - name: Determine version from version.py
         id: version
+        shell: bash
         run: |
-          python <<'PY'
+          python - <<'PY'
           import os
           import re
           import runpy

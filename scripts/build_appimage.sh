@@ -10,12 +10,13 @@ trap cleanup EXIT
 python -m pip install -U nuitka pyside6
 
 NUITKA_ARGS=(
-  "src/patchopsiii/__main__.py"
+  "main.py"
   "--standalone"
   "--follow-imports"
   "--enable-plugin=pyside6"
   "--include-qt-plugins=sensible,platforms,platformthemes,iconengines,imageformats,tls"
   "--output-dir=build/nuitka"
+  "--output-filename=__main__"
 )
 
 if [ -d "assets" ]; then
