@@ -258,6 +258,7 @@ jobs:
           TAG_NAME: ${{ steps.metadata.outputs.tag }}
           SOURCE_REF: ${{ inputs.source_ref }}
           CREATE_TAG: ${{ inputs.create_tag }}
+        shell: bash
         run: |
           set -euo pipefail
           if [ -z "$TAG_NAME" ]; then
