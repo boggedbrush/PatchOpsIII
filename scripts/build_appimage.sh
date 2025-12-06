@@ -54,10 +54,18 @@ rm -f PatchOpsIII-*.AppImage PatchOpsIII-*.AppImage.zsync
 TOOLS_DIR=build/linuxdeploy-tools
 mkdir -p "$TOOLS_DIR"
 
-wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage -O "$TOOLS_DIR/linuxdeploy-x86_64.AppImage"
-wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage -O "$TOOLS_DIR/linuxdeploy-plugin-qt-x86_64.AppImage"
-wget -q https://github.com/niess/linuxdeploy-plugin-python/releases/download/continuous/linuxdeploy-plugin-python-x86_64.AppImage -O "$TOOLS_DIR/linuxdeploy-plugin-python-x86_64.AppImage"
-wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage -O "$TOOLS_DIR/linuxdeploy-plugin-appimage-x86_64.AppImage"
+wget_if_missing() {
+  local url="$1"
+  local dest="$2"
+  if [ ! -f "$dest" ]; then
+    wget -q "$url" -O "$dest"
+  fi
+}
+
+wget_if_missing "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage" "$TOOLS_DIR/linuxdeploy-x86_64.AppImage"
+wget_if_missing "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage" "$TOOLS_DIR/linuxdeploy-plugin-qt-x86_64.AppImage"
+wget_if_missing "https://github.com/niess/linuxdeploy-plugin-python/releases/download/continuous/linuxdeploy-plugin-python-x86_64.AppImage" "$TOOLS_DIR/linuxdeploy-plugin-python-x86_64.AppImage"
+wget_if_missing "https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage" "$TOOLS_DIR/linuxdeploy-plugin-appimage-x86_64.AppImage"
 chmod +x "$TOOLS_DIR"/linuxdeploy-*.AppImage
 export PATH="$TOOLS_DIR:$PATH"
 export APPIMAGE_EXTRACT_AND_RUN=1

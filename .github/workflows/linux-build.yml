@@ -87,6 +87,26 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
           cache-dependency-path: requirements.txt
+      - name: Cache Nuitka build cache
+        uses: actions/cache@v4
+        with:
+          path: .nuitka-cache
+          key: nuitka-linux-${{ steps.version.outputs.normalized }}
+          restore-keys: |
+            nuitka-linux-
+      - name: Cache pip downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-3.12-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-3.12-
+            ${{ runner.os }}-pip-
+      - name: Cache linuxdeploy toolchain
+        uses: actions/cache@v4
+        with:
+          path: build/linuxdeploy-tools
+          key: linuxdeploy-${{ runner.os }}
       - name: Install Python dependencies
         run: |
           python -m pip install -U pip

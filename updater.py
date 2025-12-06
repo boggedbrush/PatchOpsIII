@@ -455,7 +455,15 @@ def _launch_gear_lever(log_callback) -> bool:
 
     for command in candidates:
         try:
-            subprocess.Popen(command)
+            proc = subprocess.Popen(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            # If the process dies immediately with a non-zero exit code, treat as a failure
+            time.sleep(1.0)
+            if proc.poll() is not None and proc.returncode:
+                raise RuntimeError(f"Exited early with code {proc.returncode}")
             log_callback(
                 "Launching Gear Lever to manage the PatchOpsIII update.",
                 "Success",

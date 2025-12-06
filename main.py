@@ -1051,8 +1051,8 @@ class MainWindow(QMainWindow):
     def _initialize_windows_updater(self):
         self.updater = WindowsUpdater(
             current_version=APP_VERSION,
-            install_dir=get_application_path(),
-            executable_path=sys.executable,
+            install_dir=os.path.dirname(os.path.abspath(sys.argv[0])),
+            executable_path=os.path.abspath(sys.argv[0]),
             is_frozen=_is_frozen_environment(),
             log_widget=self.log_text,
         )
