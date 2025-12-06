@@ -245,6 +245,44 @@ jobs:
               fh.write(f"release_title={release_title}\n")
               fh.write(f"notes_file={selected_rel.as_posix()}\n")
           PY
+      - name: Create or verify tag
+        id: tag
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+          CREATE_TAG: ${{ inputs.create_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG_NAME="${{ steps.metadata.outputs.tag }}"
+          if [ -z "$TAG_NAME" ]; then
+            TAG_NAME="${{ steps.version.outputs.tagged }}"
+          fi
+          if [ -z "$TAG_NAME" ]; then
+            echo "Tag input is required." >&2
+            exit 1
+          fi
+          git fetch origin --prune --tags
+          if ! git ls-remote --exit-code --heads origin "$SOURCE_REF" >/dev/null; then
+            echo "Source ref '$SOURCE_REF' not found on origin." >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG_NAME" >/dev/null; then
+            echo "Tag '$TAG_NAME' already exists on origin." >&2
+            if [ "${CREATE_TAG,,}" != "true" ]; then
+              echo "create_tag is not true; leaving tag untouched." >&2
+            else
+              git fetch origin "$SOURCE_REF"
+              git checkout --detach "origin/$SOURCE_REF"
+              git tag -f "$TAG_NAME"
+              git push origin "refs/tags/$TAG_NAME" --force
+            fi
+          else
+            git fetch origin "$SOURCE_REF"
+            git checkout --detach "origin/$SOURCE_REF"
+            git tag "$TAG_NAME"
+            git push origin "refs/tags/$TAG_NAME"
+          fi
+          echo "tag=$TAG_NAME" >> "$GITHUB_OUTPUT"
 
   cache-linux:
     name: Cache deps (Linux)
@@ -322,48 +360,6 @@ jobs:
           python -m pip install -U pip
           python -m pip install -r requirements.txt
           python -m pip install --upgrade nuitka
-      - name: Configure git
-        run: |
-          git config user.name "${{ github.actor }}"
-          git config user.email "${{ github.actor }}@users.noreply.github.com"
-      - name: Create or verify tag
-        id: tag
-        env:
-          SOURCE_REF: ${{ inputs.source_ref }}
-          CREATE_TAG: ${{ inputs.create_tag }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          TAG_NAME="${{ steps.metadata.outputs.tag }}"
-          if [ -z "$TAG_NAME" ]; then
-            TAG_NAME="${{ steps.version.outputs.tagged }}"
-          fi
-          if [ -z "$TAG_NAME" ]; then
-            echo "Tag input is required." >&2
-            exit 1
-          fi
-          git fetch origin --prune --tags
-          if ! git ls-remote --exit-code --heads origin "$SOURCE_REF" >/dev/null; then
-            echo "Source ref '$SOURCE_REF' not found on origin." >&2
-            exit 1
-          fi
-          if git ls-remote --exit-code --tags origin "refs/tags/$TAG_NAME" >/dev/null; then
-            echo "Tag '$TAG_NAME' already exists on origin." >&2
-            if [ "${CREATE_TAG,,}" != "true" ]; then
-              echo "create_tag is not true; leaving tag untouched." >&2
-            else
-              git fetch origin "$SOURCE_REF"
-              git checkout --detach "origin/$SOURCE_REF"
-              git tag -f "$TAG_NAME"
-              git push origin "refs/tags/$TAG_NAME" --force
-            fi
-          else
-            git fetch origin "$SOURCE_REF"
-            git checkout --detach "origin/$SOURCE_REF"
-            git tag "$TAG_NAME"
-            git push origin "refs/tags/$TAG_NAME"
-          fi
-          echo "tag=$TAG_NAME" >> "$GITHUB_OUTPUT"
 
   build-windows:
     needs:
