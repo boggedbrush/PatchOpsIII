@@ -36,6 +36,8 @@ PatchOpsIII v1.1.0 is our first stable release after the v1.0.4 beta, focused on
 - Prevented duplicate update checks/log lines, ensured manual Linux update checks surface the latest release, and staged Windows updates safely (#23).
 - Corrected Windows elevation detection for T7 Patch installs and reduced Steam shutdown noise in logs.
 - Updated FOV slider behavior and graphics presets to avoid over-writing user settings unexpectedly.
+- Launch option preservation on Linux T7 Patch installs (keeps existing `fs_game`/mod settings).
+- Improved log copy resilience and auto-cleared logs every three launches for leaner files.
 
 ---
 
