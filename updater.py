@@ -429,22 +429,50 @@ class WindowsUpdater(QObject):
         if not self._staged_script or not os.path.exists(self._staged_script):
             raise RuntimeError("No staged update is available.")
         self._log("Launching update installer and exiting...")
-        cmd = ["cmd.exe", "/c", self._staged_script]
-        creationflags = 0
-        startupinfo = None
+        cmd = [self._staged_script]
+
+        # On Windows, wrap the batch in a VBS shim to avoid showing a console window.
         if os.name == "nt":
-            # Suppress the console window so the update feels seamless
-            if hasattr(subprocess, "CREATE_NO_WINDOW"):
-                creationflags |= subprocess.CREATE_NO_WINDOW
-            if hasattr(subprocess, "STARTUPINFO"):
-                startupinfo = subprocess.STARTUPINFO()
-                if hasattr(subprocess, "STARTF_USESHOWWINDOW"):
-                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                    startupinfo.wShowWindow = 0
+            vbs_path = os.path.join(self.install_dir, "run_patchopsiii_update.vbs")
+            try:
+                with open(vbs_path, "w", encoding="utf-8") as vbs:
+                    vbs.write(
+                        'Set WshShell = CreateObject("WScript.Shell")\n'
+                        f'WshShell.Run """{self._staged_script}""", 0, False\n'
+                    )
+                creationflags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+                subprocess.Popen(
+                    ["wscript.exe", vbs_path],
+                    creationflags=creationflags,
+                    startupinfo=self._hidden_startupinfo(),
+                )
+                return
+            except Exception as exc:  # noqa: BLE001
+                # Fallback to the normal batch invocation if VBS shim fails
+                self._log(f"VBS wrapper failed, falling back to visible script: {exc}", "Warning")
+
         try:
-            subprocess.Popen(cmd, creationflags=creationflags, startupinfo=startupinfo)
+            subprocess.Popen(
+                cmd,
+                creationflags=self._no_window_flags(),
+                startupinfo=self._hidden_startupinfo(),
+            )
         except OSError as exc:
             raise RuntimeError(f"Failed to launch update script: {exc}") from exc
+
+    def _no_window_flags(self) -> int:
+        if os.name != "nt":
+            return 0
+        return subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+
+    def _hidden_startupinfo(self):
+        if os.name != "nt" or not hasattr(subprocess, "STARTUPINFO"):
+            return None
+        startupinfo = subprocess.STARTUPINFO()
+        if hasattr(subprocess, "STARTF_USESHOWWINDOW"):
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = 0
+        return startupinfo
 
     def reset(self) -> None:
         self._cached_result = None
