@@ -9,6 +9,7 @@ import vdf
 import platform
 
 DEFAULT_LOG_FILENAME = "PatchOpsIII.log"
+LAUNCH_COUNTER_FILENAME = "launch_counter.txt"
 
 def get_app_data_dir():
     system = platform.system()
@@ -67,6 +68,69 @@ def write_log(message, category="Info", log_widget=None, log_file=DEFAULT_LOG_FI
             print(f"Failed to write log entry to {log_path}: {exc}", file=sys.stderr)
         except Exception:
             pass
+
+
+def get_log_file_path(log_file=DEFAULT_LOG_FILENAME):
+    """Return the resolved path for the given log file."""
+    return _resolve_log_path(log_file)
+
+
+def _launch_counter_path():
+    return os.path.join(get_app_data_dir(), LAUNCH_COUNTER_FILENAME)
+
+
+def _read_launch_count():
+    try:
+        with open(_launch_counter_path(), "r", encoding="utf-8") as f:
+            value = f.read().strip()
+            return int(value) if value else 0
+    except (FileNotFoundError, ValueError):
+        return 0
+    except Exception:
+        return 0
+
+
+def _write_launch_count(count):
+    try:
+        os.makedirs(get_app_data_dir(), exist_ok=True)
+        with open(_launch_counter_path(), "w", encoding="utf-8") as f:
+            f.write(str(count))
+    except Exception:
+        pass
+
+
+def clear_log_file(log_file=DEFAULT_LOG_FILENAME):
+    """Truncate the specified log file."""
+    path = _resolve_log_path(log_file)
+    try:
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        with open(path, "w", encoding="utf-8"):
+            pass
+        return True
+    except Exception as exc:
+        try:
+            print(f"Failed to clear log file at {path}: {exc}", file=sys.stderr)
+        except Exception:
+            pass
+        return False
+
+
+def manage_log_retention_on_launch(threshold=3):
+    """Increment launch counter and clear logs every `threshold` launches."""
+    if threshold is None or threshold <= 0:
+        return False
+
+    count = _read_launch_count() + 1
+    cleared = False
+
+    if count >= threshold:
+        cleared = clear_log_file()
+        count = 0
+
+    _write_launch_count(count)
+    return cleared
 
 def _find_windows_steam_root():
     candidates = []
@@ -447,7 +511,7 @@ def launch_game_via_steam(app_id, log_widget=None):
         write_log(f"Error launching game via Steam: {exc}", "Error", log_widget)
 
 
-def set_launch_options(user_id, app_id, launch_options, log_widget):
+def set_launch_options(user_id, app_id, launch_options, log_widget, preserve_fs_game=False):
     config_path = os.path.join(steam_userdata_path, user_id, "config", "localconfig.vdf")
     if not os.path.exists(config_path):
         write_log("localconfig.vdf not found!", "Error", log_widget)
@@ -467,6 +531,7 @@ def set_launch_options(user_id, app_id, launch_options, log_widget):
 
         app_entry = apps.setdefault(app_id, {})
         current_options = app_entry.get("LaunchOptions", "")
+        requested_options = launch_options or ""
 
         # Parse existing options
         wine_override = 'WINEDLLOVERRIDES="dsound=n,b"'
@@ -483,16 +548,23 @@ def set_launch_options(user_id, app_id, launch_options, log_widget):
                 return ''
             return re.sub(r'\s+', ' ', option_str).strip()
 
-        # Always remove existing fs_game entries from the stored options
+        existing_fs_games = re.findall(fs_game_pattern, current_options) if current_options else []
+        new_fs_games = re.findall(fs_game_pattern, requested_options)
+
+        # Keep existing fs_game entries when requested and no new ones are provided
+        fs_game_entries = new_fs_games or (existing_fs_games if preserve_fs_game else [])
+
+        # Always strip fs_game from the strings we merge, then append the chosen entries
         cleaned_current = re.sub(fs_game_pattern, '', current_options).strip()
+        cleaned_launch = re.sub(fs_game_pattern, '', requested_options).strip()
 
         has_current_wine = wine_override in cleaned_current
         has_current_command = command_marker in cleaned_current
-        has_new_wine = wine_override in launch_options
-        has_new_command = command_marker in launch_options
+        has_new_wine = wine_override in requested_options
+        has_new_command = command_marker in requested_options
 
         cleaned_current = strip_token(strip_token(cleaned_current, wine_override), command_marker)
-        cleaned_launch = strip_token(strip_token(launch_options, wine_override), command_marker)
+        cleaned_launch = strip_token(strip_token(cleaned_launch, wine_override), command_marker)
 
         include_wine = has_new_wine or has_current_wine
         include_command = has_new_command or has_current_command
@@ -508,6 +580,12 @@ def set_launch_options(user_id, app_id, launch_options, log_widget):
             segments.append(normalize(cleaned_current))
         if cleaned_launch:
             segments.append(normalize(cleaned_launch))
+        if fs_game_entries:
+            unique_fs_games = []
+            for entry in fs_game_entries:
+                if entry not in unique_fs_games:
+                    unique_fs_games.append(entry)
+            segments.append(normalize(' '.join(unique_fs_games)))
 
         final_options = normalize(' '.join(segments))
         app_entry["LaunchOptions"] = final_options
@@ -523,10 +601,10 @@ def set_launch_options(user_id, app_id, launch_options, log_widget):
         return False
 
 
-def apply_launch_options(launch_option, log_widget):
+def apply_launch_options(launch_option, log_widget, preserve_fs_game=False):
     user_id = find_steam_user_id()
     if not user_id:
         raise Exception("Steam user ID not found!")
     close_steam(log_widget)
-    set_launch_options(user_id, app_id, launch_option, log_widget)
+    set_launch_options(user_id, app_id, launch_option, log_widget, preserve_fs_game=preserve_fs_game)
     open_steam(log_widget)

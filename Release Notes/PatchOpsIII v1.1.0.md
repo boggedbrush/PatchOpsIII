@@ -49,7 +49,7 @@ PatchOpsIII v1.1.0 is our first stable release after the v1.0.4 beta, focused on
 
 ## 📥 Download the Latest Release
 - [Download PatchOpsIII v1.1.0 for Windows]({{WINDOWS_DOWNLOAD_URL}})
-- [Download PatchOpsIII v1.1.0 for Linux & Steam Deck (PatchOpsIII.AppImage)]({{LINUX_DOWNLOAD_URL}})
+- [Download PatchOpsIII v1.1.0 for Linux & Steam Deck]({{LINUX_DOWNLOAD_URL}})
 
 ---
 

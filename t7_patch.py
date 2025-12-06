@@ -358,7 +358,7 @@ class InstallT7PatchWorker(QThread):
 
                 if sys.platform == "linux":
                     write_log("Applying Linux launch options...", "Info", log_forwarder)
-                    apply_launch_options('WINEDLLOVERRIDES="dsound=n,b" %command%', log_forwarder)
+                    apply_launch_options('WINEDLLOVERRIDES="dsound=n,b" %command%', log_forwarder, preserve_fs_game=True)
                     write_log("Linux launch options applied.", "Success", log_forwarder)
             else:
                 raise Exception("Could not find extracted files.")

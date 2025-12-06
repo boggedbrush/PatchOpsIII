@@ -3,14 +3,16 @@ import os
 import re
 import json
 import stat
+from typing import Optional
 from PySide6.QtWidgets import (
     QMessageBox, QWidget, QGroupBox, QVBoxLayout, QHBoxLayout, QLabel,
     QComboBox, QPushButton, QFormLayout, QCheckBox, QSpinBox, QLineEdit, QSlider,
     QSizePolicy
 )
-from PySide6.QtGui import QIntValidator
+from PySide6.QtGui import QIntValidator, QGuiApplication
 from PySide6.QtCore import Qt, QTimer
-from utils import write_log
+from version import APP_VERSION
+from utils import write_log, get_log_file_path
 
 def set_config_value(game_dir, key, value, comment, log_widget):
     config_path = os.path.join(game_dir, "players", "config.ini")
@@ -485,6 +487,7 @@ class AdvancedSettingsWidget(QWidget):
         super().__init__(parent)
         self.game_dir = None
         self.log_widget = None
+        self.version_label: Optional[QLabel] = None
         self.init_ui()
 
     def load_settings(self):
@@ -558,6 +561,18 @@ class AdvancedSettingsWidget(QWidget):
         adv_form.addRow(self.lock_config_cb)
 
         layout.addWidget(adv_box)
+        layout.addStretch(1)
+
+        footer_layout = QHBoxLayout()
+        self.version_label = QLabel(f"PatchOpsIII v{APP_VERSION}")
+        footer_layout.addWidget(self.version_label)
+        footer_layout.addStretch(1)
+
+        copy_logs_btn = QPushButton("Copy Logs")
+        copy_logs_btn.clicked.connect(self.copy_logs_to_clipboard)
+        footer_layout.addWidget(copy_logs_btn)
+
+        layout.addLayout(footer_layout)
 
     def set_game_directory(self, game_dir):
         self.game_dir = game_dir
@@ -615,3 +630,43 @@ class AdvancedSettingsWidget(QWidget):
             set_config_readonly(self.game_dir, True, self.log_widget)
         else:
             set_config_readonly(self.game_dir, False, self.log_widget)
+
+    def _build_log_payload(self, log_text: str) -> str:
+        header = f"PatchOpsIII {APP_VERSION} logs:"
+        body = log_text if log_text else "(no log entries found)"
+        return f"{header}\n```\n{body}\n```"
+
+    def copy_logs_to_clipboard(self):
+        log_path = get_log_file_path()
+        if not os.path.exists(log_path):
+            log_content = ""
+            write_log(f"Log file not found at {log_path}. Copying empty log header.", "Warning", self.log_widget)
+        else:
+            try:
+                with open(log_path, "r", encoding="utf-8") as f:
+                    log_content = f.read().strip()
+            except Exception as exc:
+                write_log(f"Unable to read log file: {exc}", "Error", self.log_widget)
+                QMessageBox.warning(self, "Copy Logs", f"Could not read logs from {log_path}.\nError: {exc}")
+                return
+
+        clipboard = QGuiApplication.clipboard()
+        payload = self._build_log_payload(log_content)
+        if clipboard:
+            clipboard.setText(payload)
+        else:
+            write_log("Clipboard not available; unable to copy logs.", "Error", self.log_widget)
+            QMessageBox.warning(self, "Copy Logs", "Clipboard not available. Please try again.")
+            return
+
+        write_log("Logs copied to clipboard.", "Success", self.log_widget)
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Logs Copied")
+        msg.setTextFormat(Qt.RichText)
+        msg.setText(
+            "Logs copied to clipboard.<br><br>"
+            'Have an issue?:<br>'
+            '<a href="https://github.com/boggedbrush/PatchOpsIII/issues">Submit it here.</a>'
+        )
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec()

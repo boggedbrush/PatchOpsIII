@@ -25,7 +25,15 @@ from t7_patch import T7PatchWidget, is_admin
 from dxvk_manager import DXVKWidget
 from config import GraphicsSettingsWidget, AdvancedSettingsWidget
 from updater import ReleaseInfo, WindowsUpdater, prompt_linux_update
-from utils import write_log, apply_launch_options, find_steam_user_id, steam_userdata_path, app_id, launch_game_via_steam
+from utils import (
+    write_log,
+    apply_launch_options,
+    find_steam_user_id,
+    steam_userdata_path,
+    app_id,
+    launch_game_via_steam,
+    manage_log_retention_on_launch,
+)
 from version import APP_VERSION
 
 
@@ -1230,6 +1238,9 @@ class MainWindow(QMainWindow):
 def main() -> int:
     """Launch the PatchOpsIII GUI and return its exit code."""
     cli_args = parse_cli_arguments()
+    cleared_logs = manage_log_retention_on_launch()
+    if cleared_logs:
+        write_log("Cleared logs after three application launches.", "Info")
     write_log(f"Process PID {os.getpid()} elevated={is_admin()}", "Info")
     app = QApplication(sys.argv)
     global_icon, icon_source = load_application_icon()
