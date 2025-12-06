@@ -3,6 +3,7 @@ import os
 import re
 import json
 import stat
+import platform
 from typing import Optional
 from PySide6.QtWidgets import (
     QMessageBox, QWidget, QGroupBox, QVBoxLayout, QHBoxLayout, QLabel,
@@ -631,8 +632,41 @@ class AdvancedSettingsWidget(QWidget):
         else:
             set_config_readonly(self.game_dir, False, self.log_widget)
 
+    def _platform_label(self) -> str:
+        system = platform.system()
+        machine = platform.machine()
+
+        if system == "Linux":
+            distro = None
+            try:
+                os_release = platform.freedesktop_os_release()
+                name = os_release.get("NAME")
+                version = os_release.get("VERSION") or os_release.get("VERSION_ID")
+                distro = " ".join(part for part in (name, version) if part)
+            except Exception:
+                distro = None
+
+            if distro and machine:
+                return f"{system} - {distro} ({machine})"
+            if distro:
+                return f"{system} - {distro}"
+            if machine:
+                return f"{system} ({machine})"
+            return system or "Unknown platform"
+
+        release = platform.release()
+        if system and release and machine:
+            return f"{system} {release} ({machine})"
+        if system and release:
+            return f"{system} {release}"
+        if system and machine:
+            return f"{system} ({machine})"
+        if system:
+            return system
+        return "Unknown platform"
+
     def _build_log_payload(self, log_text: str) -> str:
-        header = f"PatchOpsIII {APP_VERSION} logs:"
+        header = f"PatchOpsIII {APP_VERSION} - {self._platform_label()} logs:"
         body = log_text if log_text else "(no log entries found)"
         return f"{header}\n```\n{body}\n```"
 

@@ -1,46 +1,58 @@
 # PatchOpsIII {{VERSION}} Release Notes
 
-The latest release of **PatchOpsIII** is here! Version **{{VERSION}}** brings new capabilities, polish, and fixes for the community.
-
-🔍 **VirusTotal Scans:**
-- Windows: [Latest Windows Scan]({{WINDOWS_VT_URL}})
-- Linux: [Latest Linux Scan]({{LINUX_VT_URL}})
+## Overview
+{{OVERVIEW_SUMMARY}}
 
 ---
 
-## 🚀 New Features & Improvements
-{{FEATURES_LIST}}
+## 🚀 Major Highlights
+{{MAJOR_HIGHLIGHTS_LIST}}
 
 ---
 
-## 🔄 **Changes:**
-{{CHANGES_LIST}}
+## 📝 Detailed Changes
+{{DETAILED_CHANGES}}
 
 ---
 
 ## 🛠 Fixes
-{{FIXES_LIST}}
+
+### Cross-Platform
+{{FIXES_CROSS_PLATFORM_LIST}}
+
+### Windows
+{{FIXES_WINDOWS_LIST}}
+
+### Linux and Steam Deck
+{{FIXES_LINUX_STEAM_LIST}}
 
 ---
 
 ## ⚠️ Known Issues
-- **All-around Enhancement Mod:**
-  - Current version doesn’t work with launch options (`Lite` version works fine).
-- **Launch Options Stability:**
-  - May not work for all users—still under testing.
-{{KNOWN_ISSUES_LIST}}
+
+- **All-around Enhancement Mod**
+  - Impact: The current All-around Enhancement Mod does not work correctly when launch options are used; the Lite version remains compatible.
+  - Workaround: Use the Lite version of the All-around Enhancement Mod when launch options are configured.
+  - Status: Fix under investigation.
+
+- **Launch Options Stability on Linux and Steam Deck**
+  - Impact: Launch options may not work consistently across all Linux distributions and Steam Deck setups.
+  - Workaround: If issues occur, temporarily remove custom launch options and re-apply them incrementally.
+  - Status: Behavior is being evaluated across additional distributions and Steam Deck configurations.
 
 ---
 
-## 📥 Download the Latest Release
-- [Download PatchOpsIII {{VERSION}} for Windows]({{WINDOWS_DOWNLOAD_URL}})
-- [Download PatchOpsIII {{VERSION}} for Linux & Steam Deck]({{LINUX_DOWNLOAD_URL}})
+## 📥 Downloads & Verification
 
----
+- **Windows**
+  - Download: [PatchOpsIII {{VERSION}} for Windows]({{WINDOWS_DOWNLOAD_URL}})
+  - SHA256: `{{WINDOWS_SHA256}}`
+  - VirusTotal: [Latest Windows Scan]({{WINDOWS_VT_URL}})
 
-## 🏗 Build Metadata
-- Windows SHA256: `{{WINDOWS_SHA256}}`
-- Linux SHA256: `{{LINUX_SHA256}}`
+- **Linux & Steam Deck**
+  - Download: [PatchOpsIII {{VERSION}} for Linux & Steam Deck]({{LINUX_DOWNLOAD_URL}})
+  - SHA256: `{{LINUX_SHA256}}`
+  - VirusTotal: [Latest Linux Scan]({{LINUX_VT_URL}})
 
 ---
 
@@ -52,12 +64,11 @@ PatchOpsIII is built upon the work of these amazing projects:
 
 ---
 
-## 🔮 What's Next?
-- **Bug Fixes & Optimizations:** Continuing improvements based on user feedback.
-- **[BO3 Enhanced](https://github.com/shiversoftdev/BO3Enhanced) Installation assistant tab for Windows users:** User's specify their Microsoft store dump of the game and PatchOpsIII will automate the installation for you! To learn more about BO3 Enhanced I recommend watching [this video](https://www.youtube.com/watch?v=rBZZTcSJ9_s)
-- **Community Feedback:** Your feedback is invaluable! Report issues, suggest improvements, and propose new features.
-{{NEXT_STEPS_LIST}}
+## 🔮 Upcoming Work
+- Bug fixes and performance optimizations based on user reports.
+- [BO3 Enhanced](https://github.com/shiversoftdev/BO3Enhanced) installation assistant tab for Windows users to automate installation from a Microsoft Store dump.
+- Additional improvements for Linux and Steam Deck launch option handling and broader distribution coverage.
 
 ---
 
-Thank you for supporting **PatchOpsIII**. Happy modding! 🎮
+If you encounter issues or have suggestions, please open an issue on the repository or share feedback with the community so we can prioritize future improvements. 🎮
