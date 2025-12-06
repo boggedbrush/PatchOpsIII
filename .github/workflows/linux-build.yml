@@ -91,7 +91,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .nuitka-cache
-          key: nuitka-linux-${{ steps.version.outputs.normalized }}
+          key: nuitka-linux-${{ steps.version.outputs.raw }}
           restore-keys: |
             nuitka-linux-
       - name: Cache pip downloads

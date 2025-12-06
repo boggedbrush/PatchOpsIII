@@ -12,6 +12,10 @@ import argparse
 import json
 from functools import lru_cache
 from typing import Optional
+
+# Silence noisy Qt portal logging on some Linux hosts before Qt loads
+os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.*=false;qt.scenegraph.general=false")
+
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
     QPushButton, QLabel, QFileDialog, QTextEdit, QTabWidget, QSizePolicy,
@@ -1126,11 +1130,11 @@ class MainWindow(QMainWindow):
             self.update_button.setText("Install Update")
             self.update_button.setEnabled(True)
         prompt = (
-            f"PatchOpsIII {release.version} has been downloaded and is ready to install.\n\n"
-            "Would you like to close the application and apply the update now?"
+            f"Install PatchOpsIII {release.version} now?\n\n"
+            "The application will close while the update is applied."
         )
         if QMessageBox.question(self, "Install Update", prompt, QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
-            self._prompt_install_staged_update()
+            self._apply_staged_update()
 
     def _auto_check_for_updates(self):
         if self.updater and not self._staged_script_path:
@@ -1152,17 +1156,8 @@ class MainWindow(QMainWindow):
     def _prompt_install_staged_update(self):
         if not self.updater or not self._staged_release:
             return
-        confirm = QMessageBox.question(
-            self,
-            "Install Update",
-            (
-                f"Install PatchOpsIII {self._staged_release.version} now?\n\n"
-                "The application will close while the update is applied."
-            ),
-            QMessageBox.Yes | QMessageBox.No,
-        )
-        if confirm == QMessageBox.Yes:
-            self._apply_staged_update()
+        # If we've already staged the update, apply it immediately without another prompt.
+        self._apply_staged_update()
 
     def _apply_staged_update(self):
         if not self.updater:

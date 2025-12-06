@@ -382,6 +382,7 @@ class WindowsUpdater(QObject):
     def _write_exe_swap_script(self, staged_executable: str) -> str:
         script_path = os.path.join(self.install_dir, "apply_patchopsiii_update.bat")
         backup_path = self.executable_path + ".old"
+        vbs_path = os.path.join(self.install_dir, "run_patchopsiii_update.vbs")
         lines = [
             "@echo off",
             "setlocal enableextensions",
@@ -389,6 +390,7 @@ class WindowsUpdater(QObject):
             f"set TARGET={self.executable_path}",
             f"set UPDATED={staged_executable}",
             f"set BACKUP={backup_path}",
+            f"set VBSFILE={vbs_path}",
             ":wait_loop",
             "timeout /t 1 /nobreak >nul",
             "tasklist /FI \"PID eq %PID%\" | findstr /I \"%PID%\" >nul",
@@ -397,6 +399,8 @@ class WindowsUpdater(QObject):
             "if exist \"%TARGET%\" move /y \"%TARGET%\" \"%BACKUP%\"",
             "move /y \"%UPDATED%\" \"%TARGET%\"",
             "start \"\" \"%TARGET%\"",
+            "if exist \"%BACKUP%\" del /f /q \"%BACKUP%\"",
+            "if defined VBSFILE if exist \"%VBSFILE%\" del /f /q \"%VBSFILE%\"",
             "del /f /q \"%~f0\"",
         ]
         with open(script_path, "w", encoding="utf-8", newline="\r\n") as handle:
@@ -405,6 +409,8 @@ class WindowsUpdater(QObject):
 
     def _write_zip_swap_script(self, extract_dir: str) -> str:
         script_path = os.path.join(self.install_dir, "apply_patchopsiii_update.bat")
+        backup_path = self.executable_path + ".old"
+        vbs_path = os.path.join(self.install_dir, "run_patchopsiii_update.vbs")
         lines = [
             "@echo off",
             "setlocal enableextensions",
@@ -412,6 +418,8 @@ class WindowsUpdater(QObject):
             f"set SOURCE={extract_dir}",
             f"set TARGET={self.install_dir}",
             f"set EXECUTABLE={self.executable_path}",
+            f"set BACKUP={backup_path}",
+            f"set VBSFILE={vbs_path}",
             ":wait_loop",
             "timeout /t 1 /nobreak >nul",
             "tasklist /FI \"PID eq %PID%\" | findstr /I \"%PID%\" >nul",
@@ -419,6 +427,8 @@ class WindowsUpdater(QObject):
             "xcopy \"%SOURCE%\" \"%TARGET%\" /E /H /K /Y /I",
             "rmdir /S /Q \"%SOURCE%\"",
             "start \"\" \"%EXECUTABLE%\"",
+            "if exist \"%BACKUP%\" del /f /q \"%BACKUP%\"",
+            "if defined VBSFILE if exist \"%VBSFILE%\" del /f /q \"%VBSFILE%\"",
             "del /f /q \"%~f0\"",
         ]
         with open(script_path, "w", encoding="utf-8", newline="\r\n") as handle:
@@ -481,15 +491,73 @@ class WindowsUpdater(QObject):
         self._staged_release = None
 
 
+def _flatpak_exists() -> bool:
+    return shutil.which("flatpak") is not None
+
+
+def _ensure_flathub_remote(log_callback) -> bool:
+    try:
+        result = subprocess.run(
+            ["flatpak", "remotes", "--columns=name"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        if "flathub" in (result.stdout or ""):
+            return True
+    except Exception as exc:  # noqa: BLE001
+        log_callback(f"Failed to check Flatpak remotes: {exc}", "Warning")
+        return False
+
+    try:
+        subprocess.run(
+            ["flatpak", "remote-add", "--if-not-exists", "flathub", "https://flathub.org/repo/flathub.flatpakrepo"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        log_callback("Added Flathub remote for Gear Lever install.", "Info")
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log_callback(f"Failed to add Flathub remote: {exc}", "Error")
+        return False
+
+
+def _install_gear_lever(log_callback) -> bool:
+    if not _flatpak_exists():
+        log_callback("Flatpak not found; cannot install Gear Lever automatically.", "Warning")
+        return False
+    if not _ensure_flathub_remote(log_callback):
+        return False
+    try:
+        log_callback("Installing Gear Lever via Flatpak...", "Info")
+        subprocess.run(
+            ["flatpak", "install", "-y", "flathub", "it.mijorus.gearlever"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        log_callback("Gear Lever installed successfully.", "Success")
+        return True
+    except subprocess.CalledProcessError as exc:
+        log_callback(f"Gear Lever install failed: {exc}", "Error")
+        return False
+    except Exception as exc:  # noqa: BLE001
+        log_callback(f"Unexpected error installing Gear Lever: {exc}", "Error")
+        return False
+
+
 def _launch_gear_lever(log_callback) -> bool:
     """Attempt to launch Gear Lever via Flatpak first, then native binary."""
 
     candidates = [
-        ["flatpak", "run", "it.mijorus.gearlever"],
+        ["flatpak", "run", "it.mijorus.gearlever"] if _flatpak_exists() else None,
         ["gearlever"],
     ]
 
     for command in candidates:
+        if not command:
+            continue
         try:
             proc = subprocess.Popen(
                 command,
@@ -534,15 +602,26 @@ def _show_gear_lever_required(parent, log_callback) -> None:
         "Automatic updates on Linux require Gear Lever to be installed."
     )
     message_box.setInformativeText(
-        f"Install Gear Lever from Flathub to enable automatic updates.\n{GEAR_LEVER_URL}"
+        f'Install <a href="{GEAR_LEVER_URL}">Gear Lever from Flathub</a> to enable automatic updates.\n'
     )
-    message_box.setStandardButtons(QMessageBox.Open | QMessageBox.Close)
-    message_box.setDefaultButton(QMessageBox.Open)
-    message_box.setTextFormat(Qt.PlainText)
-    message_box.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
+    message_box.setTextFormat(Qt.RichText)
+    install_button = None
+    if _flatpak_exists():
+        install_button = message_box.addButton("Install via Flatpak", QMessageBox.AcceptRole)
+    open_button = message_box.addButton("Open Flathub Page", QMessageBox.ActionRole)
+    close_button = message_box.addButton(QMessageBox.Close)
 
-    result = message_box.exec()
-    if result == QMessageBox.Open:
+    message_box.setDefaultButton(install_button or open_button or close_button)
+    message_box.setTextInteractionFlags(Qt.TextBrowserInteraction)
+
+    message_box.exec()
+    clicked = message_box.clickedButton()
+    if clicked == install_button:
+        if _install_gear_lever(log_callback):
+            _launch_gear_lever(log_callback)
+        else:
+            QDesktopServices.openUrl(QUrl(GEAR_LEVER_URL))
+    elif clicked == open_button:
         QDesktopServices.openUrl(QUrl(GEAR_LEVER_URL))
 
 

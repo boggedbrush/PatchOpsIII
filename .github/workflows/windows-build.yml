@@ -108,7 +108,7 @@ jobs:
             PatchOpsIII.dist
             PatchOpsIII.onefile-build
             .nuitka-cache
-          key: nuitka-${{ runner.os }}-${{ steps.version.outputs.normalized }}
+          key: nuitka-${{ runner.os }}-${{ steps.version.outputs.raw }}
       - name: Prepare build directories
         run: |
           if (Test-Path 'dist') { Remove-Item 'dist' -Recurse -Force }
