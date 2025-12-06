@@ -429,12 +429,20 @@ class WindowsUpdater(QObject):
         if not self._staged_script or not os.path.exists(self._staged_script):
             raise RuntimeError("No staged update is available.")
         self._log("Launching update installer and exiting...")
-        cmd = ["cmd.exe", "/c", "start", "", self._staged_script]
+        cmd = ["cmd.exe", "/c", self._staged_script]
         creationflags = 0
-        if hasattr(subprocess, "CREATE_NEW_CONSOLE"):
-            creationflags = subprocess.CREATE_NEW_CONSOLE
+        startupinfo = None
+        if os.name == "nt":
+            # Suppress the console window so the update feels seamless
+            if hasattr(subprocess, "CREATE_NO_WINDOW"):
+                creationflags |= subprocess.CREATE_NO_WINDOW
+            if hasattr(subprocess, "STARTUPINFO"):
+                startupinfo = subprocess.STARTUPINFO()
+                if hasattr(subprocess, "STARTF_USESHOWWINDOW"):
+                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                    startupinfo.wShowWindow = 0
         try:
-            subprocess.Popen(cmd, creationflags=creationflags)
+            subprocess.Popen(cmd, creationflags=creationflags, startupinfo=startupinfo)
         except OSError as exc:
             raise RuntimeError(f"Failed to launch update script: {exc}") from exc
 

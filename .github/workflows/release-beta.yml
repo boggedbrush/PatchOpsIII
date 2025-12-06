@@ -530,6 +530,10 @@ jobs:
           fi
           cp "$linux_exec" "release/PatchOpsIII-Beta.AppImage"
           chmod +x "release/PatchOpsIII-Beta.AppImage"
+          zsync_file="$(dirname "$linux_exec")/PatchOpsIII.AppImage.zsync"
+          if [ -f "$zsync_file" ]; then
+            cp "$zsync_file" "release/PatchOpsIII-Beta.AppImage.zsync"
+          fi
           if [ -f "$(dirname "$linux_exec")/PatchOpsIII.AppImage.sig" ]; then
             cp "$(dirname "$linux_exec")/PatchOpsIII.AppImage.sig" "release/PatchOpsIII-Beta.AppImage.sig"
           fi

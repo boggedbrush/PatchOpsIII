@@ -85,6 +85,7 @@ else
   echo "Warning: qmake not found; skipping linuxdeploy qt plugin." >&2
 fi
 
+LINUXDEPLOY_CMD+=(--plugin appimage)
 LINUXDEPLOY_CMD+=(--output appimage)
 
 "${LINUXDEPLOY_CMD[@]}"
