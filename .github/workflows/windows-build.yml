@@ -231,7 +231,7 @@ jobs:
           VT_API_KEY: ${{ env.VT_API_KEY }}
         run: |
           $target = Join-Path $env:WINDOWS_DIST_DIR $env:WINDOWS_BINARY
-          .\vt.exe scan file $target --wait --apikey $env:VT_API_KEY
+          .\vt.exe scan file $target --apikey $env:VT_API_KEY
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:

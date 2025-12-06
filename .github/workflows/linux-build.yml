@@ -207,7 +207,7 @@ jobs:
         env:
           VT_API_KEY: ${{ env.VT_API_KEY }}
         run: |
-          ./vt scan file "$OUTPUT_DIR/$APPIMAGE_NAME" --wait --apikey "$VT_API_KEY"
+          ./vt scan file "$OUTPUT_DIR/$APPIMAGE_NAME" --apikey "$VT_API_KEY"
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
         with:
