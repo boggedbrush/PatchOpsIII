@@ -255,12 +255,15 @@ jobs:
       - name: Create or verify tag
         id: tag
         env:
-          TAG_NAME: ${{ steps.metadata.outputs.tag }}
           SOURCE_REF: ${{ inputs.source_ref }}
           CREATE_TAG: ${{ inputs.create_tag }}
         shell: bash
         run: |
           set -euo pipefail
+          TAG_NAME="${{ steps.metadata.outputs.tag }}"
+          if [ -z "$TAG_NAME" ]; then
+            TAG_NAME="${{ steps.version.outputs.tagged }}"
+          fi
           if [ -z "$TAG_NAME" ]; then
             echo "Tag input is required." >&2
             exit 1
