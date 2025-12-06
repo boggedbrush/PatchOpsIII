@@ -208,6 +208,18 @@ jobs:
 
           base_version = re.sub(r"(?i)-beta$", "", version_token)
           tag_name = f"{base_version}-beta"
+          notes_version = (info.get("version") or "").strip()
+
+          if not notes_version:
+              raise SystemExit(
+                  f"Selected release notes '{selected_rel.as_posix()}' do not contain a version heading."
+              )
+
+          if notes_version.lower() != version_token.lower():
+              raise SystemExit(
+                  f"Release notes version '{notes_version}' does not match PROJECT_VERSION '{version_token}'. "
+                  "Update version.py or choose matching release notes."
+              )
           release_title = f"PatchOpsIII {tag_name}"
 
           print(f"Selected release notes: {selected_rel.as_posix()}")
@@ -373,8 +385,8 @@ jobs:
           linux_vt = os.environ.get("LINUX_VT_URL", "").strip() or "https://www.virustotal.com/"
           windows_hash = os.environ.get("WINDOWS_HASH", "").strip() or "None"
           linux_hash = os.environ.get("LINUX_HASH", "").strip() or "None"
-          asset_windows = "PatchOpsIII.exe"
-          asset_linux = "PatchOpsIII.AppImage"
+          asset_windows = "PatchOpsIII-Beta.exe"
+          asset_linux = "PatchOpsIII-Beta.AppImage"
           base_url = f"https://github.com/{repo}/releases/download/{tag}"
           windows_download = f"{base_url}/{asset_windows}"
           linux_download = f"{base_url}/{asset_linux}"
@@ -422,9 +434,9 @@ jobs:
             find artifacts/windows -type f -print >&2
             exit 1
           fi
-          cp "$win_exec" "release/PatchOpsIII.exe"
+          cp "$win_exec" "release/PatchOpsIII-Beta.exe"
           if [ -f "$(dirname "$win_exec")/PatchOpsIII.sig" ]; then
-            cp "$(dirname "$win_exec")/PatchOpsIII.sig" "release/PatchOpsIII.sig"
+            cp "$(dirname "$win_exec")/PatchOpsIII.sig" "release/PatchOpsIII-Beta.sig"
           fi
           linux_exec=$(find artifacts/linux -type f -name 'PatchOpsIII.AppImage' -print -quit)
           if [ -z "$linux_exec" ]; then
@@ -432,10 +444,10 @@ jobs:
             find artifacts/linux -type f -print >&2
             exit 1
           fi
-          cp "$linux_exec" "release/PatchOpsIII.AppImage"
-          chmod +x "release/PatchOpsIII.AppImage"
+          cp "$linux_exec" "release/PatchOpsIII-Beta.AppImage"
+          chmod +x "release/PatchOpsIII-Beta.AppImage"
           if [ -f "$(dirname "$linux_exec")/PatchOpsIII.AppImage.sig" ]; then
-            cp "$(dirname "$linux_exec")/PatchOpsIII.AppImage.sig" "release/PatchOpsIII.AppImage.sig"
+            cp "$(dirname "$linux_exec")/PatchOpsIII.AppImage.sig" "release/PatchOpsIII-Beta.AppImage.sig"
           fi
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
