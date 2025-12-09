@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Callable, Dict, Iterable, Optional, Tuple
 
 import requests
-from Direct_Download import Direct
+
 
 from utils import write_log
 import shutil
@@ -20,8 +20,7 @@ import re
 # Upstream resources
 GITHUB_LATEST_ENHANCED_API = "https://api.github.com/repos/shiversoftdev/BO3Enhanced/releases/latest"
 GITHUB_LATEST_ENHANCED_PAGE = "https://github.com/shiversoftdev/BO3Enhanced/releases/latest"
-PRIMARY_DUMP_URL = "https://www.mediafire.com/file/w3q2fgblfsd4hfn/DUMP.zip"
-BACKUP_DUMP_URL = "https://gofile.io/d/91Sveo"
+
 
 # Local file names
 STATE_FILENAME = "bo3_enhanced_state.json"
@@ -37,9 +36,9 @@ EXPECTED_ENHANCED_FILES = {
     "WindowsCodecs.dll",
 }
 EXPECTED_DUMP_FILES = {
-    "DUMP/appxmanifest.xml",
-    "DUMP/BlackOps3.exe",
-    "DUMP/MicrosoftGame.config",
+    "appxmanifest.xml",
+    "BlackOps3.exe",
+    "MicrosoftGame.config",
 }
 UWP_ONLY_FILES = {
     "appxmanifest.xml",
@@ -119,37 +118,7 @@ STEAM_CORE_FILES = {
 _SESSION = requests.Session()
 
 
-def _resolve_mediafire_direct(url: str) -> Optional[str]:
-    # Try library first
-    try:
-        resolver = Direct()
-        resolved = resolver.mediafire(url)
-        if resolved and resolved.startswith("http"):
-            return resolved
-    except Exception:
-        pass
 
-    # Manual fallback using regex scraping
-    try:
-        # User-Agent is often required to get the correct page content
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
-        with _SESSION.get(url, headers=headers, timeout=10, stream=False) as resp:
-            resp.raise_for_status()
-            text = resp.text
-            # Look for typical MediaFire download button
-            match = re.search(r'href="([^"]+)"\s+id="downloadButton"', text)
-            if match:
-                return match.group(1)
-            
-            # Fallback: check for any link containing 'download' and the file extension or similar
-            # But the id="downloadButton" is the most reliable standard on MediaFire
-    except Exception as exc:
-        write_log(f"Manual MediaFire resolution failed: {exc}", "Warning", None)
-
-    write_log(f"MediaFire resolver failed for {url}", "Warning", None)
-    return None
 
 
 def _state_path(storage_dir: str) -> str:
@@ -343,24 +312,51 @@ def validate_enhanced_archive(path: str) -> bool:
     return True
 
 
-def validate_dump_archive(path: str) -> bool:
+def validate_dump_source(source_path: str) -> bool:
+    """Validate a dump zip archive or directory."""
+    if not os.path.exists(source_path):
+        write_log(f"Dump source not found: {source_path}", "Error", None)
+        return False
+
+    is_dir = os.path.isdir(source_path)
+    
     try:
-        with zipfile.ZipFile(path, "r") as archive:
-            names = {info.filename for info in archive.infolist()}
-            missing = [item for item in EXPECTED_DUMP_FILES if item not in names]
-            if missing:
-                write_log(f"Dump archive missing required entries: {', '.join(missing)}", "Error", None)
+        found_files = set()
+        
+        if is_dir:
+            # Check for files in root or DUMP/ subdir
+            for root, _, files in os.walk(source_path):
+                for f in files:
+                    # Normalize path relative to source_path
+                    rel = os.path.relpath(os.path.join(root, f), source_path).replace("\\", "/")
+                    # If inside DUMP/, strip prefix
+                    if rel.startswith("DUMP/"):
+                        found_files.add(rel[5:])
+                    else:
+                        found_files.add(rel)
+        else:
+            if not zipfile.is_zipfile(source_path):
+                write_log("Dump source is not a valid zip file or directory", "Error", None)
                 return False
-            # Early sanity: zipfile is valid if we got here; still ensure it's not HTML masquerading
-            if "BlackOps3.exe" not in " ".join(names):
-                write_log("Dump archive contents look unexpected; aborting.", "Error", None)
-                return False
-    except zipfile.BadZipFile:
-        write_log("Dump archive is not a valid zip", "Error", None)
-        return False
+                
+            with zipfile.ZipFile(source_path, "r") as archive:
+                for info in archive.infolist():
+                    name = info.filename
+                    if name.startswith("DUMP/"):
+                        found_files.add(name[5:])
+                    else:
+                        found_files.add(name)
+
+        # Check required files
+        missing = [f for f in EXPECTED_DUMP_FILES if f not in found_files]
+        if missing:
+            write_log(f"Dump source missing required files: {', '.join(missing)}", "Error", None)
+            return False
+            
     except Exception as exc:
-        write_log(f"Failed to validate dump archive: {exc}", "Error", None)
+        write_log(f"Failed to validate dump source: {exc}", "Error", None)
         return False
+        
     return True
 
 
@@ -382,73 +378,7 @@ def download_latest_enhanced(mod_files_dir: str, storage_dir: str, progress: Opt
     return path
 
 
-def download_dump_with_fallback(
-    mod_files_dir: str,
-    storage_dir: str,
-    progress: Optional[Callable[[int], None]] = None,
-    *,
-    sources: Optional[Iterable[str]] = None,
-    retries: int = 2,
-    backoff_base: int = 1,
-) -> Optional[str]:
-    dump_sources = list(sources or (PRIMARY_DUMP_URL, BACKUP_DUMP_URL))
-    dest = os.path.join(mod_files_dir, DUMP_ARCHIVE_NAME)
-    os.makedirs(mod_files_dir, exist_ok=True)
 
-    # Local cached copy fallback to avoid repeated failures on HTML landing pages
-    cached_path = dest if os.path.exists(dest) else None
-
-    for url in dump_sources:
-        if "gofile.io" in url:
-            write_log("Gofile share link detected; skipping landing page.", "Warning", None)
-            continue
-
-        # MediaFire via local resolver
-        if "mediafire.com" in url:
-            resolved_url = _resolve_mediafire_direct(url)
-            if not resolved_url:
-                continue
-            for attempt in range(retries):
-                data = _download_bytes(resolved_url)
-                if data and _is_probably_zip(data):
-                    with open(dest, "wb") as handle:
-                        handle.write(data)
-                    if validate_dump_archive(dest):
-                        checksum = _compute_sha256(dest)
-                        checksums = _load_checksums(storage_dir)
-                        checksums[os.path.basename(dest)] = checksum
-                        _save_checksums(storage_dir, checksums)
-                        write_log(f"Downloaded dump from {url}", "Success", None)
-                        return dest
-                if attempt == retries - 1:
-                    break
-                wait_seconds = backoff_base * (2 ** attempt)
-                time.sleep(wait_seconds)
-                write_log(f"Retrying dump download from {url} (attempt {attempt + 2}/{retries})", "Warning", None)
-            continue
-
-        # Default path for direct links
-        for attempt in range(retries):
-            path = _download_file(url, dest, progress=progress)
-            if path and validate_dump_archive(path):
-                checksum = _compute_sha256(path)
-                checksums = _load_checksums(storage_dir)
-                checksums[os.path.basename(path)] = checksum
-                _save_checksums(storage_dir, checksums)
-                write_log(f"Downloaded dump from {url}", "Success", None)
-                return path
-            if attempt == retries - 1:
-                break
-            wait_seconds = backoff_base * (2 ** attempt)
-            time.sleep(wait_seconds)
-            write_log(f"Retrying dump download from {url} (attempt {attempt + 2}/{retries})", "Warning", None)
-
-    if cached_path and validate_dump_archive(cached_path):
-        write_log("Using cached dump file after remote download failures.", "Warning", None)
-        return cached_path
-
-    write_log("All dump sources failed", "Error", None)
-    return None
 
 
 def detect_enhanced_install(game_dir: str) -> bool:
@@ -510,53 +440,88 @@ def _should_copy_dump_member(rel_path: str) -> bool:
     return True
 
 
-def install_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str, log_widget=None) -> bool:
-    """Install BO3 Enhanced files + dump into the game directory with backups."""
+def install_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str, dump_source: str, log_widget=None) -> bool:
+    """Install BO3 Enhanced files + dump (from zip or folder) into the game directory with backups."""
     if not game_dir or not os.path.isdir(game_dir):
         write_log("Invalid game directory for Enhanced install.", "Error", log_widget)
         return False
 
     enhanced_zip = os.path.join(mod_files_dir, ENHANCED_ARCHIVE_NAME)
-    dump_zip = os.path.join(mod_files_dir, DUMP_ARCHIVE_NAME)
+    
     if not os.path.exists(enhanced_zip):
         write_log(f"Enhanced archive not found at {enhanced_zip}", "Error", log_widget)
         return False
-    if not os.path.exists(dump_zip):
-        write_log(f"Dump archive not found at {dump_zip}", "Error", log_widget)
+    if not os.path.exists(dump_source):
+        write_log(f"Dump source not found at {dump_source}", "Error", log_widget)
         return False
+
     if not validate_enhanced_archive(enhanced_zip):
         write_log("Enhanced archive failed validation; aborting install.", "Error", log_widget)
         return False
-    if not validate_dump_archive(dump_zip):
-        write_log("Dump archive failed validation; aborting install.", "Error", log_widget)
+    if not validate_dump_source(dump_source):
+        write_log("Dump source failed validation; aborting install.", "Error", log_widget)
         return False
 
     try:
         installed_rel_paths = []
 
-        # 1) Install all dump contents into the game directory
-        with zipfile.ZipFile(dump_zip, "r") as archive:
-            for info in archive.infolist():
-                if not info.filename.startswith("DUMP/"):
-                    continue
-                rel_path = info.filename.split("/", 1)[-1]
-                if not rel_path or rel_path.endswith("/"):
-                    continue
-                if not _should_copy_dump_member(rel_path):
-                    continue
+        # 1) Install all dump contents
+        if os.path.isdir(dump_source):
+            # Install from directory
+            for root, _, files in os.walk(dump_source):
+                for f in files:
+                    src_path = os.path.join(root, f)
+                    rel_path = os.path.relpath(src_path, dump_source).replace("\\", "/")
+                    
+                    # Handle DUMP/ prefix if it exists in folder structure
+                    if rel_path.startswith("DUMP/"):
+                        final_rel_path = rel_path[5:]
+                    else:
+                        final_rel_path = rel_path
+                        
+                    if not final_rel_path:
+                        continue
+                        
+                    if not _should_copy_dump_member(final_rel_path):
+                        continue
+                        
+                    target = os.path.normpath(os.path.join(game_dir, final_rel_path))
+                    if not target.startswith(os.path.normpath(game_dir)):
+                        continue
+                        
+                    _backup_with_bak(target)
+                    os.makedirs(os.path.dirname(target), exist_ok=True)
+                    shutil.copy2(src_path, target)
+                    installed_rel_paths.append(final_rel_path)
+        else:
+            # Install from ZIP
+            with zipfile.ZipFile(dump_source, "r") as archive:
+                for info in archive.infolist():
+                    rel_path = info.filename
+                    
+                    if rel_path.startswith("DUMP/"):
+                        final_rel_path = rel_path[5:]
+                    else:
+                        final_rel_path = rel_path
+                        
+                    if not final_rel_path or final_rel_path.endswith("/"):
+                        continue
+                        
+                    if not _should_copy_dump_member(final_rel_path):
+                        continue
+                    
+                    target = os.path.normpath(os.path.join(game_dir, final_rel_path))
+                    if not target.startswith(os.path.normpath(game_dir)):
+                        raise ValueError(f"Unsafe path detected in dump archive: {info.filename}")
 
-                target = os.path.normpath(os.path.join(game_dir, rel_path))
-                if not target.startswith(os.path.normpath(game_dir)):
-                    raise ValueError(f"Unsafe path detected in dump archive: {info.filename}")
+                    _backup_with_bak(target)
+                    os.makedirs(os.path.dirname(target), exist_ok=True)
+                    with archive.open(info, "r") as src, open(target, "wb") as dst:
+                        shutil.copyfileobj(src, dst)
 
-                _backup_with_bak(target)
-                os.makedirs(os.path.dirname(target), exist_ok=True)
-                with archive.open(info, "r") as src, open(target, "wb") as dst:
-                    shutil.copyfileobj(src, dst)
+                    installed_rel_paths.append(final_rel_path)
 
-                installed_rel_paths.append(rel_path)
-
-        # 2) Install BO3 Enhanced DLLs on top (official guide: Enhanced last)
+        # 2) Install BO3 Enhanced DLLs on top
         with zipfile.ZipFile(enhanced_zip, "r") as archive:
             for info in archive.infolist():
                 name = os.path.basename(info.filename)
@@ -580,39 +545,56 @@ def install_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str, 
         return False
 
 
-def install_dump_only(game_dir: str, mod_files_dir: str, storage_dir: str, log_widget=None) -> bool:
+def install_dump_only(game_dir: str, mod_files_dir: str, storage_dir: str, dump_source: str, log_widget=None) -> bool:
     """Install only the dump contents (testing helper)."""
     if not game_dir or not os.path.isdir(game_dir):
         write_log("Invalid game directory for dump install.", "Error", log_widget)
         return False
 
-    dump_zip = os.path.join(mod_files_dir, DUMP_ARCHIVE_NAME)
-    if not os.path.exists(dump_zip):
-        write_log(f"Dump archive not found at {dump_zip}", "Error", log_widget)
+    if not os.path.exists(dump_source):
+        write_log(f"Dump source not found at {dump_source}", "Error", log_widget)
         return False
-    if not validate_dump_archive(dump_zip):
-        write_log("Dump archive failed validation; aborting install.", "Error", log_widget)
+    if not validate_dump_source(dump_source):
+        write_log("Dump source failed validation; aborting install.", "Error", log_widget)
         return False
 
     try:
         installed_rel_paths = []
-        with zipfile.ZipFile(dump_zip, "r") as archive:
-            for info in archive.infolist():
-                if not info.filename.startswith("DUMP/"):
-                    continue
-                rel_path = info.filename.split("/", 1)[-1]
-                if not rel_path or rel_path.endswith("/"):
-                    continue
-                if not _should_copy_dump_member(rel_path):
-                    continue
-                target = os.path.normpath(os.path.join(game_dir, rel_path))
-                if not target.startswith(os.path.normpath(game_dir)):
-                    raise ValueError(f"Unsafe path detected in dump archive: {info.filename}")
-                _backup_with_bak(target)
-                os.makedirs(os.path.dirname(target), exist_ok=True)
-                with archive.open(info, "r") as src, open(target, "wb") as dst:
-                    shutil.copyfileobj(src, dst)
-                installed_rel_paths.append(rel_path)
+        if os.path.isdir(dump_source):
+             for root, _, files in os.walk(dump_source):
+                for f in files:
+                    src_path = os.path.join(root, f)
+                    rel_path = os.path.relpath(src_path, dump_source).replace("\\", "/")
+                    if rel_path.startswith("DUMP/"):
+                        final_rel_path = rel_path[5:]
+                    else:
+                        final_rel_path = rel_path
+                    if not final_rel_path: continue
+                    if not _should_copy_dump_member(final_rel_path): continue
+                    
+                    target = os.path.normpath(os.path.join(game_dir, final_rel_path))
+                    _backup_with_bak(target)
+                    os.makedirs(os.path.dirname(target), exist_ok=True)
+                    shutil.copy2(src_path, target)
+                    installed_rel_paths.append(final_rel_path)
+        else:
+            with zipfile.ZipFile(dump_source, "r") as archive:
+                for info in archive.infolist():
+                    rel_path = info.filename
+                    if rel_path.startswith("DUMP/"):
+                        final_rel_path = rel_path[5:]
+                    else:
+                        final_rel_path = rel_path
+                    
+                    if not final_rel_path or final_rel_path.endswith("/"): continue
+                    if not _should_copy_dump_member(final_rel_path): continue
+                    target = os.path.normpath(os.path.join(game_dir, final_rel_path))
+                    _backup_with_bak(target)
+                    os.makedirs(os.path.dirname(target), exist_ok=True)
+                    with archive.open(info, "r") as src, open(target, "wb") as dst:
+                        shutil.copyfileobj(src, dst)
+                    installed_rel_paths.append(final_rel_path)
+
         write_log("Dump-only install completed.", "Success", log_widget)
         if installed_rel_paths:
             state = load_state(storage_dir)

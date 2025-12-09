@@ -20,9 +20,9 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
     QPushButton, QLabel, QFileDialog, QTextEdit, QTabWidget, QSizePolicy,
     QGroupBox, QRadioButton, QButtonGroup, QCheckBox, QGridLayout,
-    QMessageBox
+    QMessageBox, QDialog, QStyle, QMenu
 )
-from PySide6.QtGui import QIcon, QDesktopServices
+from PySide6.QtGui import QIcon, QDesktopServices, QAction
 from PySide6.QtCore import Qt, QUrl, QThread, Signal, QTimer
 
 from t7_patch import T7PatchWidget, is_admin
@@ -39,7 +39,6 @@ from utils import (
     manage_log_retention_on_launch,
 )
 from bo3_enhanced import (
-    download_dump_with_fallback,
     download_latest_enhanced,
     detect_enhanced_install,
     GITHUB_LATEST_ENHANCED_PAGE,
@@ -50,7 +49,7 @@ from bo3_enhanced import (
     set_acknowledged,
     status_summary,
     uninstall_enhanced_files,
-    validate_dump_archive,
+    validate_dump_source,
 )
 from version import APP_VERSION
 
@@ -579,6 +578,129 @@ class ApplyLaunchOptionsWorker(QThread):
             self.log_message.emit(f"Error applying launch options: {e}", "Error")
             self.error.emit(str(e))
 
+class DumpSelectionDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("BO3 Enhanced - Dump Required")
+        self.setFixedWidth(600)
+        self.result_path = None
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        # Header
+        header = QLabel("<h3>Step 1: Obtain Game Dump</h3>")
+        header.setTextFormat(Qt.RichText)
+        layout.addWidget(header)
+
+        info = QLabel(
+            "To avoid legal risks, PatchOpsIII cannot download game files automatically.\n"
+            "You must provide a UWP dump file manually."
+        )
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        # Guide Link
+        guide_layout = QHBoxLayout()
+        guide_icon = QLabel()
+        guide_icon.setPixmap(self.style().standardIcon(QStyle.SP_MessageBoxInformation).pixmap(32, 32))
+        guide_layout.addWidget(guide_icon)
+        
+        link_label = QLabel('<a href="https://youtu.be/rBZZTcSJ9_s?si=41p0r_Enten3h5AQ">Click here to watch the guide on how to get the dump</a>')
+        link_label.setOpenExternalLinks(True)
+        guide_layout.addWidget(link_label)
+        guide_layout.addStretch()
+        layout.addLayout(guide_layout)
+
+        # Divider
+        line = QLabel()
+        line.setFrameShape(QLabel.HLine)
+        line.setFrameShadow(QLabel.Sunken)
+        layout.addWidget(line)
+
+        # Selection
+        step2 = QLabel("<h3>Step 2: Install</h3>")
+        step2.setTextFormat(Qt.RichText)
+        layout.addWidget(step2)
+
+        # Browse Bar
+        browse_layout = QHBoxLayout()
+        browse_layout.setSpacing(10)
+
+        self.path_edit = QLineEdit()
+        self.path_edit.setPlaceholderText("Select DUMP.zip or BlackOps3.exe from dump folder...")
+        browse_layout.addWidget(self.path_edit)
+
+        # Smart Browse Button
+        browse_btn = QPushButton("Browse")
+        browse_btn.clicked.connect(self.smart_browse)
+        browse_layout.addWidget(browse_btn)
+        
+        layout.addLayout(browse_layout)
+
+        # Install Button
+        action_layout = QHBoxLayout()
+        action_layout.addStretch()
+        
+        self.install_btn = QPushButton("Install Enhanced")
+        self.install_btn.clicked.connect(self.validate_and_install)
+        self.install_btn.setEnabled(False) # Disabled until path set
+        self.install_btn.setMinimumWidth(120)
+        
+        action_layout.addWidget(self.install_btn)
+        layout.addLayout(action_layout)
+
+        # Enable install button when text changes
+        self.path_edit.textChanged.connect(self.on_text_changed)
+
+    def on_text_changed(self, text):
+        self.install_btn.setEnabled(bool(text.strip()))
+
+    def smart_browse(self):
+        # We allow selecting ZIPs or specific marker files to identify a folder
+        filter_str = "Dump Sources (DUMP.zip BlackOps3.exe *.zip);;All Files (*)"
+        path, _ = QFileDialog.getOpenFileName(self, "Select Dump Source", "", filter_str)
+        
+        if not path:
+            return
+
+        # Smart inference logic
+        if path.lower().endswith(".zip"):
+            final_path = path
+        elif os.path.basename(path).lower() == "blackops3.exe":
+            # User selected the exe inside the dump folder; infer the folder
+            final_path = os.path.dirname(path)
+        else:
+            # Fallback: just use what they picked, validation will catch if wrong
+            # If it's a file but not a zip, maybe they picked another file in the folder?
+            # Let's try to infer folder if it's unlikely to be the archive
+            if os.path.isfile(path):
+                 final_path = os.path.dirname(path)
+            else:
+                 final_path = path
+
+        self.path_edit.setText(final_path)
+
+    def validate_and_install(self):
+        path = self.path_edit.text().strip()
+        if not path:
+            return
+            
+        if not os.path.exists(path):
+            QMessageBox.critical(self, "Invalid Path", "The selected path does not exist.")
+            return
+
+        # Basic validation before closing
+        # validate_dump_source expects a zip path or a folder path
+        if not validate_dump_source(path):
+             QMessageBox.critical(self, "Invalid Dump", "The selected source is missing required files (appxmanifest.xml, BlackOps3.exe, MicrosoftGame.config).")
+             return
+
+        self.result_path = path
+        self.accept()
+
+
 class EnhancedDownloadWorker(QThread):
     progress = Signal(str)
     download_complete = Signal()
@@ -595,11 +717,6 @@ class EnhancedDownloadWorker(QThread):
             enhanced_path = download_latest_enhanced(self.mod_files_dir, self.storage_dir)
             if not enhanced_path:
                 raise RuntimeError("Failed to download BO3 Enhanced.")
-
-            self.progress.emit("Downloading dump (primary → backup fallback)...")
-            dump_path = download_dump_with_fallback(self.mod_files_dir, self.storage_dir)
-            if not dump_path:
-                raise RuntimeError("Failed to download dump file.")
 
             mark_enhanced_detected(self.storage_dir)
             self.progress.emit("BO3 Enhanced assets ready.")
@@ -1165,13 +1282,19 @@ class MainWindow(QMainWindow):
         self._enhanced_warning_session_shown = True
 
     def on_enhanced_install_clicked(self):
-        # Automated flow: Download -> Install
+        # Manual dump selection flow
+        dialog = DumpSelectionDialog(self)
+        if dialog.exec() != QDialog.Accepted or not dialog.result_path:
+            return
+            
+        self._pending_dump_source = dialog.result_path
+
         if self._enhanced_worker and self._enhanced_worker.isRunning():
             return
             
         self.enhanced_install_btn.setEnabled(False)
         self.enhanced_uninstall_btn.setEnabled(False)
-        self.enhanced_status_label.setText("Status: Downloading...")
+        self.enhanced_status_label.setText("Status: Downloading Enhanced files...")
         
         self._enhanced_worker = EnhancedDownloadWorker(MOD_FILES_DIR, STORAGE_PATH)
         self._enhanced_worker.progress.connect(self._on_enhanced_progress)
@@ -1199,9 +1322,17 @@ class MainWindow(QMainWindow):
         self.enhanced_status_label.setText("Status: Installing files...")
         write_log("Download complete. Installing BO3 Enhanced files...", "Success", self.log_text)
         
-        # Proceed immediately to install
+        # Proceed immediately to install using the pending dump source
         game_dir = self.game_dir_edit.text().strip()
-        if install_enhanced_files(game_dir, MOD_FILES_DIR, STORAGE_PATH, log_widget=self.log_text):
+        dump_source = getattr(self, "_pending_dump_source", None)
+        
+        if not dump_source or not os.path.exists(dump_source):
+             self.enhanced_status_label.setText("Status: Installation Failed (Dump missing)")
+             write_log("Pending dump source missing.", "Error", self.log_text)
+             self._reset_enhanced_buttons()
+             return
+
+        if install_enhanced_files(game_dir, MOD_FILES_DIR, STORAGE_PATH, dump_source, log_widget=self.log_text):
             self.enhanced_status_label.setText("Status: Enhanced Installed Successfully")
             self.refresh_enhanced_status(show_warning=True)
         else:
@@ -1213,54 +1344,13 @@ class MainWindow(QMainWindow):
         self._enhanced_last_failed = True
         self.enhanced_status_label.setText(f"Status: Failed - {reason}")
         write_log(f"BO3 Enhanced download failed: {reason}", "Error", self.log_text)
-
-        if "Failed to download dump file" in reason:
-            msg = (
-                "The automated download for the dump file failed.\n\n"
-                "You can try to download it manually from the backup source:\n"
-                "https://gofile.io/d/91Sveo\n\n"
-                "Would you like to import a downloaded DUMP.zip now?"
-            )
-            box = QMessageBox(self)
-            box.setIcon(QMessageBox.Warning)
-            box.setWindowTitle("Download Failed")
-            box.setText(msg)
-            import_btn = box.addButton("Import DUMP.zip", QMessageBox.ActionRole)
-            open_url_btn = box.addButton("Open Backup URL", QMessageBox.ActionRole)
-            box.addButton(QMessageBox.Cancel)
-            box.exec()
-            
-            if box.clickedButton() == open_url_btn:
-                QDesktopServices.openUrl(QUrl("https://gofile.io/d/91Sveo"))
-            elif box.clickedButton() == import_btn:
-                self._manual_import_flow()
-        
         self._reset_enhanced_buttons()
 
     def _reset_enhanced_buttons(self):
         self.enhanced_install_btn.setEnabled(True)
         self.enhanced_uninstall_btn.setEnabled(True)
 
-    def _manual_import_flow(self):
-        selected, _ = QFileDialog.getOpenFileName(
-            self, "Select BO3 Enhanced dump archive", MOD_FILES_DIR, "Zip Files (*.zip)"
-        )
-        if not selected:
-            return
-        if not validate_dump_archive(selected):
-            QMessageBox.critical(self, "Invalid Dump", "The selected dump is missing required files.")
-            return
-        try:
-            os.makedirs(MOD_FILES_DIR, exist_ok=True)
-            dest = os.path.join(MOD_FILES_DIR, "DUMP.zip")
-            shutil.copy2(selected, dest)
-            write_log(f"Imported dump from {selected}", "Success", self.log_text)
-            
-            # Retry installation
-            self.on_enhanced_install_clicked()
-        except Exception as exc:  # noqa: BLE001
-            write_log(f"Failed to import dump: {exc}", "Error", self.log_text)
-            QMessageBox.critical(self, "Import Error", str(exc))
+
 
 
 
