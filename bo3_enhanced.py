@@ -15,12 +15,13 @@ from Direct_Download import Direct
 
 from utils import write_log
 import shutil
+import re
 
 # Upstream resources
 GITHUB_LATEST_ENHANCED_API = "https://api.github.com/repos/shiversoftdev/BO3Enhanced/releases/latest"
 GITHUB_LATEST_ENHANCED_PAGE = "https://github.com/shiversoftdev/BO3Enhanced/releases/latest"
-PRIMARY_DUMP_URL = "https://gofile.io/d/91Sveo"
-BACKUP_DUMP_URL = "https://www.mediafire.com/file/w3q2fgblfsd4hfn/DUMP.zip"
+PRIMARY_DUMP_URL = "https://www.mediafire.com/file/w3q2fgblfsd4hfn/DUMP.zip"
+BACKUP_DUMP_URL = "https://gofile.io/d/91Sveo"
 
 # Local file names
 STATE_FILENAME = "bo3_enhanced_state.json"
@@ -119,14 +120,35 @@ _SESSION = requests.Session()
 
 
 def _resolve_mediafire_direct(url: str) -> Optional[str]:
+    # Try library first
     try:
         resolver = Direct()
         resolved = resolver.mediafire(url)
         if resolved and resolved.startswith("http"):
             return resolved
-        write_log(f"MediaFire resolver returned an invalid URL for {url}", "Warning", None)
-    except Exception as exc:  # noqa: BLE001
-        write_log(f"Failed to resolve MediaFire direct URL: {exc}", "Error", None)
+    except Exception:
+        pass
+
+    # Manual fallback using regex scraping
+    try:
+        # User-Agent is often required to get the correct page content
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        with _SESSION.get(url, headers=headers, timeout=10, stream=False) as resp:
+            resp.raise_for_status()
+            text = resp.text
+            # Look for typical MediaFire download button
+            match = re.search(r'href="([^"]+)"\s+id="downloadButton"', text)
+            if match:
+                return match.group(1)
+            
+            # Fallback: check for any link containing 'download' and the file extension or similar
+            # But the id="downloadButton" is the most reliable standard on MediaFire
+    except Exception as exc:
+        write_log(f"Manual MediaFire resolution failed: {exc}", "Warning", None)
+
+    write_log(f"MediaFire resolver failed for {url}", "Warning", None)
     return None
 
 
@@ -691,12 +713,22 @@ def uninstall_enhanced_files(game_dir: str, storage_dir: str, log_widget=None) -
                 continue
             except Exception as exc:  # noqa: BLE001
                 write_log(f"Failed to restore backup for {rel_path}: {exc}", "Warning", log_widget)
+        
+        # Backup missing. Only delete if we are sure it is a pure addon (e.g. one of the enhanced DLLs).
+        # Do NOT delete potential core game files like BlackOps3.exe if backup is lost.
         if os.path.exists(target):
-            try:
-                os.remove(target)
-                removed += 1
-            except Exception as exc:  # noqa: BLE001
-                write_log(f"Failed to remove {rel_path}: {exc}", "Warning", log_widget)
+            # Check if this file is one of the known 'Enhanced' addons.
+            # If it came from the DUMP (like BlackOps3.exe), we should NOT delete it without a backup.
+            is_pure_addon = os.path.basename(rel_path) in EXPECTED_ENHANCED_FILES
+            
+            if is_pure_addon:
+                try:
+                    os.remove(target)
+                    removed += 1
+                except Exception as exc:  # noqa: BLE001
+                    write_log(f"Failed to remove {rel_path}: {exc}", "Warning", log_widget)
+            else:
+                write_log(f"Backup missing for {rel_path}; skipping deletion to preserve game file.", "Warning", log_widget)
 
     # Fallback: if nothing was tracked, attempt a best-effort cleanup
     if not attempted and not restored and not removed:

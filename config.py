@@ -4,6 +4,7 @@ import re
 import json
 import stat
 import platform
+import shutil
 from typing import Optional
 from PySide6.QtWidgets import (
     QMessageBox, QWidget, QGroupBox, QVBoxLayout, QHBoxLayout, QLabel,
@@ -487,6 +488,7 @@ class AdvancedSettingsWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.game_dir = None
+        self.mod_files_dir = None
         self.log_widget = None
         self.version_label: Optional[QLabel] = None
         self.init_ui()
@@ -577,6 +579,10 @@ class AdvancedSettingsWidget(QWidget):
         copy_logs_btn.clicked.connect(self.copy_logs_to_clipboard)
         footer_layout.addWidget(copy_logs_btn)
 
+        clear_mod_files_btn = QPushButton("Clear Mod Files")
+        clear_mod_files_btn.clicked.connect(self.clear_mod_files_action)
+        footer_layout.addWidget(clear_mod_files_btn)
+
         layout.addLayout(footer_layout)
 
     def set_game_directory(self, game_dir):
@@ -586,6 +592,9 @@ class AdvancedSettingsWidget(QWidget):
         config_path = os.path.join(game_dir, "players", "config.ini")
         if os.path.exists(config_path):
             self.lock_config_cb.setChecked(not os.access(config_path, os.W_OK))
+
+    def set_mod_files_dir(self, mod_files_dir):
+        self.mod_files_dir = mod_files_dir
 
     def set_log_widget(self, log_widget):
         self.log_widget = log_widget
@@ -715,3 +724,32 @@ class AdvancedSettingsWidget(QWidget):
             write_log(f"Cleared log file at {log_path}", "Success", self.log_widget)
         else:
             write_log(f"Failed to clear log file at {log_path}", "Error", self.log_widget)
+
+    def clear_mod_files_action(self):
+        if not self.mod_files_dir:
+            write_log("Mod files directory not set.", "Error", self.log_widget)
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm Clear Mod Files",
+            f"Are you sure you want to delete all files in:\n{self.mod_files_dir}?\n\nThis will remove downloaded patch files and archives.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            try:
+                if os.path.exists(self.mod_files_dir):
+                    # Remove all contents
+                    for item in os.listdir(self.mod_files_dir):
+                        item_path = os.path.join(self.mod_files_dir, item)
+                        if os.path.isfile(item_path) or os.path.islink(item_path):
+                            os.remove(item_path)
+                        elif os.path.isdir(item_path):
+                            shutil.rmtree(item_path)
+                    write_log(f"Cleared mod files in {self.mod_files_dir}", "Success", self.log_widget)
+                else:
+                    write_log(f"Mod files directory does not exist: {self.mod_files_dir}", "Warning", self.log_widget)
+            except Exception as e:
+                write_log(f"Failed to clear mod files: {e}", "Error", self.log_widget)

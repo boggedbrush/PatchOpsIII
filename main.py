@@ -1082,6 +1082,7 @@ class MainWindow(QMainWindow):
         self.dxvk_widget.set_log_widget(self.log_text)
         self.graphics_widget.set_log_widget(self.log_text)
         self.advanced_widget.set_log_widget(self.log_text)
+        self.advanced_widget.set_mod_files_dir(MOD_FILES_DIR)
         self.qol_widget.set_log_widget(self.log_text)
         self.refresh_enhanced_status(show_warning=True)
 
@@ -1093,66 +1094,35 @@ class MainWindow(QMainWindow):
         layout.setVerticalSpacing(8)
 
         info = QLabel(
-            "Automated BO3 Enhanced support is experimental. Downloads use GitHub for the latest release and a "
-            "primary/backup dump mirror. Launch options are disabled while Enhanced mode is active."
+            "BO3 Enhanced improves the game with community fixes, including higher frame rates and faster load times.\n"
+            "Click Install to automatically download and apply the latest version."
         )
         info.setWordWrap(True)
-        layout.addWidget(info, 0, 0, 1, 3)
+        layout.addWidget(info, 0, 0, 1, 2)
 
-        # Primary install/uninstall actions (mirrors the T7 patch row layout)
+        # Primary install/uninstall actions
         install_row = QHBoxLayout()
         install_row.setSpacing(10)
         self.enhanced_install_btn = QPushButton("Install / Update Enhanced")
         self.enhanced_install_btn.clicked.connect(self.on_enhanced_install_clicked)
         self.enhanced_uninstall_btn = QPushButton("Uninstall Enhanced")
         self.enhanced_uninstall_btn.clicked.connect(self.on_enhanced_uninstall_clicked)
+        
         for btn in (self.enhanced_install_btn, self.enhanced_uninstall_btn):
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            
         install_row.addWidget(self.enhanced_install_btn)
         install_row.addWidget(self.enhanced_uninstall_btn)
-        install_row.addStretch(1)
-        install_widget = QWidget()
-        install_widget.setLayout(install_row)
-        layout.addWidget(install_widget, 1, 0, 1, 3)
-
-        # Download controls
-        dl_row = QHBoxLayout()
-        dl_row.setSpacing(8)
-        self.enhanced_auto_btn = QPushButton("Auto Download")
-        self.enhanced_auto_btn.clicked.connect(self.on_enhanced_auto_clicked)
-        self.enhanced_import_btn = QPushButton("Use Local Dump")
-        self.enhanced_import_btn.clicked.connect(self.on_enhanced_import_clicked)
-        self.enhanced_manual_btn = QPushButton("Manual Instructions")
-        self.enhanced_manual_btn.clicked.connect(self.on_enhanced_manual_clicked)
-        for btn in (self.enhanced_auto_btn, self.enhanced_import_btn, self.enhanced_manual_btn):
-            btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        dl_row.addWidget(self.enhanced_auto_btn)
-        dl_row.addWidget(self.enhanced_import_btn)
-        dl_row.addWidget(self.enhanced_manual_btn)
-        dl_row.addStretch(1)
-        dl_widget = QWidget()
-        dl_widget.setLayout(dl_row)
-        layout.addWidget(dl_widget, 2, 0, 1, 3)
-
-        # Dump-only install for testing
-        dump_row = QHBoxLayout()
-        dump_row.setSpacing(8)
-        self.enhanced_dump_only_btn = QPushButton("Install Dump Only")
-        self.enhanced_dump_only_btn.clicked.connect(self.on_enhanced_dump_only_clicked)
-        self.enhanced_dump_only_btn.setToolTip("Testing: apply DUMP.zip contents to the game directory without Enhanced DLLs.")
-        self.enhanced_dump_uninstall_btn = QPushButton("Uninstall Dump Only")
-        self.enhanced_dump_uninstall_btn.clicked.connect(self.on_enhanced_dump_uninstall_clicked)
-        self.enhanced_dump_uninstall_btn.setToolTip("Testing: restore .bak or remove files applied by Install Dump Only.")
-        dump_row.addWidget(self.enhanced_dump_only_btn)
-        dump_row.addWidget(self.enhanced_dump_uninstall_btn)
-        dump_row.addStretch(1)
-        dump_widget = QWidget()
-        dump_widget.setLayout(dump_row)
-        layout.addWidget(dump_widget, 3, 0, 1, 3)
+        
+        layout.addLayout(install_row, 1, 0, 1, 2)
 
         # Status line
         self.enhanced_status_label = QLabel("Status: Enhanced not installed")
-        layout.addWidget(self.enhanced_status_label, 4, 0, 1, 3)
+        layout.addWidget(self.enhanced_status_label, 2, 0, 1, 2)
+        
+        # Add a stretch to push everything up
+        layout.setRowStretch(3, 1)
+        
         return group
 
     def on_tab_changed(self, index):
@@ -1194,15 +1164,15 @@ class MainWindow(QMainWindow):
         set_acknowledged(STORAGE_PATH)
         self._enhanced_warning_session_shown = True
 
-    def on_enhanced_auto_clicked(self):
+    def on_enhanced_install_clicked(self):
+        # Automated flow: Download -> Install
         if self._enhanced_worker and self._enhanced_worker.isRunning():
             return
-        self.enhanced_auto_btn.setEnabled(False)
-        self.enhanced_import_btn.setEnabled(False)
-        self.enhanced_manual_btn.setEnabled(False)
+            
         self.enhanced_install_btn.setEnabled(False)
         self.enhanced_uninstall_btn.setEnabled(False)
         self.enhanced_status_label.setText("Status: Downloading...")
+        
         self._enhanced_worker = EnhancedDownloadWorker(MOD_FILES_DIR, STORAGE_PATH)
         self._enhanced_worker.progress.connect(self._on_enhanced_progress)
         self._enhanced_worker.finished.connect(self._on_enhanced_download_finished)
@@ -1215,30 +1185,63 @@ class MainWindow(QMainWindow):
         write_log(message, "Info", self.log_text)
 
     def _on_enhanced_download_finished(self):
+        # Disconnect to prevent double-execution if the signal buffers or multiple checks occur
+        try:
+            if self._enhanced_worker:
+                self._enhanced_worker.finished.disconnect(self._on_enhanced_download_finished)
+        except Exception:
+            pass
+
         if self._enhanced_last_failed:
             self._reset_enhanced_buttons()
             return
-        self.enhanced_status_label.setText(f"Status: Assets saved to {MOD_FILES_DIR}")
-        write_log("BO3 Enhanced assets downloaded.", "Success", self.log_text)
+            
+        self.enhanced_status_label.setText("Status: Installing files...")
+        write_log("Download complete. Installing BO3 Enhanced files...", "Success", self.log_text)
+        
+        # Proceed immediately to install
+        game_dir = self.game_dir_edit.text().strip()
+        if install_enhanced_files(game_dir, MOD_FILES_DIR, STORAGE_PATH, log_widget=self.log_text):
+            self.enhanced_status_label.setText("Status: Enhanced Installed Successfully")
+            self.refresh_enhanced_status(show_warning=True)
+        else:
+            self.enhanced_status_label.setText("Status: Installation Failed")
+            
         self._reset_enhanced_buttons()
-        self.refresh_enhanced_status(show_warning=True)
 
     def _on_enhanced_download_failed(self, reason: str):
         self._enhanced_last_failed = True
         self.enhanced_status_label.setText(f"Status: Failed - {reason}")
         write_log(f"BO3 Enhanced download failed: {reason}", "Error", self.log_text)
+
+        if "Failed to download dump file" in reason:
+            msg = (
+                "The automated download for the dump file failed.\n\n"
+                "You can try to download it manually from the backup source:\n"
+                "https://gofile.io/d/91Sveo\n\n"
+                "Would you like to import a downloaded DUMP.zip now?"
+            )
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Warning)
+            box.setWindowTitle("Download Failed")
+            box.setText(msg)
+            import_btn = box.addButton("Import DUMP.zip", QMessageBox.ActionRole)
+            open_url_btn = box.addButton("Open Backup URL", QMessageBox.ActionRole)
+            box.addButton(QMessageBox.Cancel)
+            box.exec()
+            
+            if box.clickedButton() == open_url_btn:
+                QDesktopServices.openUrl(QUrl("https://gofile.io/d/91Sveo"))
+            elif box.clickedButton() == import_btn:
+                self._manual_import_flow()
+        
         self._reset_enhanced_buttons()
 
     def _reset_enhanced_buttons(self):
-        self.enhanced_auto_btn.setEnabled(True)
-        self.enhanced_import_btn.setEnabled(True)
-        self.enhanced_manual_btn.setEnabled(True)
         self.enhanced_install_btn.setEnabled(True)
         self.enhanced_uninstall_btn.setEnabled(True)
-        self.enhanced_dump_only_btn.setEnabled(True)
-        self.enhanced_dump_uninstall_btn.setEnabled(True)
 
-    def on_enhanced_import_clicked(self):
+    def _manual_import_flow(self):
         selected, _ = QFileDialog.getOpenFileName(
             self, "Select BO3 Enhanced dump archive", MOD_FILES_DIR, "Zip Files (*.zip)"
         )
@@ -1251,44 +1254,20 @@ class MainWindow(QMainWindow):
             os.makedirs(MOD_FILES_DIR, exist_ok=True)
             dest = os.path.join(MOD_FILES_DIR, "DUMP.zip")
             shutil.copy2(selected, dest)
-            mark_enhanced_detected(STORAGE_PATH)
             write_log(f"Imported dump from {selected}", "Success", self.log_text)
-            self.enhanced_status_label.setText(f"Status: Imported {os.path.basename(selected)}")
-            self.refresh_enhanced_status(show_warning=True)
+            
+            # Retry installation
+            self.on_enhanced_install_clicked()
         except Exception as exc:  # noqa: BLE001
             write_log(f"Failed to import dump: {exc}", "Error", self.log_text)
             QMessageBox.critical(self, "Import Error", str(exc))
 
-    def on_enhanced_manual_clicked(self):
-        QDesktopServices.openUrl(QUrl(GITHUB_LATEST_ENHANCED_PAGE))
 
-    def on_enhanced_install_clicked(self):
-        game_dir = self.game_dir_edit.text().strip()
-        if install_enhanced_files(game_dir, MOD_FILES_DIR, STORAGE_PATH, log_widget=self.log_text):
-            self.refresh_enhanced_status(show_warning=True)
 
     def on_enhanced_uninstall_clicked(self):
         game_dir = self.game_dir_edit.text().strip()
         if uninstall_enhanced_files(game_dir, STORAGE_PATH, log_widget=self.log_text):
             self.refresh_enhanced_status(show_warning=False)
-
-    def on_enhanced_dump_only_clicked(self):
-        game_dir = self.game_dir_edit.text().strip()
-        self.enhanced_dump_only_btn.setEnabled(False)
-        if install_dump_only(game_dir, MOD_FILES_DIR, STORAGE_PATH, log_widget=self.log_text):
-            write_log("Dump-only install finished.", "Success", self.log_text)
-        else:
-            write_log("Dump-only install failed.", "Error", self.log_text)
-        self.enhanced_dump_only_btn.setEnabled(True)
-
-    def on_enhanced_dump_uninstall_clicked(self):
-        game_dir = self.game_dir_edit.text().strip()
-        self.enhanced_dump_uninstall_btn.setEnabled(False)
-        if uninstall_dump_only(game_dir, MOD_FILES_DIR, STORAGE_PATH, log_widget=self.log_text):
-            write_log("Dump-only uninstall finished.", "Success", self.log_text)
-        else:
-            write_log("Dump-only uninstall failed.", "Error", self.log_text)
-        self.enhanced_dump_uninstall_btn.setEnabled(True)
 
     def on_update_button_clicked(self):
         if self._system == "Linux":
