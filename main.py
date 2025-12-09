@@ -38,6 +38,20 @@ from utils import (
     launch_game_via_steam,
     manage_log_retention_on_launch,
 )
+from bo3_enhanced import (
+    download_dump_with_fallback,
+    download_latest_enhanced,
+    detect_enhanced_install,
+    GITHUB_LATEST_ENHANCED_PAGE,
+    install_enhanced_files,
+    install_dump_only,
+    uninstall_dump_only,
+    mark_enhanced_detected,
+    set_acknowledged,
+    status_summary,
+    uninstall_enhanced_files,
+    validate_dump_archive,
+)
 from version import APP_VERSION
 
 
@@ -565,6 +579,34 @@ class ApplyLaunchOptionsWorker(QThread):
             self.log_message.emit(f"Error applying launch options: {e}", "Error")
             self.error.emit(str(e))
 
+class EnhancedDownloadWorker(QThread):
+    progress = Signal(str)
+    finished = Signal()
+    failed = Signal(str)
+
+    def __init__(self, mod_files_dir: str, storage_dir: str):
+        super().__init__()
+        self.mod_files_dir = mod_files_dir
+        self.storage_dir = storage_dir
+
+    def run(self):
+        try:
+            self.progress.emit("Fetching latest BO3 Enhanced release...")
+            enhanced_path = download_latest_enhanced(self.mod_files_dir, self.storage_dir)
+            if not enhanced_path:
+                raise RuntimeError("Failed to download BO3 Enhanced.")
+
+            self.progress.emit("Downloading dump (primary → backup fallback)...")
+            dump_path = download_dump_with_fallback(self.mod_files_dir, self.storage_dir)
+            if not dump_path:
+                raise RuntimeError("Failed to download dump file.")
+
+            mark_enhanced_detected(self.storage_dir)
+            self.progress.emit("BO3 Enhanced assets ready.")
+            self.finished.emit()
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(str(exc))
+
 class QualityOfLifeWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -840,6 +882,10 @@ class MainWindow(QMainWindow):
         self._staged_script_path: Optional[str] = None
         self._default_update_button_text = "Check for Updates"
         self._linux_update_worker = None
+        self._enhanced_warning_session_shown = False
+        self._enhanced_active = False
+        self._enhanced_worker: Optional[EnhancedDownloadWorker] = None
+        self._enhanced_last_failed = False
 
         icon, icon_source = load_application_icon()
         if icon.isNull():
@@ -967,6 +1013,7 @@ class MainWindow(QMainWindow):
         self.qol_widget = QualityOfLifeWidget()
         self.graphics_widget = GraphicsSettingsWidget(dxvk_widget=self.dxvk_widget)
         self.advanced_widget = AdvancedSettingsWidget()
+        self.enhanced_group = self._build_enhanced_group()
 
         # Tabs
         self.tabs = QTabWidget()
@@ -997,6 +1044,13 @@ class MainWindow(QMainWindow):
         mods_grid.setRowStretch(1, 1)
 
         self.tabs.addTab(mods_tab, "Mods")
+
+        # Enhanced Tab
+        enhanced_tab = QWidget()
+        enhanced_layout = QVBoxLayout(enhanced_tab)
+        enhanced_layout.addWidget(self.enhanced_group)
+        enhanced_layout.addStretch(1)
+        self.enhanced_tab_index = self.tabs.addTab(enhanced_tab, "Enhanced")
 
         # Graphics Tab
         graphics_tab = QWidget()
@@ -1029,6 +1083,77 @@ class MainWindow(QMainWindow):
         self.graphics_widget.set_log_widget(self.log_text)
         self.advanced_widget.set_log_widget(self.log_text)
         self.qol_widget.set_log_widget(self.log_text)
+        self.refresh_enhanced_status(show_warning=True)
+
+    def _build_enhanced_group(self):
+        group = QGroupBox("BO3 Enhanced (Preview)")
+        layout = QGridLayout(group)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(8)
+
+        info = QLabel(
+            "Automated BO3 Enhanced support is experimental. Downloads use GitHub for the latest release and a "
+            "primary/backup dump mirror. Launch options are disabled while Enhanced mode is active."
+        )
+        info.setWordWrap(True)
+        layout.addWidget(info, 0, 0, 1, 3)
+
+        # Primary install/uninstall actions (mirrors the T7 patch row layout)
+        install_row = QHBoxLayout()
+        install_row.setSpacing(10)
+        self.enhanced_install_btn = QPushButton("Install / Update Enhanced")
+        self.enhanced_install_btn.clicked.connect(self.on_enhanced_install_clicked)
+        self.enhanced_uninstall_btn = QPushButton("Uninstall Enhanced")
+        self.enhanced_uninstall_btn.clicked.connect(self.on_enhanced_uninstall_clicked)
+        for btn in (self.enhanced_install_btn, self.enhanced_uninstall_btn):
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        install_row.addWidget(self.enhanced_install_btn)
+        install_row.addWidget(self.enhanced_uninstall_btn)
+        install_row.addStretch(1)
+        install_widget = QWidget()
+        install_widget.setLayout(install_row)
+        layout.addWidget(install_widget, 1, 0, 1, 3)
+
+        # Download controls
+        dl_row = QHBoxLayout()
+        dl_row.setSpacing(8)
+        self.enhanced_auto_btn = QPushButton("Auto Download")
+        self.enhanced_auto_btn.clicked.connect(self.on_enhanced_auto_clicked)
+        self.enhanced_import_btn = QPushButton("Use Local Dump")
+        self.enhanced_import_btn.clicked.connect(self.on_enhanced_import_clicked)
+        self.enhanced_manual_btn = QPushButton("Manual Instructions")
+        self.enhanced_manual_btn.clicked.connect(self.on_enhanced_manual_clicked)
+        for btn in (self.enhanced_auto_btn, self.enhanced_import_btn, self.enhanced_manual_btn):
+            btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        dl_row.addWidget(self.enhanced_auto_btn)
+        dl_row.addWidget(self.enhanced_import_btn)
+        dl_row.addWidget(self.enhanced_manual_btn)
+        dl_row.addStretch(1)
+        dl_widget = QWidget()
+        dl_widget.setLayout(dl_row)
+        layout.addWidget(dl_widget, 2, 0, 1, 3)
+
+        # Dump-only install for testing
+        dump_row = QHBoxLayout()
+        dump_row.setSpacing(8)
+        self.enhanced_dump_only_btn = QPushButton("Install Dump Only")
+        self.enhanced_dump_only_btn.clicked.connect(self.on_enhanced_dump_only_clicked)
+        self.enhanced_dump_only_btn.setToolTip("Testing: apply DUMP.zip contents to the game directory without Enhanced DLLs.")
+        self.enhanced_dump_uninstall_btn = QPushButton("Uninstall Dump Only")
+        self.enhanced_dump_uninstall_btn.clicked.connect(self.on_enhanced_dump_uninstall_clicked)
+        self.enhanced_dump_uninstall_btn.setToolTip("Testing: restore .bak or remove files applied by Install Dump Only.")
+        dump_row.addWidget(self.enhanced_dump_only_btn)
+        dump_row.addWidget(self.enhanced_dump_uninstall_btn)
+        dump_row.addStretch(1)
+        dump_widget = QWidget()
+        dump_widget.setLayout(dump_row)
+        layout.addWidget(dump_widget, 3, 0, 1, 3)
+
+        # Status line
+        self.enhanced_status_label = QLabel("Status: Enhanced not installed")
+        layout.addWidget(self.enhanced_status_label, 4, 0, 1, 3)
+        return group
 
     def on_tab_changed(self, index):
         tab_widget = self.tabs.widget(index)
@@ -1037,6 +1162,133 @@ class MainWindow(QMainWindow):
             if index == 2:
                 self.advanced_widget.refresh_settings()
             tab_widget.layout().update()
+        if index == 0 or index == getattr(self, "enhanced_tab_index", -1):
+            self.refresh_enhanced_status(show_warning=False)
+
+    def refresh_enhanced_status(self, *, show_warning: bool):
+        summary = status_summary(self.game_dir_edit.text().strip(), STORAGE_PATH)
+        active = bool(summary.get("installed"))
+        self._enhanced_active = active
+        self.enhanced_status_label.setText(
+            "Status: Enhanced Mode Active" if active else "Status: Enhanced not installed"
+        )
+        self._toggle_launch_options_enabled(not active)
+        if active and show_warning and not self._enhanced_warning_session_shown and not summary.get("acknowledged_at"):
+            self._show_enhanced_warning()
+
+    def _toggle_launch_options_enabled(self, enabled: bool):
+        self.qol_widget.launch_group.setEnabled(enabled)
+        if enabled:
+            self.qol_widget.launch_group.setToolTip("")
+        else:
+            self.qol_widget.launch_group.setToolTip(
+                "Launch options are disabled while BO3 Enhanced is active."
+            )
+
+    def _show_enhanced_warning(self):
+        message = (
+            "Launch options are disabled when BO3 Enhanced is active. "
+            "Most third-party mods will not be compatible."
+        )
+        QMessageBox.warning(self, "BO3 Enhanced Warning", message)
+        set_acknowledged(STORAGE_PATH)
+        self._enhanced_warning_session_shown = True
+
+    def on_enhanced_auto_clicked(self):
+        if self._enhanced_worker and self._enhanced_worker.isRunning():
+            return
+        self.enhanced_auto_btn.setEnabled(False)
+        self.enhanced_import_btn.setEnabled(False)
+        self.enhanced_manual_btn.setEnabled(False)
+        self.enhanced_install_btn.setEnabled(False)
+        self.enhanced_uninstall_btn.setEnabled(False)
+        self.enhanced_status_label.setText("Status: Downloading...")
+        self._enhanced_worker = EnhancedDownloadWorker(MOD_FILES_DIR, STORAGE_PATH)
+        self._enhanced_worker.progress.connect(self._on_enhanced_progress)
+        self._enhanced_worker.finished.connect(self._on_enhanced_download_finished)
+        self._enhanced_worker.failed.connect(self._on_enhanced_download_failed)
+        self._enhanced_last_failed = False
+        self._enhanced_worker.start()
+
+    def _on_enhanced_progress(self, message: str):
+        self.enhanced_status_label.setText(f"Status: {message}")
+        write_log(message, "Info", self.log_text)
+
+    def _on_enhanced_download_finished(self):
+        if self._enhanced_last_failed:
+            self._reset_enhanced_buttons()
+            return
+        self.enhanced_status_label.setText(f"Status: Assets saved to {MOD_FILES_DIR}")
+        write_log("BO3 Enhanced assets downloaded.", "Success", self.log_text)
+        self._reset_enhanced_buttons()
+        self.refresh_enhanced_status(show_warning=True)
+
+    def _on_enhanced_download_failed(self, reason: str):
+        self._enhanced_last_failed = True
+        self.enhanced_status_label.setText(f"Status: Failed - {reason}")
+        write_log(f"BO3 Enhanced download failed: {reason}", "Error", self.log_text)
+        self._reset_enhanced_buttons()
+
+    def _reset_enhanced_buttons(self):
+        self.enhanced_auto_btn.setEnabled(True)
+        self.enhanced_import_btn.setEnabled(True)
+        self.enhanced_manual_btn.setEnabled(True)
+        self.enhanced_install_btn.setEnabled(True)
+        self.enhanced_uninstall_btn.setEnabled(True)
+        self.enhanced_dump_only_btn.setEnabled(True)
+        self.enhanced_dump_uninstall_btn.setEnabled(True)
+
+    def on_enhanced_import_clicked(self):
+        selected, _ = QFileDialog.getOpenFileName(
+            self, "Select BO3 Enhanced dump archive", MOD_FILES_DIR, "Zip Files (*.zip)"
+        )
+        if not selected:
+            return
+        if not validate_dump_archive(selected):
+            QMessageBox.critical(self, "Invalid Dump", "The selected dump is missing required files.")
+            return
+        try:
+            os.makedirs(MOD_FILES_DIR, exist_ok=True)
+            dest = os.path.join(MOD_FILES_DIR, "DUMP.zip")
+            shutil.copy2(selected, dest)
+            mark_enhanced_detected(STORAGE_PATH)
+            write_log(f"Imported dump from {selected}", "Success", self.log_text)
+            self.enhanced_status_label.setText(f"Status: Imported {os.path.basename(selected)}")
+            self.refresh_enhanced_status(show_warning=True)
+        except Exception as exc:  # noqa: BLE001
+            write_log(f"Failed to import dump: {exc}", "Error", self.log_text)
+            QMessageBox.critical(self, "Import Error", str(exc))
+
+    def on_enhanced_manual_clicked(self):
+        QDesktopServices.openUrl(QUrl(GITHUB_LATEST_ENHANCED_PAGE))
+
+    def on_enhanced_install_clicked(self):
+        game_dir = self.game_dir_edit.text().strip()
+        if install_enhanced_files(game_dir, MOD_FILES_DIR, STORAGE_PATH, log_widget=self.log_text):
+            self.refresh_enhanced_status(show_warning=True)
+
+    def on_enhanced_uninstall_clicked(self):
+        game_dir = self.game_dir_edit.text().strip()
+        if uninstall_enhanced_files(game_dir, STORAGE_PATH, log_widget=self.log_text):
+            self.refresh_enhanced_status(show_warning=False)
+
+    def on_enhanced_dump_only_clicked(self):
+        game_dir = self.game_dir_edit.text().strip()
+        self.enhanced_dump_only_btn.setEnabled(False)
+        if install_dump_only(game_dir, MOD_FILES_DIR, STORAGE_PATH, log_widget=self.log_text):
+            write_log("Dump-only install finished.", "Success", self.log_text)
+        else:
+            write_log("Dump-only install failed.", "Error", self.log_text)
+        self.enhanced_dump_only_btn.setEnabled(True)
+
+    def on_enhanced_dump_uninstall_clicked(self):
+        game_dir = self.game_dir_edit.text().strip()
+        self.enhanced_dump_uninstall_btn.setEnabled(False)
+        if uninstall_dump_only(game_dir, MOD_FILES_DIR, STORAGE_PATH, log_widget=self.log_text):
+            write_log("Dump-only uninstall finished.", "Success", self.log_text)
+        else:
+            write_log("Dump-only uninstall failed.", "Error", self.log_text)
+        self.enhanced_dump_uninstall_btn.setEnabled(True)
 
     def on_update_button_clicked(self):
         if self._system == "Linux":
@@ -1228,6 +1480,7 @@ class MainWindow(QMainWindow):
         self.graphics_widget.set_game_directory(directory)
         self.advanced_widget.set_game_directory(directory)
         self.qol_widget.set_game_directory(directory)
+        self.refresh_enhanced_status(show_warning=False)
 
 
 def main() -> int:

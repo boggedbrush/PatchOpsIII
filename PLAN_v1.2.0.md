@@ -1,6 +1,6 @@
 # PatchOpsIII v1.2.0 Plan — BO3 Enhanced Integration
 
-Status: Draft for implementation
+Status: In progress (POC implemented)
 
 ## Objectives
 - Add first-class BO3 Enhanced support with automated retrieval of the latest release and bundled dump handling.
@@ -19,6 +19,11 @@ Status: Draft for implementation
 
 ## Workstreams and implementation notes
 
+- ✅ Core POC landed: dedicated Enhanced tab with install/uninstall, dump-only test buttons, dump-first/enhanced-last install order, `.bak` backups, launch-option gating, state/ack handling, and MediaFire direct-link resolution with HTML guards.
+- ✅ Basic validation and checksum caching for Enhanced and dump archives; filtered dump copy skips Enhanced DLLs and cosmetic assets.
+- ✅ Version bumped to 1.2.0 in code; baked version aligned.
+- ⚠️ Remaining gaps: Gofile direct download (or host dump on GitHub Releases), runtime preflight to block installing into a dump path, and clearer “installed” status when no files are tracked.
+
 ### 1) Versioning and release readiness
 - Bump baked version to `1.2.0` in `version.py`; ensure any installer/spec metadata reads from the central value.
 - Add a short release checklist (version bump, release notes, assets staged in `BO3 Mod Files`, smoke tests).
@@ -36,6 +41,7 @@ Status: Draft for implementation
   - Fallback chain: primary dump from GoFile → backup MediaFire mirror → local cached copy. Attach exponential backoff (e.g., 1s, 2s, 4s) across up to 3 attempts per source before falling through.
   - Store downloads in `BO3 Mod Files/` with normalized names (`BO3Enhanced_latest.zip`, `DUMP.zip`).
   - Validate downloaded archives before surfacing success (see validation criteria below).
+  - Current status: MediaFire resolved via `Direct-Download`; HTML guard prevents landing-page downloads. Gofile still needs a direct-link resolver or moving dump to GitHub Releases.
 
 ### 4) User-provided dump ingestion
 - Add file picker (default path `BO3 Mod Files/`) allowing `.zip` or a folder named `DUMP`.
@@ -54,11 +60,14 @@ Status: Draft for implementation
 - Ensure warning repeats if detection happens mid-session (e.g., after download completes) unless acknowledged in the current session.
 
 ### 6) Install/apply flow
-- Provide three buttons inside the Mods tab:
-  - Auto install: fetch latest Enhanced + dump, validate, then place files under `BO3 Mod Files` with instructions to move/copy into the BO3 directory.
-  - Use local dump: open picker and run validation + placement.
-  - Manual instructions: open wiki section describing where to place `BlackOps3.exe` and related files for Enhanced mode.
-- Include clear status logs per step and progress bars for downloads/extractions.
+- Enhanced tab provides:
+  - Auto download (Enhanced + dump) with progress and validation.
+  - Use local dump picker + validation.
+  - Manual instructions link.
+  - Install/Update (dump-first, Enhanced-last) with `.bak` backups and tracked files.
+  - Uninstall (restore `.bak` or remove tracked files); dump-only install/uninstall buttons for testing.
+- Status is shown in-tab; launch options are disabled when Enhanced is active.
+- TODO: progress bars for installs and clearer messaging when no files were actually installed.
 
 ### 7) Integrity and validation
 - Shared validation helper for Enhanced packages:
@@ -71,6 +80,7 @@ Status: Draft for implementation
 - Log every download attempt, source used, bytes transferred, checksum result, and validation outcome via `write_log`.
 - Record user acknowledgements and whether launch options were blocked or bypassed for support diagnostics.
 - Add retry/backoff wrapper shared by downloaders and validation to reduce flakiness on slow connections.
+- TODO: preflight check to prevent selecting a dump folder as the game directory (avoid config.ini missing spam).
 
 ### 9) Documentation and release comms
 - Update README and wiki (new “BO3 Enhanced” page) with auto/manual install steps, dump validation rules, and warning behavior.
@@ -90,15 +100,17 @@ Status: Draft for implementation
 5) Proceed to main UI with appropriate feature restrictions.
 
 ## Acceptance checklist
-- [ ] Version bumped to 1.2.0 (code and packaging metadata).
-- [ ] GitHub API client for BO3 Enhanced added with multi-source download + retry/backoff.
-- [ ] Dump and Enhanced package validators implemented with checksum support.
-- [ ] UI: warning modal with acknowledgement logging; launch options disabled under Enhanced; persistent indicator added.
-- [ ] “Use local dump” picker and manual instruction flow added.
+- [x] Version bumped to 1.2.0 (code).
+- [x] GitHub API client for BO3 Enhanced added with multi-source download + retry/backoff.
+- [x] Dump and Enhanced package validators implemented with checksum support and HTML/content-type guard.
+- [x] UI: warning/ack; launch options disabled under Enhanced; in-tab status indicator; install/uninstall flows; dump-only test buttons.
+- [x] “Use local dump” picker and manual instruction flow added.
 - [ ] Documentation and release notes updated for new workflows and rollback guidance.
 - [ ] Compatibility smoke tests completed against existing mod management features.
+- [ ] Direct-downloadable dump source (Gofile resolver or GitHub Release asset) and preflight game-dir sanity checks.
 
 ## Risks and mitigations
 - Missing upstream checksum: mitigate by computing and storing local hashes and cross-validating across mirrors.
-- Slow or blocked mirrors: provide manual download URL copy and cache re-use; ensure backoff does not freeze UI.
-- False positives on detection: keep detection heuristic conservative and allow users to clear the flag via settings if detection is incorrect.
+- Slow or blocked mirrors: provide manual download URL copy and cache re-use; ensure backoff does not freeze UI. Move dump to stable host (GitHub Releases) or add Gofile resolver.
+- False positives on detection: keep detection heuristic conservative and allow users to clear the flag via settings if detection is incorrect. Add preflight to block dump paths as game dir.
+- Dump-only uninstall safety: tracked files and `.bak` restores are in place; ensure idempotency and avoid deleting originals on repeated runs.

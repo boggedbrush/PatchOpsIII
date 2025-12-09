@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QIntValidator, QGuiApplication
 from PySide6.QtCore import Qt, QTimer
 from version import APP_VERSION
-from utils import write_log, get_log_file_path
+from utils import write_log, get_log_file_path, clear_log_file
 
 def set_config_value(game_dir, key, value, comment, log_widget):
     config_path = os.path.join(game_dir, "players", "config.ini")
@@ -569,6 +569,10 @@ class AdvancedSettingsWidget(QWidget):
         footer_layout.addWidget(self.version_label)
         footer_layout.addStretch(1)
 
+        clear_logs_btn = QPushButton("Clear Logs")
+        clear_logs_btn.clicked.connect(self.clear_logs)
+        footer_layout.addWidget(clear_logs_btn)
+
         copy_logs_btn = QPushButton("Copy Logs")
         copy_logs_btn.clicked.connect(self.copy_logs_to_clipboard)
         footer_layout.addWidget(copy_logs_btn)
@@ -704,3 +708,10 @@ class AdvancedSettingsWidget(QWidget):
         )
         msg.setStandardButtons(QMessageBox.Ok)
         msg.exec()
+
+    def clear_logs(self):
+        log_path = get_log_file_path()
+        if clear_log_file():
+            write_log(f"Cleared log file at {log_path}", "Success", self.log_widget)
+        else:
+            write_log(f"Failed to clear log file at {log_path}", "Error", self.log_widget)
