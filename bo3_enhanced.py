@@ -36,31 +36,22 @@ EXPECTED_ENHANCED_FILES = {
     "WindowsCodecs.dll",
 }
 EXPECTED_DUMP_FILES = {
-    "appxmanifest.xml",
     "BlackOps3.exe",
     "MicrosoftGame.config",
 }
-UWP_ONLY_FILES = {
-    "appxmanifest.xml",
-    "layout_5a9fecfa-103a-9983-67f4-587e8ee42a6a.xml",
+
+
+# Hardcoded whitelist for security
+UWP_DUMP_WHITELIST = {
+    "BlackOps3.exe",
     "MicrosoftGame.config",
-    "resources.pri",
     "Party.dll",
     "PartyXboxLive.dll",
     "PlayFabMultiplayerGDK.dll",
     "libScePad.dll",
     "XCurl.dll",
-    "WindowsCodecs.dll",
-    "gamelauchhelper.exe",
-    "gamelaunchhelper.exe",
-    "game.icn",
-    "GraphicsLogo.png",
-    "LargeLogo.png",
-    "SmallLogo.png",
-    "SplashScreen.png",
-    "StoreLogo.png",
-    "steam_api65.dll",
 }
+
 STEAM_CORE_FILES = {
     "BlackOps3.exe",
     "cod.bmp",
@@ -72,48 +63,8 @@ STEAM_CORE_FILES = {
     "localization.txt",
     "steam_api64.dll",
 }
-DUMP_SKIP_EXTS = {
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".bmp",
-    ".tga",
-    ".gif",
-    ".ico",
-    ".icn",
-}
-UWP_ONLY_FILES = {
-    "appxmanifest.xml",
-    "layout_5a9fecfa-103a-9983-67f4-587e8ee42a6a.xml",
-    "MicrosoftGame.config",
-    "resources.pri",
-    "Party.dll",
-    "PartyXboxLive.dll",
-    "PlayFabMultiplayerGDK.dll",
-    "libScePad.dll",
-    "XCurl.dll",
-    "WindowsCodecs.dll",
-    "gamelauchhelper.exe",
-    "gamelaunchhelper.exe",
-    "game.icn",
-    "GraphicsLogo.png",
-    "LargeLogo.png",
-    "SmallLogo.png",
-    "SplashScreen.png",
-    "StoreLogo.png",
-    "steam_api65.dll",
-}
-STEAM_CORE_FILES = {
-    "BlackOps3.exe",
-    "cod.bmp",
-    "codlogo.bmp",
-    "controller.vdf",
-    "CrashUploader.exe",
-    "d3dcompiler_46.dll",
-    "installscript_311210.vdf",
-    "localization.txt",
-    "steam_api64.dll",
-}
+
+
 
 _SESSION = requests.Session()
 
@@ -433,11 +384,11 @@ def _should_copy_dump_member(rel_path: str) -> bool:
     if name in EXPECTED_ENHANCED_FILES:
         return False
 
-    # Skip cosmetic assets
-    if ext in DUMP_SKIP_EXTS:
-        return False
+    # Strict Whitelist Check
+    if name in UWP_DUMP_WHITELIST:
+        return True
 
-    return True
+    return False
 
 
 def install_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str, dump_source: str, log_widget=None) -> bool:
@@ -656,7 +607,7 @@ def uninstall_dump_only(game_dir: str, mod_files_dir: str, storage_dir: str, log
                 is_protected = (filename.lower() == "blackops3.exe")
                 
                 if is_protected:
-                    write_log(f"Backup missing for {rel_path}; skipping deletion to preserve game executable.", "Warning", log_widget)
+                    write_log(f"Backup missing for {rel_path}; skipping deletion to preserve game executable.", "Warning", None)
                 else:
                     try:
                         os.remove(target)
@@ -728,7 +679,7 @@ def uninstall_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str
                 except Exception as exc:  # noqa: BLE001
                     write_log(f"Failed to remove {rel_path}: {exc}", "Warning", log_widget)
             else:
-                write_log(f"Backup missing for {rel_path}; skipping deletion to preserve game file.", "Warning", log_widget)
+                write_log(f"Backup missing for {rel_path}; skipping deletion to preserve game file.", "Warning", None)
 
     # Fallback: if nothing was tracked, attempt a best-effort cleanup
     if not attempted and not restored and not removed:
