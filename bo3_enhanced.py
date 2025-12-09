@@ -666,13 +666,21 @@ def uninstall_dump_only(game_dir: str, mod_files_dir: str, storage_dir: str, log
                     continue
                 except Exception as exc:  # noqa: BLE001
                     write_log(f"Failed to restore {rel_path}: {exc}", "Warning", log_widget)
-            # If no backup exists, remove only if we have a tracked entry
+            # If no backup exists, remove only if it's safe to do so.
+            # CRITICAL: Do NOT delete the game executable if backup is missing!
             if os.path.exists(target):
-                try:
-                    os.remove(target)
-                    removed += 1
-                except Exception as exc:  # noqa: BLE001
-                    write_log(f"Failed to remove {rel_path}: {exc}", "Warning", log_widget)
+                # Protect core files from deletion if backup is missing
+                filename = os.path.basename(target)
+                is_protected = (filename.lower() == "blackops3.exe")
+                
+                if is_protected:
+                    write_log(f"Backup missing for {rel_path}; skipping deletion to preserve game executable.", "Warning", log_widget)
+                else:
+                    try:
+                        os.remove(target)
+                        removed += 1
+                    except Exception as exc:  # noqa: BLE001
+                        write_log(f"Failed to remove {rel_path}: {exc}", "Warning", log_widget)
         if restored or removed:
             write_log(
                 f"Dump-only uninstall completed. Restored {restored} files; removed {removed} files.",
@@ -689,11 +697,21 @@ def uninstall_dump_only(game_dir: str, mod_files_dir: str, storage_dir: str, log
         return False
 
 
-def uninstall_enhanced_files(game_dir: str, storage_dir: str, log_widget=None) -> bool:
+def uninstall_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str, log_widget=None) -> bool:
     if not game_dir or not os.path.isdir(game_dir):
         write_log("Invalid game directory for Enhanced uninstall.", "Error", log_widget)
         return False
+        
     state = load_state(storage_dir)
+    
+    try:
+        # Pass storage_dir twice? No, signature is game_dir, mod_files_dir, storage_dir, log_widget
+        from bo3_enhanced import uninstall_dump_only # ensure available if not in scope, but it is in same file
+        if uninstall_dump_only(game_dir, mod_files_dir, storage_dir, log_widget):
+            write_log("Dump files uninstalled.", "Success", log_widget)
+    except Exception as exc:  # noqa: BLE001
+        write_log(f"Failed to uninstall dump files: {exc}", "Warning", log_widget)
+
     installed_files = state.get("installed_files", [])
 
     restored = 0

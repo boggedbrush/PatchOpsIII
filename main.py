@@ -581,7 +581,7 @@ class ApplyLaunchOptionsWorker(QThread):
 
 class EnhancedDownloadWorker(QThread):
     progress = Signal(str)
-    finished = Signal()
+    download_complete = Signal()
     failed = Signal(str)
 
     def __init__(self, mod_files_dir: str, storage_dir: str):
@@ -603,7 +603,7 @@ class EnhancedDownloadWorker(QThread):
 
             mark_enhanced_detected(self.storage_dir)
             self.progress.emit("BO3 Enhanced assets ready.")
-            self.finished.emit()
+            self.download_complete.emit()
         except Exception as exc:  # noqa: BLE001
             self.failed.emit(str(exc))
 
@@ -1175,7 +1175,7 @@ class MainWindow(QMainWindow):
         
         self._enhanced_worker = EnhancedDownloadWorker(MOD_FILES_DIR, STORAGE_PATH)
         self._enhanced_worker.progress.connect(self._on_enhanced_progress)
-        self._enhanced_worker.finished.connect(self._on_enhanced_download_finished)
+        self._enhanced_worker.download_complete.connect(self._on_enhanced_download_finished)
         self._enhanced_worker.failed.connect(self._on_enhanced_download_failed)
         self._enhanced_last_failed = False
         self._enhanced_worker.start()
@@ -1185,10 +1185,10 @@ class MainWindow(QMainWindow):
         write_log(message, "Info", self.log_text)
 
     def _on_enhanced_download_finished(self):
-        # Disconnect to prevent double-execution if the signal buffers or multiple checks occur
+        # Disconnect to prevent double-execution
         try:
             if self._enhanced_worker:
-                self._enhanced_worker.finished.disconnect(self._on_enhanced_download_finished)
+                self._enhanced_worker.download_complete.disconnect(self._on_enhanced_download_finished)
         except Exception:
             pass
 
@@ -1265,9 +1265,23 @@ class MainWindow(QMainWindow):
 
 
     def on_enhanced_uninstall_clicked(self):
+        self.enhanced_install_btn.setEnabled(False)
+        self.enhanced_uninstall_btn.setEnabled(False)
+        self.enhanced_status_label.setText("Status: Uninstalling...")
+        
         game_dir = self.game_dir_edit.text().strip()
-        if uninstall_enhanced_files(game_dir, STORAGE_PATH, log_widget=self.log_text):
+        # Use QTimer to allow UI update before blocking operation
+        QTimer.singleShot(100, lambda: self._perform_uninstall(game_dir))
+
+    def _perform_uninstall(self, game_dir):
+        if uninstall_enhanced_files(game_dir, MOD_FILES_DIR, STORAGE_PATH, log_widget=self.log_text):
+            self.enhanced_status_label.setText("Status: Enhanced Uninstalled")
             self.refresh_enhanced_status(show_warning=False)
+        else:
+            self.enhanced_status_label.setText("Status: Uninstall execution failed")
+            
+        self.enhanced_install_btn.setEnabled(True)
+        self.enhanced_uninstall_btn.setEnabled(True)
 
     def on_update_button_clicked(self):
         if self._system == "Linux":
