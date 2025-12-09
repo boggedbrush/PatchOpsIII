@@ -1062,7 +1062,7 @@ class MainWindow(QMainWindow):
         advanced_tab = QWidget()
         advanced_layout = QVBoxLayout(advanced_tab)
         advanced_layout.addWidget(self.advanced_widget)
-        self.tabs.addTab(advanced_tab, "Advanced")
+        self.advanced_tab_index = self.tabs.addTab(advanced_tab, "Advanced")
 
         main_layout.addWidget(self.tabs)
 
@@ -1159,7 +1159,7 @@ class MainWindow(QMainWindow):
         tab_widget = self.tabs.widget(index)
         if tab_widget:
             # Refresh advanced settings if on that tab
-            if index == 2:
+            if index == getattr(self, "advanced_tab_index", -1):
                 self.advanced_widget.refresh_settings()
             tab_widget.layout().update()
         if index == 0 or index == getattr(self, "enhanced_tab_index", -1):
