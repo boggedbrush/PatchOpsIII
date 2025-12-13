@@ -10,6 +10,7 @@ import vdf
 import platform
 import argparse
 import json
+import inspect
 from functools import lru_cache
 from typing import Optional
 
@@ -18,12 +19,26 @@ os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.*=false;qt.scenegraph.general=
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
-    QPushButton, QLabel, QFileDialog, QTextEdit, QTabWidget, QSizePolicy,
+    QPushButton, QLabel, QFileDialog, QTextEdit, QSizePolicy,
     QGroupBox, QRadioButton, QButtonGroup, QCheckBox, QGridLayout,
-    QMessageBox, QDialog, QStyle, QMenu
+    QMessageBox, QDialog, QStyle, QMenu, QListWidget, QListWidgetItem,
+    QStackedWidget, QAbstractItemView
 )
-from PySide6.QtGui import QIcon, QDesktopServices, QAction
-from PySide6.QtCore import Qt, QUrl, QThread, Signal, QTimer
+from PySide6.QtGui import QIcon, QDesktopServices, QAction, QFont
+from PySide6.QtCore import Qt, QUrl, QThread, Signal, QTimer, QSize
+
+# QtModernRedux (Qt6 fork) imports are resolved dynamically to support both module names
+try:
+    import qtmodernredux6.styles as qt_styles
+    import qtmodernredux6.windows as qt_windows
+    QT_MODERN_AVAILABLE = True
+except ModuleNotFoundError:
+    try:
+        import qtmodernredux.styles as qt_styles
+        import qtmodernredux.windows as qt_windows
+        QT_MODERN_AVAILABLE = True
+    except ModuleNotFoundError:
+        QT_MODERN_AVAILABLE = False
 
 from t7_patch import T7PatchWidget, is_admin
 from dxvk_manager import DXVKWidget
@@ -61,6 +76,49 @@ NUITKA_ENVIRONMENT_KEYS = (
 )
 
 _NUITKA_DETECTION_KEYS = NUITKA_ENVIRONMENT_KEYS + ("NUITKA_ONEFILE_TEMP",)
+
+
+def apply_modern_theme(app: QApplication) -> None:
+    """Lightweight overlay styles to complement QtModernRedux."""
+    app.setStyleSheet(
+        """
+        QLabel#HeadingTitle {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        QLabel#HeadingVersion {
+            font-size: 11px;
+            color: rgb(150, 155, 165);
+        }
+        QPushButton#PrimaryButton {
+            font-weight: 600;
+            padding: 6px 14px;
+        }
+        QPushButton#SecondaryButton {
+            padding: 6px 12px;
+        }
+        QTextEdit#LogView {
+            font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+            font-size: 11px;
+        }
+        QListWidget#SidebarTabs {
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.12);
+            padding: 6px;
+        }
+        QListWidget#SidebarTabs::item {
+            padding: 8px 10px;
+            border-radius: 8px;
+        }
+        QListWidget#SidebarTabs::item:hover {
+            background: rgba(255, 255, 255, 0.06);
+        }
+        QListWidget#SidebarTabs::item:selected {
+            background: rgba(255, 255, 255, 0.12);
+        }
+        """
+    )
 
 
 def _normalize_dir(path):
@@ -281,6 +339,83 @@ def load_application_icon():
             return icon, resolved
 
     return QIcon(), None
+
+
+@lru_cache(maxsize=64)
+def load_ui_icon(icon_name: str) -> QIcon:
+    resolved = resource_path(os.path.join("icons", f"{icon_name}.svg"))
+    if not resolved:
+        return QIcon()
+    return QIcon(resolved)
+
+
+class SidebarTabWidget(QWidget):
+    currentChanged = Signal(int)
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self._nav = QListWidget()
+        self._nav.setObjectName("SidebarTabs")
+        self._nav.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._nav.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._nav.setIconSize(QSize(20, 20))
+        self._nav.setSpacing(2)
+        self._nav.setFocusPolicy(Qt.NoFocus)
+        self._nav.setUniformItemSizes(True)
+        self._nav.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        self._nav.setFixedWidth(160)
+
+        self._stack = QStackedWidget()
+        self._stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+        layout.addWidget(self._nav)
+        layout.addWidget(self._stack, 1)
+
+        self._nav.currentRowChanged.connect(self._on_row_changed)
+
+    def setDocumentMode(self, enabled: bool) -> None:  # noqa: ARG002
+        # Kept for compatibility with QTabWidget callers.
+        return
+
+    def addTab(self, widget: QWidget, *args):
+        if len(args) == 1:
+            icon = QIcon()
+            label = args[0]
+        elif len(args) == 2:
+            icon, label = args
+        else:
+            raise TypeError("addTab(widget, label) or addTab(widget, icon, label)")
+
+        index = self._stack.addWidget(widget)
+        item = QListWidgetItem(icon, label)
+        item.setSizeHint(QSize(0, 40))
+        self._nav.addItem(item)
+
+        if self._nav.count() == 1:
+            self._nav.setCurrentRow(0)
+
+        return index
+
+    def widget(self, index: int) -> Optional[QWidget]:
+        return self._stack.widget(index)
+
+    def currentIndex(self) -> int:
+        return self._stack.currentIndex()
+
+    def setCurrentIndex(self, index: int) -> None:
+        self._nav.setCurrentRow(index)
+
+    def count(self) -> int:
+        return self._stack.count()
+
+    def _on_row_changed(self, row: int) -> None:
+        if row < 0 or row >= self._stack.count():
+            return
+        self._stack.setCurrentIndex(row)
+        self.currentChanged.emit(row)
 
 @lru_cache(maxsize=1)
 def get_application_path():
@@ -1025,9 +1160,6 @@ class MainWindow(QMainWindow):
         if os.path.exists(os.path.join(get_application_path(), "BlackOps3.exe")):
             write_log("Black Ops III found in the same directory as PatchOpsIII", "Info", self.log_text)
 
-        # Connect tab changed signal
-        self.tabs.currentChanged.connect(self.on_tab_changed)
-
         if self._system == "Windows":
             self._initialize_windows_updater()
         elif self._system == "Linux":
@@ -1065,64 +1197,88 @@ class MainWindow(QMainWindow):
     def init_ui(self):
         central = QWidget()
         main_layout = QVBoxLayout(central)
+        main_layout.setContentsMargins(16, 16, 16, 16)
+        main_layout.setSpacing(12)
 
-        # Game Directory Section
-        game_dir_widget = QWidget()
-        gd_layout = QVBoxLayout(game_dir_widget)
-        gd_layout.setContentsMargins(0, 0, 0, 0)
-        gd_layout.setSpacing(6)
+        # Header bar with title, version, and quick actions
+        header = QWidget()
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(10)
 
-        directory_row = QHBoxLayout()
-        directory_row.setSpacing(10)
-        self.game_dir_edit = QLineEdit(DEFAULT_GAME_DIR)
-        self.game_dir_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        label_text = (
-            "Current Directory:" if DEFAULT_GAME_DIR == get_application_path()
-            else "Game Directory:"
-        )
-        directory_row.addWidget(QLabel(label_text))
-        directory_row.addWidget(self.game_dir_edit, 1)
+        title_label = QLabel("PatchOpsIII")
+        title_label.setObjectName("HeadingTitle")
+        version_label = QLabel(f"v{APP_VERSION}")
+        version_label.setObjectName("HeadingVersion")
 
-        buttons_container = QWidget()
-        buttons_layout = QHBoxLayout(buttons_container)
-        buttons_layout.setContentsMargins(0, 0, 0, 0)
-        buttons_layout.setSpacing(10)
-        buttons_container.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-
-        browse_btn = QPushButton("Browse")
-        browse_btn.clicked.connect(self.browse_game_dir)
-        buttons_layout.addWidget(browse_btn)
-
-        launch_game_btn = QPushButton("Launch Game")
-        launch_game_btn.clicked.connect(self.launch_game)
-        buttons_layout.addWidget(launch_game_btn)
-
-        directory_row.addWidget(buttons_container)
-        gd_layout.addLayout(directory_row)
+        header_layout.addWidget(title_label)
+        header_layout.addWidget(version_label)
+        header_layout.addStretch()
 
         self.update_button = None
         if self._system in ("Windows", "Linux"):
             self.update_button = QPushButton(self._default_update_button_text)
+            self.update_button.setObjectName("SecondaryButton")
             self.update_button.clicked.connect(self.on_update_button_clicked)
             self.update_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            update_icon = load_ui_icon("update")
+            if not update_icon.isNull():
+                self.update_button.setIcon(update_icon)
+                self.update_button.setIconSize(QSize(18, 18))
+            header_layout.addWidget(self.update_button)
 
-            def _sync_update_button_width():
-                total_width = (
-                    browse_btn.sizeHint().width()
-                    + launch_game_btn.sizeHint().width()
-                    + buttons_layout.spacing()
-                )
-                self.update_button.setFixedWidth(total_width)
+        launch_game_btn = QPushButton("Launch Game")
+        launch_game_btn.setObjectName("PrimaryButton")
+        launch_game_btn.clicked.connect(self.launch_game)
+        launch_icon = load_ui_icon("launch")
+        if not launch_icon.isNull():
+            launch_game_btn.setIcon(launch_icon)
+            launch_game_btn.setIconSize(QSize(18, 18))
+        header_layout.addWidget(launch_game_btn)
 
-            _sync_update_button_width()
-            QTimer.singleShot(0, _sync_update_button_width)
+        main_layout.addWidget(header)
 
-            update_row = QHBoxLayout()
-            update_row.addStretch(1)
-            update_row.addWidget(self.update_button)
-            gd_layout.addLayout(update_row)
+        # Game Directory Section
+        path_container = QWidget()
+        path_container_layout = QVBoxLayout(path_container)
+        path_container_layout.setContentsMargins(0, 0, 0, 0)
+        path_container_layout.setSpacing(4)
 
-        main_layout.addWidget(game_dir_widget)
+        path_label = QLabel(
+            "Current Directory:" if DEFAULT_GAME_DIR == get_application_path() else "Game Directory:"
+        )
+        path_label.setObjectName("HeadingVersion")
+        path_container_layout.addWidget(path_label)
+
+        directory_row = QHBoxLayout()
+        directory_row.setContentsMargins(0, 0, 0, 0)
+        directory_row.setSpacing(8)
+
+        self.game_dir_edit = QLineEdit(DEFAULT_GAME_DIR)
+        self.game_dir_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.game_dir_edit.setPlaceholderText("Black Ops III directory")
+        directory_row.addWidget(self.game_dir_edit, 1)
+
+        self.game_dir_edit.ensurePolished()
+        directory_control_height = self.game_dir_edit.sizeHint().height()
+
+        browse_btn = QPushButton("Browse…")
+        browse_btn.setObjectName("SecondaryButton")
+        browse_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        browse_icon = load_ui_icon("browse")
+        if not browse_icon.isNull():
+            browse_btn.setIcon(browse_icon)
+            browse_btn.setIconSize(QSize(18, 18))
+        browse_btn.setFixedHeight(directory_control_height)
+        browse_btn.clicked.connect(self.browse_game_dir)
+        directory_row.addWidget(browse_btn)
+
+        launch_game_btn.setFixedHeight(directory_control_height)
+        if self.update_button is not None:
+            self.update_button.setFixedHeight(directory_control_height)
+
+        path_container_layout.addLayout(directory_row)
+        main_layout.addWidget(path_container)
 
         # Individual widgets
         self.t7_patch_widget = T7PatchWidget(MOD_FILES_DIR)
@@ -1133,8 +1289,9 @@ class MainWindow(QMainWindow):
         self.enhanced_group = self._build_enhanced_group()
 
         # Tabs
-        self.tabs = QTabWidget()
+        self.tabs = SidebarTabWidget()
         self.tabs.currentChanged.connect(self.on_tab_changed)
+        self.tabs.setDocumentMode(True)
 
         # Mods Tab with Grid Layout
         mods_tab = QWidget()
@@ -1160,34 +1317,38 @@ class MainWindow(QMainWindow):
         mods_grid.setRowStretch(0, 1)
         mods_grid.setRowStretch(1, 1)
 
-        self.tabs.addTab(mods_tab, "Mods")
+        self.tabs.addTab(mods_tab, load_ui_icon("mods"), "Mods")
 
         # Enhanced Tab
         enhanced_tab = QWidget()
         enhanced_layout = QVBoxLayout(enhanced_tab)
         enhanced_layout.addWidget(self.enhanced_group)
         enhanced_layout.addStretch(1)
-        self.enhanced_tab_index = self.tabs.addTab(enhanced_tab, "Enhanced")
+        self.enhanced_tab_index = self.tabs.addTab(enhanced_tab, load_ui_icon("enhanced"), "Enhanced")
 
         # Graphics Tab
         graphics_tab = QWidget()
         graphics_layout = QVBoxLayout(graphics_tab)
         graphics_layout.addWidget(self.graphics_widget)
-        self.tabs.addTab(graphics_tab, "Graphics")
+        self.tabs.addTab(graphics_tab, load_ui_icon("graphics"), "Graphics")
 
         # Advanced Tab
         advanced_tab = QWidget()
         advanced_layout = QVBoxLayout(advanced_tab)
         advanced_layout.addWidget(self.advanced_widget)
-        self.advanced_tab_index = self.tabs.addTab(advanced_tab, "Advanced")
+        self.advanced_tab_index = self.tabs.addTab(advanced_tab, load_ui_icon("advanced"), "Advanced")
 
         main_layout.addWidget(self.tabs)
 
         # Log Window
+        log_group = QGroupBox("Activity Log")
+        log_layout = QVBoxLayout(log_group)
+        log_layout.setContentsMargins(8, 8, 8, 8)
         self.log_text = QTextEdit()
+        self.log_text.setObjectName("LogView")
         self.log_text.setReadOnly(True)
-        self.log_text.setStyleSheet("background-color: black; color: white; font-family: Consolas;")
-        main_layout.addWidget(self.log_text)
+        log_layout.addWidget(self.log_text)
+        main_layout.addWidget(log_group)
 
         self.setCentralWidget(central)
         self.adjustSize()
@@ -1574,6 +1735,14 @@ def main() -> int:
         write_log("Cleared logs after three application launches.", "Info")
     write_log(f"Process PID {os.getpid()} elevated={is_admin()}", "Info")
     app = QApplication(sys.argv)
+    base_font = QFont("Inter", 10)
+    app.setFont(base_font)
+    if QT_MODERN_AVAILABLE:
+        try:
+            qt_styles.dark(app)
+        except Exception:
+            pass
+    apply_modern_theme(app)
     global_icon, icon_source = load_application_icon()
     if global_icon.isNull():
         if icon_source:
@@ -1599,7 +1768,20 @@ def main() -> int:
             )
             write_log(message, "Error", window.log_text)
 
-    window.show()
+    target_window = window
+    if QT_MODERN_AVAILABLE:
+        try:
+            modern_kwargs = {}
+            if "use_native_titlebar" in inspect.signature(qt_windows.ModernWindow.__init__).parameters:
+                modern_kwargs["use_native_titlebar"] = False
+            modern_window = qt_windows.ModernWindow(window, **modern_kwargs)
+            if not global_icon.isNull():
+                modern_window.setWindowIcon(global_icon)
+            target_window = modern_window
+        except Exception as exc:
+            write_log(f"QtModernRedux wrapper failed: {exc}", "Warning")
+
+    target_window.show()
 
     if getattr(cli_args, "install_t7", False):
         if is_admin():
