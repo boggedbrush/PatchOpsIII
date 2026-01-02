@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0d0d0f" />
+
+    <title>Docs — PatchOpsIII</title>
+    <meta
+      name="description"
+      content="PatchOpsIII documentation: quick start, setup checklist, troubleshooting tips, and answers to common questions."
+    />
+    <link rel="canonical" href="https://patchopsiii.com/docs/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="PatchOpsIII" />
+    <meta property="og:title" content="Docs — PatchOpsIII" />
+    <meta property="og:description" content="Quick start, troubleshooting, and common questions." />
+    <meta property="og:url" content="https://patchopsiii.com/docs/" />
+    <meta property="og:image" content="https://patchopsiii.com/assets/img/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="icon" href="/assets/img/favicon.ico" sizes="any" />
+    <link rel="icon" href="/assets/img/favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="icon" href="/assets/img/favicon-16.png" type="image/png" sizes="16x16" />
+    <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+
+    <script>
+      document.documentElement.classList.remove("no-js");
+    </script>
+  </head>
+
+  <body data-page="docs">
+    <a class="skip-link" href="#content">Skip to content</a>
+
+    <header class="site-header" data-header>
+      <div class="container header-inner">
+        <a class="brand" href="/" aria-label="PatchOpsIII home">
+          <img src="/assets/img/patchopsiii.png" width="28" height="28" alt="" aria-hidden="true" />
+          <span class="brand-name">PatchOpsIII</span>
+        </a>
+
+        <div class="header-actions">
+          <button
+            class="icon-button nav-toggle"
+            type="button"
+            data-nav-toggle
+            aria-controls="site-nav"
+            aria-expanded="false"
+            aria-label="Open menu"
+          >
+            <span class="nav-icon" aria-hidden="true"></span>
+          </button>
+        </div>
+
+	        <nav id="site-nav" class="site-nav" aria-label="Primary">
+	          <button
+	            class="icon-button nav-toggle nav-close"
+	            type="button"
+	            data-nav-toggle
+	            aria-controls="site-nav"
+	            aria-expanded="false"
+	            aria-label="Close menu"
+	          >
+	            <span class="nav-icon" aria-hidden="true"></span>
+	          </button>
+	          <a href="/features/">Features</a>
+	          <a href="/download/">Download</a>
+	          <a href="/docs/" aria-current="page">Docs</a>
+	          <a href="/changelog/">Changelog</a>
+	          <a class="nav-cta" href="https://github.com/boggedbrush/PatchOpsIII" rel="noreferrer">GitHub</a>
+          <button
+            class="icon-button theme-toggle nav-theme-toggle"
+            type="button"
+            data-theme-toggle
+            aria-pressed="false"
+            aria-label="Toggle theme"
+          >
+            <span class="theme-icon" aria-hidden="true"></span>
+          </button>
+        </nav>
+      </div>
+    </header>
+
+	    <div class="nav-overlay" data-nav-overlay hidden></div>
+	    <button
+	      class="icon-button theme-toggle floating-theme-toggle"
+	      type="button"
+	      data-theme-toggle
+	      aria-pressed="false"
+	      aria-label="Toggle theme"
+	    >
+	      <span class="theme-icon" aria-hidden="true"></span>
+	    </button>
+
+	    <main id="content" class="page">
+      <section class="page-hero">
+        <div class="container">
+          <p class="eyebrow">Docs</p>
+          <h1>Quick start & essentials</h1>
+          <p class="lead">
+            PatchOpsIII is designed to be simple: point it at your BO3 install, apply the patches you need, and keep a
+            clean log for troubleshooting.
+          </p>
+          <div class="cta-row">
+            <a class="btn" href="https://github.com/boggedbrush/PatchOpsIII/issues" rel="noreferrer">Get Help</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container">
+          <h2>Quickstart</h2>
+          <div class="grid two">
+            <article class="card">
+              <h3>Windows</h3>
+              <div class="cta-row card-cta">
+                <a
+                  class="btn primary"
+                  href="https://github.com/boggedbrush/PatchOpsIII/releases/latest/download/PatchOpsIII.exe"
+                  data-download-windows
+                  rel="noreferrer"
+                >
+                  Windows Download 
+                </a>
+              </div>
+              <ol class="steps">
+                <li>
+                  <strong>Recommended:</strong> Move PatchOpsIII to a folder in your Desktop or Documents.
+                </li>
+                <li>
+                  Launch PatchOpsIII.
+                  <ul class="checklist">
+                    <li>If Black Ops III is installed in the default Steam location, it will be detected automatically.</li>
+                    <li>Otherwise click <strong>Browse</strong> and select your Black Ops III folder (it will be saved).</li>
+                    <li>Alternative: move PatchOpsIII into the same directory as your game to auto-detect it.</li>
+                  </ul>
+                </li>
+              </ol>
+              <details class="faq">
+                <summary>Show default Steam install path (Windows)</summary>
+                <p class="muted">
+                  <code>C:\Program Files (x86)\Steam\steamapps\common\Call of Duty Black Ops III</code>
+                </p>
+              </details>
+              <p class="muted"><strong>Success check:</strong> PatchOpsIII opens and shows your Black Ops III install.</p>
+            </article>
+            <article class="card">
+              <h3>Linux / Steam Deck</h3>
+              <div class="cta-row card-cta">
+                <a
+                  class="btn primary"
+                  href="https://github.com/boggedbrush/PatchOpsIII/releases/latest/download/PatchOpsIII.AppImage"
+                  data-download-linux
+                  rel="noreferrer"
+                >
+                  AppImage Download 
+                </a>
+              </div>
+              <ol class="steps">
+                <li>
+                  <strong>Recommended:</strong> Install it with
+                  <a href="https://flathub.org/apps/it.mijorus.gearlever" rel="noreferrer">Gear Lever</a> for automatic
+                  updates.
+                  <ul class="checklist">
+                    <li>Right-click the AppImage → <strong>Open With</strong> → <strong>Gear Lever</strong></li>
+                    <li>Click <strong>Unlock</strong></li>
+                    <li>Click <strong>Move to app menu</strong></li>
+                  </ul>
+                </li>
+                <li>
+                  Launch PatchOpsIII.
+                  <ul class="checklist">
+                    <li>If BO3 isn’t auto-detected, click <strong>Browse</strong> and select your game folder (same as Windows).</li>
+                  </ul>
+                </li>
+              </ol>
+              <details class="faq">
+                <summary>Manual install (no auto-updates)</summary>
+                <p class="muted">
+                  If you don’t want to use Gear Lever, you can run the AppImage manually —
+                  <a href="/download/">check the download page for manual instructions</a>.
+                </p>
+              </details>
+              <details class="faq">
+                <summary>Show default Steam install path (Linux)</summary>
+                <p class="muted">
+                  <code>/home/$USER/.steam/steam/steamapps/common/Call of Duty Black Ops III/</code>
+                </p>
+              </details>
+              <p class="muted"><strong>Success check:</strong> PatchOpsIII opens and shows your Black Ops III install.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container">
+          <h2>Troubleshooting</h2>
+          <div class="grid cards">
+            <article class="card">
+              <h3>Check logs first</h3>
+              <p>
+                PatchOpsIII generates a <code>PatchOpsIII.log</code> file and prints live status messages in the embedded
+                terminal.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Launch options are sensitive</h3>
+              <p>
+                Launch option behavior can vary across systems. Apply changes incrementally and confirm each option is
+                stable before stacking more.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Config safety</h3>
+              <p>
+                If you use the read-only toggle, remember to disable it before making manual edits to <code>config.ini</code>.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container">
+          <h2>FAQ</h2>
+          <div class="faq">
+            <details>
+              <summary>Do I need to keep t7patch running in the background?</summary>
+              <p class="muted">
+                PatchOpsIII’s T7 Patch management is designed to apply the patch and configuration cleanly; it does not
+                require you to keep a separate patch process open for basic setup workflows.
+              </p>
+            </details>
+            <details>
+              <summary>Is DXVK required?</summary>
+              <p class="muted">
+                No. DXVK-GPLAsync is optional, but it can reduce shader compilation stutter by enabling async pipeline
+                compilation through Vulkan.
+              </p>
+            </details>
+            <details>
+              <summary>Where can I request features or report issues?</summary>
+              <p class="muted">
+                Use GitHub Issues:
+                <a href="https://github.com/boggedbrush/PatchOpsIII/issues" rel="noreferrer"
+                  >github.com/boggedbrush/PatchOpsIII/issues</a
+                >.
+              </p>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <section class="section cta-section">
+        <div class="container cta-card">
+          <div>
+            <h2>Need deeper details?</h2>
+            <p class="muted">The project wiki includes extended notes on each tab and option.</p>
+          </div>
+          <div class="cta-row">
+            <a class="btn primary" href="https://github.com/boggedbrush/PatchOpsIII/wiki" rel="noreferrer">Open wiki</a>
+            <a class="btn" href="/features/">Feature tour</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-grid">
+        <div>
+          <a class="brand footer-brand" href="/">
+            <img src="/assets/img/patchopsiii.png" width="28" height="28" alt="" aria-hidden="true" />
+            <span class="brand-name">PatchOpsIII</span>
+          </a>
+          <p class="muted">
+            A modern control center for Call of Duty: Black Ops III modding, maintenance, and performance tuning.
+          </p>
+        </div>
+        <div class="footer-links">
+          <h3>Product</h3>
+          <a href="/features/">Features</a>
+          <a href="/download/">Download</a>
+          <a href="/docs/">Docs</a>
+          <a href="/changelog/">Changelog</a>
+        </div>
+        <div class="footer-links">
+          <h3>Community</h3>
+          <a href="https://github.com/boggedbrush/PatchOpsIII" rel="noreferrer">GitHub</a>
+          <a href="https://github.com/boggedbrush/PatchOpsIII/issues" rel="noreferrer">Issues</a>
+          <a href="https://github.com/boggedbrush/PatchOpsIII/releases" rel="noreferrer">Releases</a>
+        </div>
+        <div class="footer-links">
+          <h3>Legal</h3>
+          <a href="https://github.com/boggedbrush/PatchOpsIII/blob/main/LICENSE" rel="noreferrer">MIT License</a>
+          <a href="/.well-known/security.txt">Security</a>
+        </div>
+      </div>
+
+      <div class="container footer-meta">
+        <span>© <span data-year></span> PatchOpsIII</span>
+        <span class="muted">Call of Duty is a trademark of Activision. This project is not affiliated.</span>
+      </div>
+    </footer>
+
+    <script src="/assets/js/site.js" type="module"></script>
+  </body>
+</html>

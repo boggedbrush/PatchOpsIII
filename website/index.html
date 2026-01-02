@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0d0d0f" />
+
+    <title>PatchOpsIII — Black Ops III Modding Control Center</title>
+    <meta
+      name="description"
+      content="PatchOpsIII is a modern control center for Call of Duty: Black Ops III modding, maintenance, and performance tuning. Manage T7 Patch, DXVK-GPLAsync, launch profiles, and graphics tweaks in one polished UI."
+    />
+    <link rel="canonical" href="https://patchopsiii.com/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="PatchOpsIII" />
+    <meta property="og:title" content="PatchOpsIII — Black Ops III Modding Control Center" />
+    <meta
+      property="og:description"
+      content="Manage T7 Patch, DXVK-GPLAsync, launch profiles, and graphics tweaks in one polished UI."
+    />
+    <meta property="og:url" content="https://patchopsiii.com/" />
+    <meta property="og:image" content="https://patchopsiii.com/assets/img/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="icon" href="/assets/img/favicon.ico" sizes="any" />
+    <link rel="icon" href="/assets/img/favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="icon" href="/assets/img/favicon-16.png" type="image/png" sizes="16x16" />
+    <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <link rel="stylesheet" href="assets/css/site.css" />
+
+    <script>
+      document.documentElement.classList.remove("no-js");
+    </script>
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "PatchOpsIII",
+        "applicationCategory": "UtilitiesApplication",
+        "operatingSystem": ["Windows", "Linux"],
+        "description": "A modern control center for Call of Duty: Black Ops III modding, maintenance, and performance tuning.",
+        "url": "https://patchopsiii.com/",
+        "downloadUrl": "https://github.com/boggedbrush/PatchOpsIII/releases/latest",
+        "license": "https://github.com/boggedbrush/PatchOpsIII/blob/main/LICENSE"
+      }
+    </script>
+  </head>
+
+  <body data-page="home">
+    <a class="skip-link" href="#content">Skip to content</a>
+
+    <header class="site-header" data-header>
+      <div class="container header-inner">
+        <a class="brand" href="/" aria-label="PatchOpsIII home">
+          <img src="assets/img/patchopsiii.png" width="28" height="28" alt="" aria-hidden="true" />
+          <span class="brand-name">PatchOpsIII</span>
+        </a>
+
+        <div class="header-actions">
+          <button
+            class="icon-button nav-toggle"
+            type="button"
+            data-nav-toggle
+            aria-controls="site-nav"
+            aria-expanded="false"
+            aria-label="Open menu"
+          >
+            <span class="nav-icon" aria-hidden="true"></span>
+          </button>
+        </div>
+
+	        <nav id="site-nav" class="site-nav" aria-label="Primary">
+	          <button
+	            class="icon-button nav-toggle nav-close"
+	            type="button"
+	            data-nav-toggle
+	            aria-controls="site-nav"
+	            aria-expanded="false"
+	            aria-label="Close menu"
+	          >
+	            <span class="nav-icon" aria-hidden="true"></span>
+	          </button>
+	          <a href="/features/">Features</a>
+	          <a href="/download/">Download</a>
+	          <a href="/docs/">Docs</a>
+	          <a href="/changelog/">Changelog</a>
+	          <a class="nav-cta" href="https://github.com/boggedbrush/PatchOpsIII" rel="noreferrer">GitHub</a>
+          <button
+            class="icon-button theme-toggle nav-theme-toggle"
+            type="button"
+            data-theme-toggle
+            aria-pressed="false"
+            aria-label="Toggle theme"
+          >
+            <span class="theme-icon" aria-hidden="true"></span>
+          </button>
+        </nav>
+      </div>
+	    </header>
+
+	    <div class="nav-overlay" data-nav-overlay hidden></div>
+	    <button
+	      class="icon-button theme-toggle floating-theme-toggle"
+	      type="button"
+	      data-theme-toggle
+	      aria-pressed="false"
+	      aria-label="Toggle theme"
+	    >
+	      <span class="theme-icon" aria-hidden="true"></span>
+	    </button>
+
+	    <main id="content">
+      <section class="hero">
+        <div class="container hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow">
+              Latest: <strong data-latest-version>v1.1.0</strong> ·
+              <a data-latest-release-url href="https://github.com/boggedbrush/PatchOpsIII/releases/latest" rel="noreferrer"
+                >Release notes</a
+              >
+            </p>
+
+            <h1>Black Ops III modding & performance, streamlined.</h1>
+
+            <p class="lead">
+              PatchOpsIII is a modern, full-featured control center for Call of Duty: Black Ops III modding,
+              maintenance, and performance tuning.
+            </p>
+
+            <div class="cta-row">
+              <a class="btn primary" href="/download/" rel="noreferrer">
+                Download latest
+              </a>
+              <a class="btn" href="/docs/">Read docs</a>
+              <a class="btn subtle" href="/features/">Explore features</a>
+            </div>
+
+            <ul class="pill-list" aria-label="Highlights">
+              <li>Install & configure T7 Patch</li>
+              <li>Enable DXVK-GPLAsync</li>
+              <li>Launch profiles & QoL tweaks</li>
+              <li>Safer config.ini editing</li>
+            </ul>
+          </div>
+
+          <div class="hero-media">
+            <div class="media-frame">
+              <img
+                src="assets/img/screenshots/mods.png"
+                alt="PatchOpsIII Mods tab screenshot"
+                width="1124"
+                height="638"
+                loading="eager"
+                decoding="async"
+              />
+            </div>
+            <p class="media-caption">Mods tab: T7 Patch, DXVK, launch profiles, and helpers — in one place.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container">
+          <h2 class="section-title">Why PatchOpsIII</h2>
+          <p class="section-subtitle">
+            A polished UI that consolidates the community’s best tools and the tweaks you actually use.
+          </p>
+
+          <div class="grid cards">
+            <article class="card">
+              <h3>Security-first</h3>
+              <p>
+                Apply T7 Patch to help mitigate known remote code execution vulnerabilities and stabilize multiplayer.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Smoother frametimes</h3>
+              <p>Install DXVK-GPLAsync to reduce shader compilation stutter and improve consistency.</p>
+            </article>
+            <article class="card">
+              <h3>Cleaner launch profiles</h3>
+              <p>Switch launch options for offline play and curated mod setups without hunting through menus.</p>
+            </article>
+            <article class="card">
+              <h3>Safer tweaks</h3>
+              <p>
+                Fine-tune performance options by editing config.ini safely — with guardrails to reduce unintended
+                overrides.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container">
+          <div class="section-header-row">
+            <div>
+              <h2 class="section-title">A UI you’ll actually enjoy using</h2>
+              <p class="section-subtitle">Dark/light mode, responsive layout, and clear feedback via terminal logs.</p>
+            </div>
+            <a class="btn subtle" href="/features/">All features</a>
+          </div>
+
+          <div class="grid gallery">
+            <figure class="shot">
+              <div class="media-frame">
+                <img
+                  src="assets/img/screenshots/mods.png"
+                  alt="PatchOpsIII Mods tab screenshot"
+                  width="1124"
+                  height="638"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </div>
+              <figcaption>Mods</figcaption>
+            </figure>
+            <figure class="shot">
+              <div class="media-frame">
+                <img
+                  src="assets/img/screenshots/graphics.png"
+                  alt="PatchOpsIII Graphics tab screenshot"
+                  width="1124"
+                  height="638"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </div>
+              <figcaption>Graphics</figcaption>
+            </figure>
+            <figure class="shot">
+              <div class="media-frame">
+                <img
+                  src="assets/img/screenshots/advanced.png"
+                  alt="PatchOpsIII Advanced tab screenshot"
+                  width="1124"
+                  height="638"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </div>
+              <figcaption>Advanced</figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <section class="section cta-section">
+        <div class="container cta-card">
+          <div>
+            <h2>Ready to optimize BO3?</h2>
+            <p class="muted">Download PatchOpsIII and get set up in minutes.</p>
+          </div>
+          <div class="cta-row">
+            <a class="btn primary" href="https://github.com/boggedbrush/PatchOpsIII/releases/latest" rel="noreferrer">
+              Download latest
+            </a>
+            <a class="btn" href="/download/">Install guide</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-grid">
+        <div>
+          <a class="brand footer-brand" href="/">
+            <img src="assets/img/patchopsiii.png" width="28" height="28" alt="" aria-hidden="true" />
+            <span class="brand-name">PatchOpsIII</span>
+          </a>
+          <p class="muted">
+            A modern control center for Call of Duty: Black Ops III modding, maintenance, and performance tuning.
+          </p>
+        </div>
+        <div class="footer-links">
+          <h3>Product</h3>
+          <a href="/features/">Features</a>
+          <a href="/download/">Download</a>
+          <a href="/docs/">Docs</a>
+          <a href="/changelog/">Changelog</a>
+        </div>
+        <div class="footer-links">
+          <h3>Community</h3>
+          <a href="https://github.com/boggedbrush/PatchOpsIII" rel="noreferrer">GitHub</a>
+          <a href="https://github.com/boggedbrush/PatchOpsIII/issues" rel="noreferrer">Issues</a>
+          <a href="https://github.com/boggedbrush/PatchOpsIII/releases" rel="noreferrer">Releases</a>
+        </div>
+        <div class="footer-links">
+          <h3>Legal</h3>
+          <a href="https://github.com/boggedbrush/PatchOpsIII/blob/main/LICENSE" rel="noreferrer">MIT License</a>
+          <a href=".well-known/security.txt">Security</a>
+        </div>
+      </div>
+
+      <div class="container footer-meta">
+        <span>© <span data-year></span> PatchOpsIII</span>
+        <span class="muted">Call of Duty is a trademark of Activision. This project is not affiliated.</span>
+      </div>
+    </footer>
+
+    <script src="assets/js/site.js" type="module"></script>
+  </body>
+</html>
