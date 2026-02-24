@@ -1289,8 +1289,8 @@ class MainWindow(QMainWindow):
         # Set column and row stretches
         dashboard_grid.setColumnStretch(0, 1)
         dashboard_grid.setColumnStretch(1, 1)
-        dashboard_grid.setRowStretch(0, 1)
-        dashboard_grid.setRowStretch(1, 2)
+        dashboard_grid.setRowStretch(0, 0)
+        dashboard_grid.setRowStretch(1, 1)
 
         self.tabs.addTab(dashboard_tab, load_ui_icon("mods"), "Dashboard")
 
@@ -1336,11 +1336,13 @@ class MainWindow(QMainWindow):
         self.log_text = QTextEdit()
         self.log_text.setObjectName("LogView")
         self.log_text.setReadOnly(True)
+        self.log_text.setMaximumHeight(130)
         log_layout.addWidget(self.log_text)
         main_layout.addWidget(log_group)
 
         self.setCentralWidget(central)
-        self.adjustSize()
+        self.setMinimumSize(820, 560)
+        self.resize(1020, 680)
 
         # Initialize with the default directory
         game_dir = self.game_dir_edit.text().strip()
@@ -1491,13 +1493,13 @@ class MainWindow(QMainWindow):
 
             name_lbl = QLabel(name_text)
             name_lbl.setObjectName("DashboardStatusName")
-            name_lbl.setContentsMargins(0, 8, 0, 8)
+            name_lbl.setContentsMargins(0, 5, 0, 5)
 
             val_lbl = QLabel(self._status_html("—"))
             val_lbl.setObjectName("DashboardStatusValue")
             val_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             val_lbl.setTextFormat(Qt.RichText)
-            val_lbl.setContentsMargins(0, 8, 0, 8)
+            val_lbl.setContentsMargins(0, 5, 0, 5)
 
             setattr(self, attr, val_lbl)
 
