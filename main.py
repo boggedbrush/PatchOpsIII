@@ -1110,6 +1110,7 @@ class MainWindow(QMainWindow):
         self._enhanced_active = False
         self._enhanced_worker: Optional[EnhancedDownloadWorker] = None
         self._reforged_worker: Optional[ReforgedInstallWorker] = None
+        self._reforged_stored_password = ""
         self._enhanced_last_failed = False
 
         icon, icon_source = load_application_icon()
@@ -1592,77 +1593,180 @@ class MainWindow(QMainWindow):
             self._status_html(qol_text, "good" if active_qol else "neutral")
         )
 
+    def _set_reforged_password(self, password: str):
+        self._reforged_stored_password = password or ""
+        if self._reforged_stored_password:
+            text = self._reforged_stored_password if self._reforged_pw_display_eye.isChecked() else "••••••"
+        else:
+            text = "None"
+        self.reforged_current_pw_label.setText(text)
+
+    def _toggle_reforged_pw_display(self, checked: bool):
+        self._reforged_pw_display_eye.setIcon(load_ui_icon("eye" if checked else "eye-off"))
+        if self._reforged_stored_password:
+            self.reforged_current_pw_label.setText(self._reforged_stored_password if checked else "••••••")
+
+    def _toggle_reforged_pw_edit(self, checked: bool):
+        self._reforged_pw_edit_eye.setIcon(load_ui_icon("eye" if checked else "eye-off"))
+        self.reforged_password_edit.setEchoMode(QLineEdit.Normal if checked else QLineEdit.Password)
+
     def _build_reforged_group(self):
         group = QGroupBox("BO3 Reforged")
-        layout = QVBoxLayout(group)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
+        layout = QGridLayout(group)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(0)
 
-        info = QLabel(
-            "One-click installer: downloads and installs the Reforged executable into your game directory."
-        )
-        info.setWordWrap(True)
-        layout.addWidget(info)
+        row = 0
+
+        # Action buttons
+        btn_row = QWidget()
+        btn_layout = QHBoxLayout(btn_row)
+        btn_layout.setContentsMargins(0, 0, 0, 12)
+        btn_layout.setSpacing(10)
 
         self.reforged_install_btn = QPushButton("Install Reforged")
+        self.reforged_install_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.reforged_install_btn.clicked.connect(self.install_reforged)
-        layout.addWidget(self.reforged_install_btn)
+        btn_layout.addWidget(self.reforged_install_btn, 1)
 
-        self.reforged_status_label = QLabel("Status: Reforged Not installed")
-        layout.addWidget(self.reforged_status_label)
+        self.reforged_uninstall_btn = QPushButton("Uninstall Reforged")
+        self.reforged_uninstall_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.reforged_uninstall_btn.clicked.connect(self.uninstall_reforged)
+        btn_layout.addWidget(self.reforged_uninstall_btn, 1)
 
-        workshop_note_row = QHBoxLayout()
-        workshop_note_row.setContentsMargins(0, 0, 0, 0)
-        workshop_note_row.setSpacing(8)
-        workshop_note = QLabel("Installing Reforged also installs the BO3 Reforged Workshop mod.")
-        workshop_note.setWordWrap(False)
-        workshop_note_row.addWidget(workshop_note)
-        workshop_help_btn = QPushButton("?")
-        workshop_help_btn.setFixedSize(20, 20)
-        workshop_help_btn.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl(REFORGED_WORKSHOP_STEAM_URL))
-        )
-        workshop_note_row.addWidget(workshop_help_btn)
-        workshop_note_row.addStretch(1)
-        layout.addLayout(workshop_note_row)
+        refresh_btn = QPushButton("Refresh T7")
+        refresh_btn.clicked.connect(self.load_reforged_t7_options)
+        btn_layout.addWidget(refresh_btn)
 
-        compat_note = QLabel(
-            "T7Patch compatibility: Reforged can be used with or without T7Patch. "
-            "If both players use Reforged, matching passwords across T7Patch/T7.json are compatible."
-        )
-        compat_note.setWordWrap(True)
-        layout.addWidget(compat_note)
+        layout.addWidget(btn_row, row, 0, 1, 4)
+        row += 1
 
-        t7_group = QGroupBox("Reforged T7 Management (players/T7.json)")
-        t7_layout = QGridLayout(t7_group)
-        t7_layout.setContentsMargins(8, 8, 8, 8)
-        t7_layout.setHorizontalSpacing(10)
-        t7_layout.setVerticalSpacing(8)
+        def _add_sep(r):
+            sep = QFrame()
+            sep.setObjectName("DashboardDivider")
+            sep.setFrameShape(QFrame.HLine)
+            sep.setFixedHeight(1)
+            layout.addWidget(sep, r, 0, 1, 4)
 
-        self.reforged_current_pw_label = QLabel("Current Network Password: None")
-        t7_layout.addWidget(self.reforged_current_pw_label, 0, 0, 1, 2)
+        # Status row
+        _add_sep(row); row += 1
 
-        password_label = QLabel("Network Password:")
+        status_name = QLabel("Status")
+        status_name.setObjectName("DashboardStatusName")
+        status_name.setContentsMargins(0, 8, 0, 8)
+
+        self.reforged_status_label = QLabel(self._status_html("Not installed"))
+        self.reforged_status_label.setObjectName("DashboardStatusValue")
+        self.reforged_status_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.reforged_status_label.setTextFormat(Qt.RichText)
+        self.reforged_status_label.setContentsMargins(0, 8, 0, 8)
+
+        layout.addWidget(status_name, row, 0)
+        layout.addWidget(self.reforged_status_label, row, 1, 1, 3)
+        row += 1
+
+        # Network Password row
+        _add_sep(row); row += 1
+
+        pw_name = QLabel("Network Password")
+        pw_name.setObjectName("DashboardStatusName")
+        pw_name.setContentsMargins(0, 8, 0, 8)
+
+        pw_display_container = QWidget()
+        pw_display_layout = QHBoxLayout(pw_display_container)
+        pw_display_layout.setContentsMargins(0, 0, 0, 0)
+        pw_display_layout.setSpacing(4)
+
+        self.reforged_current_pw_label = QLabel("None")
+        self.reforged_current_pw_label.setObjectName("DashboardStatusValue")
+        self.reforged_current_pw_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.reforged_current_pw_label.setContentsMargins(0, 8, 0, 8)
+        pw_display_layout.addWidget(self.reforged_current_pw_label, 1)
+
+        self._reforged_pw_display_eye = QPushButton()
+        self._reforged_pw_display_eye.setIcon(load_ui_icon("eye-off"))
+        self._reforged_pw_display_eye.setIconSize(QSize(14, 14))
+        self._reforged_pw_display_eye.setFixedSize(22, 22)
+        self._reforged_pw_display_eye.setFlat(True)
+        self._reforged_pw_display_eye.setCheckable(True)
+        self._reforged_pw_display_eye.setToolTip("Show / hide password")
+        self._reforged_pw_display_eye.toggled.connect(self._toggle_reforged_pw_display)
+        pw_display_layout.addWidget(self._reforged_pw_display_eye, 0)
+
+        pw_edit_container = QWidget()
+        pw_edit_layout = QHBoxLayout(pw_edit_container)
+        pw_edit_layout.setContentsMargins(0, 0, 0, 0)
+        pw_edit_layout.setSpacing(4)
+
         self.reforged_password_edit = QLineEdit()
-        self.reforged_password_edit.setPlaceholderText("Enter Network Password")
-        t7_layout.addWidget(password_label, 1, 0)
-        t7_layout.addWidget(self.reforged_password_edit, 1, 1)
+        self.reforged_password_edit.setPlaceholderText("Enter network password…")
+        self.reforged_password_edit.setEchoMode(QLineEdit.Password)
+        pw_edit_layout.addWidget(self.reforged_password_edit, 1)
+
+        self._reforged_pw_edit_eye = QPushButton()
+        self._reforged_pw_edit_eye.setIcon(load_ui_icon("eye-off"))
+        self._reforged_pw_edit_eye.setIconSize(QSize(14, 14))
+        self._reforged_pw_edit_eye.setFixedSize(22, 22)
+        self._reforged_pw_edit_eye.setFlat(True)
+        self._reforged_pw_edit_eye.setCheckable(True)
+        self._reforged_pw_edit_eye.setToolTip("Show / hide password")
+        self._reforged_pw_edit_eye.toggled.connect(self._toggle_reforged_pw_edit)
+        pw_edit_layout.addWidget(self._reforged_pw_edit_eye, 0)
+
+        update_btn = QPushButton("Update")
+        update_btn.clicked.connect(self.apply_reforged_t7_options)
+
+        layout.addWidget(pw_name, row, 0)
+        layout.addWidget(pw_display_container, row, 1)
+        layout.addWidget(pw_edit_container, row, 2)
+        layout.addWidget(update_btn, row, 3)
+        row += 1
+
+        # Checkboxes row
+        _add_sep(row); row += 1
+
+        cb_row = QWidget()
+        cb_layout = QHBoxLayout(cb_row)
+        cb_layout.setContentsMargins(0, 8, 0, 8)
+        cb_layout.setSpacing(16)
 
         self.reforged_force_ranked_cb = QCheckBox("Force Ranked Mode")
         self.reforged_steam_achievements_cb = QCheckBox("Steam Achievements")
-        t7_layout.addWidget(self.reforged_force_ranked_cb, 2, 0, 1, 2)
-        t7_layout.addWidget(self.reforged_steam_achievements_cb, 3, 0, 1, 2)
+        cb_layout.addWidget(self.reforged_force_ranked_cb)
+        cb_layout.addWidget(self.reforged_steam_achievements_cb)
+        cb_layout.addStretch(1)
 
-        t7_btn_row = QHBoxLayout()
-        self.reforged_t7_load_btn = QPushButton("Refresh Reforged T7")
-        self.reforged_t7_apply_btn = QPushButton("Update Reforged T7")
-        self.reforged_t7_load_btn.clicked.connect(self.load_reforged_t7_options)
-        self.reforged_t7_apply_btn.clicked.connect(self.apply_reforged_t7_options)
-        t7_btn_row.addWidget(self.reforged_t7_load_btn)
-        t7_btn_row.addWidget(self.reforged_t7_apply_btn)
-        t7_layout.addLayout(t7_btn_row, 4, 0, 1, 2)
+        layout.addWidget(cb_row, row, 0, 1, 4)
+        row += 1
 
-        layout.addWidget(t7_group)
+        # Notes
+        _add_sep(row); row += 1
+
+        workshop_note = QLabel(
+            f'Installing Reforged also installs the <a href="{REFORGED_WORKSHOP_STEAM_URL}">BO3 Reforged Workshop mod</a>.'
+        )
+        workshop_note.setObjectName("DashboardStatusName")
+        workshop_note.setOpenExternalLinks(True)
+        workshop_note.setContentsMargins(0, 8, 0, 4)
+        layout.addWidget(workshop_note, row, 0, 1, 4)
+        row += 1
+
+        compat_note = QLabel(
+            "T7Patch compatible: Reforged can be used with or without T7Patch. "
+            "If both players use Reforged, matching passwords are cross-compatible."
+        )
+        compat_note.setObjectName("DashboardStatusName")
+        compat_note.setWordWrap(True)
+        compat_note.setContentsMargins(0, 0, 0, 8)
+        layout.addWidget(compat_note, row, 0, 1, 4)
+        row += 1
+
+        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(2, 2)
+        layout.setColumnStretch(3, 0)
+        layout.setRowStretch(row, 1)
 
         return group
 
@@ -1675,7 +1779,8 @@ class MainWindow(QMainWindow):
             return
 
         self.reforged_install_btn.setEnabled(False)
-        self.reforged_status_label.setText("Status: Installing Reforged...")
+        self.reforged_uninstall_btn.setEnabled(False)
+        self.reforged_status_label.setText(self._status_html("Installing Reforged…", "info"))
 
         self._reforged_worker = ReforgedInstallWorker(game_dir)
         self._reforged_worker.progress.connect(self._on_reforged_progress)
@@ -1684,12 +1789,13 @@ class MainWindow(QMainWindow):
         self._reforged_worker.start()
 
     def _on_reforged_progress(self, message: str):
-        self.reforged_status_label.setText(f"Status: {message}")
+        self.reforged_status_label.setText(self._status_html(message, "info"))
         write_log(message, "Info", self.log_text)
 
     def _on_reforged_installed(self, target_path: str):
         self.reforged_install_btn.setEnabled(True)
-        self.reforged_status_label.setText("Status: Reforged installed")
+        self.reforged_uninstall_btn.setEnabled(True)
+        self.reforged_status_label.setText(self._status_html("Installed", "good"))
         write_log(f"Reforged installed to {target_path}", "Success", self.log_text)
         write_exe_variant(self.game_dir_edit.text().strip(), "reforged")
         self.refresh_dashboard_status()
@@ -1699,8 +1805,43 @@ class MainWindow(QMainWindow):
 
     def _on_reforged_failed(self, reason: str):
         self.reforged_install_btn.setEnabled(True)
-        self.reforged_status_label.setText("Status: Reforged install failed")
+        self.reforged_uninstall_btn.setEnabled(True)
+        self.reforged_status_label.setText(self._status_html(f"Install Failed — {reason}", "bad"))
         write_log(f"Reforged install failed: {reason}", "Error", self.log_text)
+
+    def uninstall_reforged(self):
+        game_dir = self.game_dir_edit.text().strip()
+        if not os.path.isdir(game_dir):
+            write_log("Set a valid game directory before uninstalling Reforged.", "Error", self.log_text)
+            return
+
+        target_exe = find_game_executable(game_dir) or os.path.join(game_dir, "BlackOps3.exe")
+        backup_path = existing_backup_path(target_exe)
+
+        if not backup_path or not os.path.exists(backup_path):
+            write_log("No backup executable found — cannot restore original.", "Error", self.log_text)
+            self.reforged_status_label.setText(self._status_html("Uninstall Failed — no backup found", "bad"))
+            return
+
+        self.reforged_install_btn.setEnabled(False)
+        self.reforged_uninstall_btn.setEnabled(False)
+        self.reforged_status_label.setText(self._status_html("Uninstalling…", "info"))
+
+        try:
+            if os.path.exists(target_exe):
+                os.remove(target_exe)
+            os.rename(backup_path, target_exe)
+            write_exe_variant(game_dir, "default")
+            write_log("Reforged uninstalled. Original executable restored.", "Success", self.log_text)
+            self.reforged_status_label.setText(self._status_html("Uninstalled", "neutral"))
+            self.refresh_dashboard_status()
+            self.t7_patch_widget.refresh_t7_mode_indicator()
+        except Exception as exc:
+            write_log(f"Reforged uninstall failed: {exc}", "Error", self.log_text)
+            self.reforged_status_label.setText(self._status_html(f"Uninstall Failed — {exc}", "bad"))
+        finally:
+            self.reforged_install_btn.setEnabled(True)
+            self.reforged_uninstall_btn.setEnabled(True)
 
     def _t7_json_path(self):
         game_dir = self.game_dir_edit.text().strip()
@@ -1717,7 +1858,7 @@ class MainWindow(QMainWindow):
             self.reforged_password_edit.setText("")
             self.reforged_force_ranked_cb.setChecked(False)
             self.reforged_steam_achievements_cb.setChecked(False)
-            self.reforged_current_pw_label.setText("Current Network Password: None")
+            self._set_reforged_password("")
             write_log("T7.json not found. Default values loaded.", "Info", self.log_text)
             return
 
@@ -1728,9 +1869,7 @@ class MainWindow(QMainWindow):
             self.reforged_password_edit.setText(network_pass)
             self.reforged_force_ranked_cb.setChecked(bool(data.get("force_ranked", False)))
             self.reforged_steam_achievements_cb.setChecked(bool(data.get("steam_achievements", False)))
-            self.reforged_current_pw_label.setText(
-                f"Current Network Password: {network_pass if network_pass else 'None'}"
-            )
+            self._set_reforged_password(network_pass)
             write_log(f"Loaded T7 options from {path}", "Success", self.log_text)
         except Exception as exc:
             write_log(f"Failed to read T7.json: {exc}", "Error", self.log_text)
@@ -1764,9 +1903,7 @@ class MainWindow(QMainWindow):
             with open(path, "w", encoding="utf-8") as handle:
                 json.dump(data, handle, indent=4)
             write_log(f"Updated T7 settings at {path}", "Success", self.log_text)
-            self.reforged_current_pw_label.setText(
-                f"Current Network Password: {password if password else 'None'}"
-            )
+            self._set_reforged_password(password)
         except Exception as exc:
             write_log(f"Failed to write T7.json: {exc}", "Error", self.log_text)
 
