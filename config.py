@@ -721,7 +721,8 @@ class AdvancedSettingsWidget(QWidget):
     def clear_logs(self):
         log_path = get_log_file_path()
         if clear_log_file():
-            write_log(f"Cleared log file at {log_path}", "Success", self.log_widget)
+            if self.log_widget and hasattr(self.log_widget, "clear"):
+                self.log_widget.clear()
         else:
             write_log(f"Failed to clear log file at {log_path}", "Error", self.log_widget)
 
