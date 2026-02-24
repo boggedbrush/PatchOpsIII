@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import importlib.util
 import os
+import re
 import shutil
 import sys
 import tarfile
@@ -8,13 +9,75 @@ import zipfile
 
 import requests
 from urllib.parse import urlsplit
-from PySide6.QtWidgets import QMessageBox, QWidget, QGroupBox, QHBoxLayout, QPushButton, QLabel, QVBoxLayout, QSizePolicy
-from PySide6.QtCore import QEvent
+from PySide6.QtWidgets import (
+    QMessageBox,
+    QWidget,
+    QGroupBox,
+    QHBoxLayout,
+    QPushButton,
+    QLabel,
+    QVBoxLayout,
+    QSizePolicy,
+    QCheckBox,
+    QComboBox,
+    QFormLayout,
+    QSpinBox,
+    QSlider,
+)
+from PySide6.QtCore import QEvent, Qt
 from utils import write_log
 
 # ---------- DXVK Helper Functions (unchanged) ----------
 
 DXVK_ASYNC_FILES = ["dxgi.dll", "d3d11.dll"]
+
+
+def _supports_gpl_async_cache(release):
+    """dxvk.gplAsyncCache was removed in gplasync 2.7+."""
+    tag = (release or {}).get("tag_name") or (release or {}).get("name") or ""
+    match = re.search(r"(\d+)\.(\d+)", tag)
+    if not match:
+        return True
+    major = int(match.group(1))
+    minor = int(match.group(2))
+    return (major, minor) < (2, 7)
+
+
+def _preset_settings(preset):
+    if preset == "none":
+        return {
+            "enable_async": True,
+            "gpl_async_cache": False,
+            "num_compiler_threads": 0,
+            "max_frame_rate": 0,
+            "max_frame_latency": 0,
+            "tear_free": "Auto",
+            "hud_enabled": False,
+        }
+    return {
+        "enable_async": True,
+        "gpl_async_cache": True,
+        "num_compiler_threads": 0,
+        "max_frame_rate": 165,
+        "max_frame_latency": 1,
+        "tear_free": "True",
+        "hud_enabled": False,
+    }
+
+
+def _build_dxvk_conf(settings, include_gpl_async_cache=True):
+    lines = []
+    lines.append(f"dxvk.enableAsync={'true' if settings.get('enable_async', True) else 'false'}")
+    if include_gpl_async_cache and settings.get("gpl_async_cache", False):
+        lines.append("dxvk.gplAsyncCache=true")
+    lines.append(f"dxvk.numCompilerThreads={settings.get('num_compiler_threads', 0)}")
+    lines.append(f"dxgi.maxFrameRate={settings.get('max_frame_rate', 0)}")
+    lines.append(f"dxgi.maxFrameLatency={settings.get('max_frame_latency', 0)}")
+    lines.append(f"dxvk.tearFree={settings.get('tear_free', 'Auto')}")
+    if settings.get("hud_enabled", False):
+        lines.append("dxvk.hud=fps,frametimes,gpuload")
+    return "\n".join(lines) + "\n"
+
 
 def get_latest_release():
     api_url = "https://gitlab.com/api/v4/projects/Ph42oN%2Fdxvk-gplasync/releases"
@@ -113,7 +176,7 @@ def download_file(url, filename):
 def is_dxvk_async_installed(game_dir):
     return all(os.path.exists(os.path.join(game_dir, f)) for f in DXVK_ASYNC_FILES)
 
-def manage_dxvk_async(game_dir, action, log_widget, mod_files_dir):
+def manage_dxvk_async(game_dir, action, log_widget, mod_files_dir, dxvk_settings=None):
     if action == "Uninstall":
         dxvk_installed = all(os.path.exists(os.path.join(game_dir, f)) for f in DXVK_ASYNC_FILES)
         if dxvk_installed:
@@ -195,10 +258,17 @@ def manage_dxvk_async(game_dir, action, log_widget, mod_files_dir):
                 # Write dxvk.conf
                 try:
                     conf_path = os.path.join(game_dir, "dxvk.conf")
+                    include_gpl_async_cache = _supports_gpl_async_cache(release)
+                    selected_settings = dxvk_settings or _preset_settings("recommended")
+                    conf_contents = _build_dxvk_conf(
+                        selected_settings,
+                        include_gpl_async_cache=include_gpl_async_cache,
+                    )
                     with open(conf_path, "w") as conf_file:
-                        conf_file.write("dxvk.enableAsync=true\n")
-                        conf_file.write("dxvk.gplAsyncCache=true\n")
-                    write_log("Created dxvk.conf with async settings.", "Success", log_widget)
+                        conf_file.write(conf_contents)
+                    if selected_settings.get("gpl_async_cache", False) and not include_gpl_async_cache:
+                        write_log("dxvk.gplAsyncCache was requested but skipped because gplasync v2.7+ no longer supports it.", "Info", log_widget)
+                    write_log("Created dxvk.conf from DXVK tab settings.", "Success", log_widget)
                 except Exception as e:
                     write_log(f"Failed to create dxvk.conf: {str(e)}", "Error", log_widget)
                     return
@@ -238,22 +308,126 @@ class DXVKWidget(QWidget):
 
     def init_ui(self):
         self.group = QGroupBox("DXVK-GPLAsync Management")
-        layout = QHBoxLayout(self.group)
+        layout = QVBoxLayout(self.group)
         # Match T7 Patch margins/spacing:
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(5)
+
+        action_row = QHBoxLayout()
         self.install_btn = QPushButton("Install DXVK-GPLAsync")
         self.install_btn.clicked.connect(lambda: self.manage_dxvk("Install"))
         self.uninstall_btn = QPushButton("Uninstall DXVK-GPLAsync")
         self.uninstall_btn.clicked.connect(lambda: self.manage_dxvk("Uninstall"))
         self.status_label = QLabel("")
-        layout.addWidget(self.install_btn)
-        layout.addWidget(self.uninstall_btn)
-        layout.addWidget(self.status_label)
+        action_row.addWidget(self.install_btn)
+        action_row.addWidget(self.uninstall_btn)
+        action_row.addWidget(self.status_label)
+        layout.addLayout(action_row)
+
+        presets_group = QGroupBox("DXVK Presets")
+        presets_layout = QHBoxLayout(presets_group)
+        presets_layout.addWidget(QLabel("Select Preset:"))
+        self.preset_combo = QComboBox()
+        self.preset_combo.addItems(["Recommended", "None"])
+        presets_layout.addWidget(self.preset_combo)
+        self.apply_preset_btn = QPushButton("Apply Preset")
+        self.apply_preset_btn.clicked.connect(self.apply_selected_preset)
+        presets_layout.addWidget(self.apply_preset_btn)
+        layout.addWidget(presets_group)
+
+        controls_group = QGroupBox("DXVK Settings")
+        controls_layout = QVBoxLayout(controls_group)
+        controls_form = QFormLayout()
+
+        self.enable_async_checkbox = QCheckBox("Enable async shader compilation")
+        self.gpl_async_cache_checkbox = QCheckBox("Enable GPL async cache")
+        self.hud_checkbox = QCheckBox("Enable fps, frametimes, gpuload HUD")
+        toggle_row = QHBoxLayout()
+        toggle_row.addWidget(self.enable_async_checkbox)
+        toggle_row.addWidget(self.gpl_async_cache_checkbox)
+        toggle_row.addWidget(self.hud_checkbox)
+        toggle_row.addStretch()
+        controls_form.addRow(toggle_row)
+
+        self.compiler_threads_spin = QSpinBox()
+        self.compiler_threads_spin.setRange(0, 64)
+        controls_form.addRow("Compiler Threads (dxvk.numCompilerThreads):", self.compiler_threads_spin)
+
+        fps_row = QHBoxLayout()
+        self.max_fps_slider = QSlider(Qt.Orientation.Horizontal)
+        self.max_fps_slider.setRange(0, 360)
+        self.max_fps_slider.setSingleStep(1)
+        self.max_fps_slider.setPageStep(5)
+        self.max_fps_label = QLabel("0")
+        fps_row.addWidget(self.max_fps_slider)
+        fps_row.addWidget(self.max_fps_label)
+        controls_form.addRow("Frame Rate Cap (dxgi.maxFrameRate):", fps_row)
+
+        self.frame_latency_spin = QSpinBox()
+        self.frame_latency_spin.setRange(0, 16)
+        controls_form.addRow("Frame Latency (dxgi.maxFrameLatency):", self.frame_latency_spin)
+
+        self.tear_free_combo = QComboBox()
+        self.tear_free_combo.addItems(["Auto", "True", "False"])
+        controls_form.addRow("Tear Free (dxvk.tearFree):", self.tear_free_combo)
+
+        controls_layout.addLayout(controls_form)
+        layout.addWidget(controls_group)
+
+        self.notes_label = QLabel("Note: dxvk.gplAsyncCache is skipped automatically on gplasync v2.7+.")
+        self.notes_label.setWordWrap(True)
+        layout.addWidget(self.notes_label)
+
+        self.preset_combo.setCurrentText("Recommended")
+        self._apply_preset("recommended")
+        self.enable_async_checkbox.stateChanged.connect(self._update_conf_preview)
+        self.gpl_async_cache_checkbox.stateChanged.connect(self._update_conf_preview)
+        self.compiler_threads_spin.valueChanged.connect(self._update_conf_preview)
+        self.max_fps_slider.valueChanged.connect(self._on_fps_changed)
+        self.frame_latency_spin.valueChanged.connect(self._update_conf_preview)
+        self.tear_free_combo.currentTextChanged.connect(self._update_conf_preview)
+        self.hud_checkbox.stateChanged.connect(self._update_conf_preview)
+
         main_layout = QVBoxLayout(self)
         main_layout.addWidget(self.group)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.group.setMaximumHeight(88)
+        self.group.setMaximumHeight(340)
+
+    def apply_selected_preset(self):
+        preset_text = self.preset_combo.currentText()
+        self._apply_preset("recommended" if preset_text == "Recommended" else "none")
+
+    def _apply_preset(self, preset):
+        settings = _preset_settings(preset)
+        self.enable_async_checkbox.setChecked(settings["enable_async"])
+        self.gpl_async_cache_checkbox.setChecked(settings["gpl_async_cache"])
+        self.compiler_threads_spin.setValue(settings["num_compiler_threads"])
+        self.max_fps_slider.setValue(settings["max_frame_rate"])
+        self.max_fps_label.setText(str(settings["max_frame_rate"]))
+        self.frame_latency_spin.setValue(settings["max_frame_latency"])
+        index = self.tear_free_combo.findText(settings["tear_free"])
+        if index >= 0:
+            self.tear_free_combo.setCurrentIndex(index)
+        self.hud_checkbox.setChecked(settings["hud_enabled"])
+        self._update_conf_preview()
+
+    def _on_fps_changed(self, value):
+        self.max_fps_label.setText(str(value))
+        self._update_conf_preview()
+
+    def _current_settings(self):
+        return {
+            "enable_async": self.enable_async_checkbox.isChecked(),
+            "gpl_async_cache": self.gpl_async_cache_checkbox.isChecked(),
+            "num_compiler_threads": self.compiler_threads_spin.value(),
+            "max_frame_rate": self.max_fps_slider.value(),
+            "max_frame_latency": self.frame_latency_spin.value(),
+            "tear_free": self.tear_free_combo.currentText(),
+            "hud_enabled": self.hud_checkbox.isChecked(),
+        }
+
+    def _update_conf_preview(self):
+        return
 
     def update_theme(self):
         is_dark = self.palette().window().color().lightness() < 128
@@ -265,11 +439,12 @@ class DXVKWidget(QWidget):
             fore_color = "#000000"
 
         # Update button styles
-        for btn in [self.install_btn, self.uninstall_btn]:
+        for btn in [self.install_btn, self.uninstall_btn, self.apply_preset_btn]:
             btn.setStyleSheet(f"background-color: {control_color}; color: {fore_color};")
 
         # Update label style
         self.status_label.setStyleSheet(f"color: {fore_color};")
+        self.notes_label.setStyleSheet(f"color: {fore_color};")
 
     def changeEvent(self, event):
         if event.type() == QEvent.Type.PaletteChange:
@@ -296,5 +471,11 @@ class DXVKWidget(QWidget):
         if not self.game_dir or not os.path.exists(self.game_dir):
             write_log("Game directory does not exist.", "Error", self.log_widget)
             return
-        manage_dxvk_async(self.game_dir, action, self.log_widget, self.mod_files_dir)
+        manage_dxvk_async(
+            self.game_dir,
+            action,
+            self.log_widget,
+            self.mod_files_dir,
+            dxvk_settings=self._current_settings(),
+        )
         self.update_status()
