@@ -4,16 +4,23 @@ import re
 import json
 import stat
 import platform
+import shutil
 from typing import Optional
 from PySide6.QtWidgets import (
     QMessageBox, QWidget, QGroupBox, QVBoxLayout, QHBoxLayout, QLabel,
     QComboBox, QPushButton, QFormLayout, QCheckBox, QSpinBox, QLineEdit, QSlider,
-    QSizePolicy
+    QSizePolicy, QTabWidget, QGridLayout, QFrame
 )
 from PySide6.QtGui import QIntValidator, QGuiApplication
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from version import APP_VERSION
-from utils import write_log, get_log_file_path
+from utils import (
+    write_log,
+    get_log_file_path,
+    clear_log_file,
+    patchops_backup_path,
+    existing_backup_path,
+)
 
 def set_config_value(game_dir, key, value, comment, log_widget):
     config_path = os.path.join(game_dir, "players", "config.ini")
@@ -60,7 +67,7 @@ def update_config_values(config_path, changes, success_message, log_widget, supp
 
 def toggle_stuttering_setting(game_dir, reduce_stutter, log_widget):
     dll_file = os.path.join(game_dir, "d3dcompiler_46.dll")
-    dll_bak = dll_file + ".bak"
+    dll_bak = patchops_backup_path(dll_file)
     if reduce_stutter:
         if os.path.exists(dll_file):
             try:
@@ -68,14 +75,15 @@ def toggle_stuttering_setting(game_dir, reduce_stutter, log_widget):
                 write_log("Renamed d3dcompiler_46.dll to reduce stuttering.", "Success", log_widget)
             except Exception:
                 write_log("Failed to rename d3dcompiler_46.dll.", "Error", log_widget)
-        elif os.path.exists(dll_bak):
+        elif existing_backup_path(dll_file):
             write_log("Stutter reduction already enabled.", "Success", log_widget)
         else:
             write_log("d3dcompiler_46.dll not found.", "Warning", log_widget)
     else:
-        if os.path.exists(dll_bak):
+        backup_path = existing_backup_path(dll_file)
+        if backup_path:
             try:
-                os.rename(dll_bak, dll_file)
+                os.rename(backup_path, dll_file)
                 write_log("Restored d3dcompiler_46.dll.", "Success", log_widget)
             except Exception:
                 write_log("Failed to restore d3dcompiler_46.dll.", "Error", log_widget)
@@ -177,8 +185,8 @@ def check_essential_status(game_dir):
         status["reduce_cpu"] = bool(re.search(r'SerializeRender\s*=\s*"2"', content))
 
         video_dir = os.path.join(game_dir, "video")
-        intro_bak = os.path.join(video_dir, "BO3_Global_Logo_LogoSequence.mkv.bak")
-        status["skip_intro"] = os.path.exists(intro_bak)
+        intro_file = os.path.join(video_dir, "BO3_Global_Logo_LogoSequence.mkv")
+        status["skip_intro"] = existing_backup_path(intro_file) is not None
     else:
         status = {
             "max_fps": 60,
@@ -214,56 +222,108 @@ class GraphicsSettingsWidget(QWidget):
         self._fov_update_timer.setInterval(250)
         self._fov_update_timer.timeout.connect(self._commit_pending_fov_value)
 
+    def _add_separator(self, layout, row):
+        sep = QFrame()
+        sep.setObjectName("DashboardDivider")
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFixedHeight(1)
+        layout.addWidget(sep, row, 0, 1, 4)
+
     def init_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # ================= Graphics Presets =================
-        presets_group = QGroupBox("Graphics Presets")
-        presets_layout = QHBoxLayout(presets_group)
-        presets_layout.addWidget(QLabel("Select Preset:"))
+        graphics_group = QGroupBox("")
+        layout = QGridLayout(graphics_group)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(0)
+        row = 0
+
+        # Preset row
+        preset_lbl = QLabel("Preset")
+        preset_lbl.setObjectName("DashboardStatusName")
+        preset_lbl.setContentsMargins(0, 8, 0, 8)
 
         self.preset_combo = QComboBox()
         self.preset_combo.addItems(["Quality", "Balanced", "Performance", "Ultra Performance", "Custom"])
-        presets_layout.addWidget(self.preset_combo)
 
-        self.apply_preset_btn = QPushButton("Apply Preset")
+        self.apply_preset_btn = QPushButton("Apply")
         self.apply_preset_btn.clicked.connect(self.apply_preset_clicked)
-        presets_layout.addWidget(self.apply_preset_btn)
 
-        if self.dxvk_widget:
-            self.dxvk_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            presets_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            top_row_layout = QHBoxLayout()
-            top_row_layout.addWidget(self.dxvk_widget)
-            top_row_layout.addWidget(presets_group)
-            main_layout.addLayout(top_row_layout)
-        else:
-            main_layout.addWidget(presets_group)
+        layout.addWidget(preset_lbl, row, 0)
+        layout.addWidget(self.preset_combo, row, 1, 1, 2)
+        layout.addWidget(self.apply_preset_btn, row, 3)
+        row += 1
 
-        # ================= Graphics Settings Section =================
-        settings_group = QGroupBox("Graphics Settings")
-        settings_layout = QVBoxLayout(settings_group)
+        # Display Mode
+        self._add_separator(layout, row); row += 1
 
-        settings_form = QFormLayout()
+        dm_lbl = QLabel("Display Mode")
+        dm_lbl.setObjectName("DashboardStatusName")
+        dm_lbl.setContentsMargins(0, 8, 0, 8)
 
-        # Create horizontal layout for checkboxes
-        checkbox_layout = QHBoxLayout()
-        self.vsync_cb = QCheckBox("Enable V-Sync")
-        self.vsync_cb.stateChanged.connect(self.vsync_changed)
-        self.draw_fps_cb = QCheckBox("Show FPS Counter")
-        self.draw_fps_cb.stateChanged.connect(self.draw_fps_changed)
-        checkbox_layout.addWidget(self.vsync_cb)
-        checkbox_layout.addWidget(self.draw_fps_cb)
-        checkbox_layout.addStretch()
-        settings_form.addRow(checkbox_layout)
+        self.display_mode_combo = QComboBox()
+        self.display_mode_combo.addItems(["Windowed", "Fullscreen", "Fullscreen Windowed"])
+        self.display_mode_combo.currentIndexChanged.connect(self.display_mode_changed)
+
+        layout.addWidget(dm_lbl, row, 0)
+        layout.addWidget(self.display_mode_combo, row, 1, 1, 3)
+        row += 1
+
+        # Resolution
+        self._add_separator(layout, row); row += 1
+
+        res_lbl = QLabel("Resolution")
+        res_lbl.setObjectName("DashboardStatusName")
+        res_lbl.setContentsMargins(0, 8, 0, 8)
+
+        self.resolution_edit = QLineEdit("2560x1440")
+        self.resolution_edit.editingFinished.connect(self.resolution_changed)
+
+        layout.addWidget(res_lbl, row, 0)
+        layout.addWidget(self.resolution_edit, row, 1, 1, 3)
+        row += 1
+
+        # Refresh Rate
+        self._add_separator(layout, row); row += 1
+
+        rr_lbl = QLabel("Refresh Rate")
+        rr_lbl.setObjectName("DashboardStatusName")
+        rr_lbl.setContentsMargins(0, 8, 0, 8)
+
+        self.refresh_rate_spin = QSpinBox()
+        self.refresh_rate_spin.setRange(1, 240)
+        self.refresh_rate_spin.setValue(165)
+        self.refresh_rate_spin.valueChanged.connect(self.refresh_rate_changed)
+
+        layout.addWidget(rr_lbl, row, 0)
+        layout.addWidget(self.refresh_rate_spin, row, 1, 1, 2)
+        row += 1
+
+        # FPS Limiter
+        self._add_separator(layout, row); row += 1
+
+        fps_lbl = QLabel("FPS Limiter")
+        fps_lbl.setObjectName("DashboardStatusName")
+        fps_lbl.setContentsMargins(0, 8, 0, 8)
 
         self.fps_limiter_spin = QSpinBox()
         self.fps_limiter_spin.setRange(0, 1000)
         self.fps_limiter_spin.setValue(165)
         self.fps_limiter_spin.valueChanged.connect(self.fps_limiter_changed)
-        settings_form.addRow("FPS Limiter (0=Unlimited):", self.fps_limiter_spin)
+
+        layout.addWidget(fps_lbl, row, 0)
+        layout.addWidget(self.fps_limiter_spin, row, 1, 1, 2)
+        row += 1
+
+        # FOV
+        self._add_separator(layout, row); row += 1
+
+        fov_lbl = QLabel("FOV")
+        fov_lbl.setObjectName("DashboardStatusName")
+        fov_lbl.setContentsMargins(0, 8, 0, 8)
 
         self.fov_slider = QSlider(Qt.Horizontal)
         self.fov_slider.setRange(65, 120)
@@ -284,32 +344,74 @@ class GraphicsSettingsWidget(QWidget):
         fov_layout.addWidget(self.fov_slider)
         fov_layout.addWidget(self.fov_input)
 
-        settings_form.addRow("FOV:", fov_container)
+        layout.addWidget(fov_lbl, row, 0)
+        layout.addWidget(fov_container, row, 1, 1, 3)
+        row += 1
 
-        self.display_mode_combo = QComboBox()
-        self.display_mode_combo.addItems(["Windowed", "Fullscreen", "Fullscreen Windowed"])
-        self.display_mode_combo.currentIndexChanged.connect(self.display_mode_changed)
-        settings_form.addRow("Display Mode:", self.display_mode_combo)
+        # Render Resolution %
+        self._add_separator(layout, row); row += 1
 
-        self.resolution_edit = QLineEdit("2560x1440")
-        self.resolution_edit.editingFinished.connect(self.resolution_changed)
-        settings_form.addRow("Resolution:", self.resolution_edit)
-
-        self.refresh_rate_spin = QSpinBox()
-        self.refresh_rate_spin.setRange(1, 240)
-        self.refresh_rate_spin.setValue(165)
-        self.refresh_rate_spin.valueChanged.connect(self.refresh_rate_changed)
-        settings_form.addRow("Refresh Rate:", self.refresh_rate_spin)
+        rres_lbl = QLabel("Render Resolution %")
+        rres_lbl.setObjectName("DashboardStatusName")
+        rres_lbl.setContentsMargins(0, 8, 0, 8)
 
         self.render_res_spin = QSpinBox()
         self.render_res_spin.setRange(50, 200)
         self.render_res_spin.setSingleStep(10)
         self.render_res_spin.setValue(100)
         self.render_res_spin.valueChanged.connect(self.render_res_percent_changed)
-        settings_form.addRow("Render Res %:", self.render_res_spin)
 
-        settings_layout.addLayout(settings_form)
-        main_layout.addWidget(settings_group)
+        layout.addWidget(rres_lbl, row, 0)
+        layout.addWidget(self.render_res_spin, row, 1, 1, 2)
+        row += 1
+
+        # Checkboxes row
+        self._add_separator(layout, row); row += 1
+
+        cb_widget = QWidget()
+        cb_layout = QHBoxLayout(cb_widget)
+        cb_layout.setContentsMargins(0, 8, 0, 8)
+        cb_layout.setSpacing(16)
+
+        self.vsync_cb = QCheckBox("Enable V-Sync")
+        self.vsync_cb.stateChanged.connect(self.vsync_changed)
+        self.draw_fps_cb = QCheckBox("Show FPS Counter")
+        self.draw_fps_cb.stateChanged.connect(self.draw_fps_changed)
+        cb_layout.addWidget(self.vsync_cb)
+        cb_layout.addWidget(self.draw_fps_cb)
+        cb_layout.addStretch()
+
+        layout.addWidget(cb_widget, row, 0, 1, 4)
+        row += 1
+
+        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(2, 2)
+        layout.setColumnStretch(3, 0)
+        layout.setRowStretch(row, 1)
+
+        if self.dxvk_widget:
+            tabs = QTabWidget()
+            tabs.setDocumentMode(True)
+
+            graphics_tab = QWidget()
+            graphics_tab_layout = QVBoxLayout(graphics_tab)
+            graphics_tab_layout.setContentsMargins(0, 0, 0, 0)
+            graphics_tab_layout.setSpacing(0)
+            graphics_tab_layout.addWidget(graphics_group)
+
+            dxvk_tab = QWidget()
+            dxvk_tab_layout = QVBoxLayout(dxvk_tab)
+            dxvk_tab_layout.setContentsMargins(0, 0, 0, 0)
+            dxvk_tab_layout.setSpacing(0)
+            self.dxvk_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            dxvk_tab_layout.addWidget(self.dxvk_widget)
+
+            tabs.addTab(graphics_tab, "Graphics")
+            tabs.addTab(dxvk_tab, "DXVK")
+            main_layout.addWidget(tabs)
+        else:
+            main_layout.addWidget(graphics_group)
 
     def set_game_directory(self, game_dir):
         self.game_dir = game_dir
@@ -484,9 +586,12 @@ class GraphicsSettingsWidget(QWidget):
 
 # ================= Advanced Settings Widget =================
 class AdvancedSettingsWidget(QWidget):
+    reset_to_stock_requested = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.game_dir = None
+        self.mod_files_dir = None
         self.log_widget = None
         self.version_label: Optional[QLabel] = None
         self.init_ui()
@@ -521,59 +626,156 @@ class AdvancedSettingsWidget(QWidget):
         if self.game_dir:
             self.load_settings()
 
+    def _add_separator(self, layout, row):
+        sep = QFrame()
+        sep.setObjectName("DashboardDivider")
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFixedHeight(1)
+        layout.addWidget(sep, row, 0, 1, 4)
+
     def init_ui(self):
-        layout = QVBoxLayout(self)
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
         adv_box = QGroupBox("Advanced Settings")
-        adv_form = QFormLayout(adv_box)
+        layout = QGridLayout(adv_box)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(0)
+        row = 0
 
-        self.smooth_cb = QCheckBox("Smooth Framerate (Enables the smoothframe rate option)")
+        # Action buttons
+        btn_row = QWidget()
+        btn_layout = QHBoxLayout(btn_row)
+        btn_layout.setContentsMargins(0, 0, 0, 12)
+        btn_layout.setSpacing(10)
+
+        clear_logs_btn = QPushButton("Clear Logs")
+        clear_logs_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        clear_logs_btn.clicked.connect(self.clear_logs)
+        btn_layout.addWidget(clear_logs_btn, 1)
+
+        copy_logs_btn = QPushButton("Copy Logs")
+        copy_logs_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        copy_logs_btn.clicked.connect(self.copy_logs_to_clipboard)
+        btn_layout.addWidget(copy_logs_btn, 1)
+
+        clear_mod_files_btn = QPushButton("Clear Mod Files")
+        clear_mod_files_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        clear_mod_files_btn.clicked.connect(self.clear_mod_files_action)
+        btn_layout.addWidget(clear_mod_files_btn, 1)
+
+        self.reset_stock_btn = QPushButton("Reset to Stock")
+        self.reset_stock_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.reset_stock_btn.clicked.connect(self.request_reset_to_stock)
+        btn_layout.addWidget(self.reset_stock_btn, 1)
+
+        layout.addWidget(btn_row, row, 0, 1, 4)
+        row += 1
+
+        # Smooth Framerate
+        self._add_separator(layout, row); row += 1
+
+        smooth_lbl = QLabel("Smooth Framerate")
+        smooth_lbl.setObjectName("DashboardStatusName")
+        smooth_lbl.setContentsMargins(0, 8, 0, 8)
+        self.smooth_cb = QCheckBox("Enable")
         self.smooth_cb.stateChanged.connect(self.smooth_changed)
-        adv_form.addRow(self.smooth_cb)
+        layout.addWidget(smooth_lbl, row, 0)
+        layout.addWidget(self.smooth_cb, row, 1, 1, 3)
+        row += 1
 
-        # VRAM settings
-        self.vram_cb = QCheckBox("Set VRAM Usage (Enables the VideoMemory and StreamMinResident options)")
+        # VRAM Target
+        self._add_separator(layout, row); row += 1
+
+        vram_lbl = QLabel("VRAM Target")
+        vram_lbl.setObjectName("DashboardStatusName")
+        vram_lbl.setContentsMargins(0, 8, 0, 8)
+
+        self.vram_cb = QCheckBox("Limit")
         self.vram_cb.stateChanged.connect(self.vram_changed)
-        adv_form.addRow(self.vram_cb)
 
-        # New spin box for limited VRAM percentage
+        vram_val_widget = QWidget()
+        vram_val_layout = QHBoxLayout(vram_val_widget)
+        vram_val_layout.setContentsMargins(0, 0, 0, 0)
+        vram_val_layout.setSpacing(4)
         self.vram_limit_spin = QSpinBox()
         self.vram_limit_spin.setRange(75, 100)
         self.vram_limit_spin.setValue(75)
         self.vram_limit_spin.setEnabled(False)
         self.vram_limit_spin.valueChanged.connect(self.vram_limit_changed)
-        adv_form.addRow("Set VRAM target to (%):", self.vram_limit_spin)
+        vram_val_layout.addWidget(self.vram_limit_spin)
+        vram_val_layout.addWidget(QLabel("%"))
+        vram_val_layout.addStretch()
 
+        layout.addWidget(vram_lbl, row, 0)
+        layout.addWidget(self.vram_cb, row, 1)
+        layout.addWidget(vram_val_widget, row, 2, 1, 2)
+        row += 1
+
+        # Lower Latency
+        self._add_separator(layout, row); row += 1
+
+        latency_lbl = QLabel("Lower Latency")
+        latency_lbl.setObjectName("DashboardStatusName")
+        latency_lbl.setContentsMargins(0, 8, 0, 8)
         self.latency_spin = QSpinBox()
         self.latency_spin.setRange(0, 4)
         self.latency_spin.setValue(1)
         self.latency_spin.valueChanged.connect(self.latency_changed)
-        adv_form.addRow("Lower Latency (0-4, determines the number of frames to queue before rendering):", self.latency_spin)
+        layout.addWidget(latency_lbl, row, 0)
+        layout.addWidget(self.latency_spin, row, 1, 1, 2)
+        row += 1
 
-        self.reduce_cpu_cb = QCheckBox("Reduce CPU Usage (Changes the SerializeRender option, only recommended for weak CPUs)")
+        # Reduce CPU Usage
+        self._add_separator(layout, row); row += 1
+
+        reduce_cpu_lbl = QLabel("Reduce CPU Usage")
+        reduce_cpu_lbl.setObjectName("DashboardStatusName")
+        reduce_cpu_lbl.setContentsMargins(0, 8, 0, 8)
+        self.reduce_cpu_cb = QCheckBox("Enable")
         self.reduce_cpu_cb.stateChanged.connect(self.reduce_cpu_changed)
-        adv_form.addRow(self.reduce_cpu_cb)
+        layout.addWidget(reduce_cpu_lbl, row, 0)
+        layout.addWidget(self.reduce_cpu_cb, row, 1, 1, 3)
+        row += 1
 
-        self.all_settings_cb = QCheckBox("Unlock All Graphics Options (Allows all graphics options to be changed)")
+        # Unlock All Graphics Options
+        self._add_separator(layout, row); row += 1
+
+        all_settings_lbl = QLabel("Unlock All Graphics Options")
+        all_settings_lbl.setObjectName("DashboardStatusName")
+        all_settings_lbl.setContentsMargins(0, 8, 0, 8)
+        self.all_settings_cb = QCheckBox("Enable")
         self.all_settings_cb.stateChanged.connect(self.all_settings_changed)
-        adv_form.addRow(self.all_settings_cb)
+        layout.addWidget(all_settings_lbl, row, 0)
+        layout.addWidget(self.all_settings_cb, row, 1, 1, 3)
+        row += 1
 
-        self.lock_config_cb = QCheckBox("Lock config.ini (read-only mode, prevents changes to the config file)")
+        # Lock config.ini
+        self._add_separator(layout, row); row += 1
+
+        lock_config_lbl = QLabel("Lock config.ini")
+        lock_config_lbl.setObjectName("DashboardStatusName")
+        lock_config_lbl.setContentsMargins(0, 8, 0, 8)
+        self.lock_config_cb = QCheckBox("Read-only")
         self.lock_config_cb.stateChanged.connect(self.lock_config_changed)
-        adv_form.addRow(self.lock_config_cb)
+        layout.addWidget(lock_config_lbl, row, 0)
+        layout.addWidget(self.lock_config_cb, row, 1, 1, 3)
+        row += 1
 
-        layout.addWidget(adv_box)
-        layout.addStretch(1)
+        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(2, 2)
+        layout.setColumnStretch(3, 0)
+        layout.setRowStretch(row, 1)
 
-        footer_layout = QHBoxLayout()
+        outer_layout.addWidget(adv_box)
+
         self.version_label = QLabel(f"PatchOpsIII v{APP_VERSION}")
-        footer_layout.addWidget(self.version_label)
-        footer_layout.addStretch(1)
-
-        copy_logs_btn = QPushButton("Copy Logs")
-        copy_logs_btn.clicked.connect(self.copy_logs_to_clipboard)
-        footer_layout.addWidget(copy_logs_btn)
-
-        layout.addLayout(footer_layout)
+        self.version_label.setObjectName("DashboardStatusName")
+        self.version_label.setContentsMargins(4, 6, 0, 4)
+        outer_layout.addWidget(self.version_label)
 
     def set_game_directory(self, game_dir):
         self.game_dir = game_dir
@@ -582,6 +784,9 @@ class AdvancedSettingsWidget(QWidget):
         config_path = os.path.join(game_dir, "players", "config.ini")
         if os.path.exists(config_path):
             self.lock_config_cb.setChecked(not os.access(config_path, os.W_OK))
+
+    def set_mod_files_dir(self, mod_files_dir):
+        self.mod_files_dir = mod_files_dir
 
     def set_log_widget(self, log_widget):
         self.log_widget = log_widget
@@ -704,3 +909,55 @@ class AdvancedSettingsWidget(QWidget):
         )
         msg.setStandardButtons(QMessageBox.Ok)
         msg.exec()
+
+    def clear_logs(self):
+        log_path = get_log_file_path()
+        if clear_log_file():
+            if self.log_widget and hasattr(self.log_widget, "clear"):
+                self.log_widget.clear()
+        else:
+            write_log(f"Failed to clear log file at {log_path}", "Error", self.log_widget)
+
+    def clear_mod_files_action(self):
+        if not self.mod_files_dir:
+            write_log("Mod files directory not set.", "Error", self.log_widget)
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm Clear Mod Files",
+            f"Are you sure you want to delete all files in:\n{self.mod_files_dir}?\n\nThis will remove downloaded patch files and archives.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            try:
+                if os.path.exists(self.mod_files_dir):
+                    # Remove all contents
+                    for item in os.listdir(self.mod_files_dir):
+                        item_path = os.path.join(self.mod_files_dir, item)
+                        if os.path.isfile(item_path) or os.path.islink(item_path):
+                            os.remove(item_path)
+                        elif os.path.isdir(item_path):
+                            shutil.rmtree(item_path)
+                    write_log(f"Cleared mod files in {self.mod_files_dir}", "Success", self.log_widget)
+                else:
+                    write_log(f"Mod files directory does not exist: {self.mod_files_dir}", "Warning", self.log_widget)
+            except Exception as e:
+                write_log(f"Failed to clear mod files: {e}", "Error", self.log_widget)
+
+    def request_reset_to_stock(self):
+        reply = QMessageBox.warning(
+            self,
+            "Reset to Stock",
+            (
+                "This will remove modded installs and reset PatchOpsIII-managed settings to stock defaults.\n\n"
+                "This includes Enhanced/Reforged/T7/DXVK files, launch options, and QoL/Advanced settings.\n\n"
+                "Continue?"
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            self.reset_to_stock_requested.emit()
