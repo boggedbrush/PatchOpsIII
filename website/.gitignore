@@ -1,0 +1,5 @@
+# The repo root ignores `*.txt`, but the website needs `robots.txt` and `security.txt`.
+!*.txt
+!.well-known/
+!.well-known/*.txt
+

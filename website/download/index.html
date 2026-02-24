@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0d0d0f" />
+
+    <title>Download — PatchOpsIII</title>
+    <meta
+      name="description"
+      content="Download PatchOpsIII for Windows or Linux/Steam Deck. Includes quick install steps, verification tips, and developer setup instructions."
+    />
+    <link rel="canonical" href="https://patchopsiii.com/download/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="PatchOpsIII" />
+    <meta property="og:title" content="Download — PatchOpsIII" />
+    <meta property="og:description" content="Download PatchOpsIII for Windows or Linux/Steam Deck." />
+    <meta property="og:url" content="https://patchopsiii.com/download/" />
+    <meta property="og:image" content="https://patchopsiii.com/assets/img/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="icon" href="/assets/img/favicon.ico" sizes="any" />
+    <link rel="icon" href="/assets/img/favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="icon" href="/assets/img/favicon-16.png" type="image/png" sizes="16x16" />
+    <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <link rel="stylesheet" href="/assets/css/site.css" />
+
+    <script>
+      document.documentElement.classList.remove("no-js");
+    </script>
+  </head>
+
+  <body data-page="download">
+    <a class="skip-link" href="#content">Skip to content</a>
+
+    <header class="site-header" data-header>
+      <div class="container header-inner">
+        <a class="brand" href="/" aria-label="PatchOpsIII home">
+          <img src="/assets/img/patchopsiii.png" width="28" height="28" alt="" aria-hidden="true" />
+          <span class="brand-name">PatchOpsIII</span>
+        </a>
+
+        <div class="header-actions">
+          <button
+            class="icon-button nav-toggle"
+            type="button"
+            data-nav-toggle
+            aria-controls="site-nav"
+            aria-expanded="false"
+            aria-label="Open menu"
+          >
+            <span class="nav-icon" aria-hidden="true"></span>
+          </button>
+        </div>
+
+	        <nav id="site-nav" class="site-nav" aria-label="Primary">
+	          <button
+	            class="icon-button nav-toggle nav-close"
+	            type="button"
+	            data-nav-toggle
+	            aria-controls="site-nav"
+	            aria-expanded="false"
+	            aria-label="Close menu"
+	          >
+	            <span class="nav-icon" aria-hidden="true"></span>
+	          </button>
+	          <a href="/features/">Features</a>
+	          <a href="/download/" aria-current="page">Download</a>
+	          <a href="/docs/">Docs</a>
+	          <a href="/changelog/">Changelog</a>
+	          <a class="nav-cta" href="https://github.com/boggedbrush/PatchOpsIII" rel="noreferrer">GitHub</a>
+          <button
+            class="icon-button theme-toggle nav-theme-toggle"
+            type="button"
+            data-theme-toggle
+            aria-pressed="false"
+            aria-label="Toggle theme"
+          >
+            <span class="theme-icon" aria-hidden="true"></span>
+          </button>
+        </nav>
+      </div>
+    </header>
+
+	    <div class="nav-overlay" data-nav-overlay hidden></div>
+	    <button
+	      class="icon-button theme-toggle floating-theme-toggle"
+	      type="button"
+	      data-theme-toggle
+	      aria-pressed="false"
+	      aria-label="Toggle theme"
+	    >
+	      <span class="theme-icon" aria-hidden="true"></span>
+	    </button>
+
+	    <main id="content" class="page">
+      <section class="page-hero">
+        <div class="container">
+          <p class="eyebrow">Download</p>
+          <h1>Get PatchOpsIII</h1>
+          <p class="lead">
+            Latest release: <strong data-latest-version>v1.2.0</strong>. Downloads are hosted on GitHub Releases for
+            Windows and Linux/Steam Deck.
+          </p>
+          <div class="cta-row">
+            <a class="btn" href="/docs/">Quick Start</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container">
+          <div class="grid cards two">
+            <article class="card">
+              <h2>Windows</h2>
+              <p class="muted">Download the latest release asset, extract if needed, then run <code>PatchOpsIII.exe</code>.</p>
+	              <div class="cta-row card-cta">
+	                <a
+	                  class="btn primary"
+	                  href="https://github.com/boggedbrush/PatchOpsIII/releases/latest/download/PatchOpsIII.exe"
+                    data-download-windows
+	                  rel="noreferrer"
+	                >
+	                  Windows Download
+	                </a>
+	              </div>
+	            </article>
+            <article class="card">
+              <h2>Linux / Steam Deck</h2>
+              <p class="muted">
+                Download the AppImage and install it with
+                <a href="https://flathub.org/apps/it.mijorus.gearlever" rel="noreferrer">Gear Lever</a> (recommended for
+                Linux and Steam Deck).
+              </p>
+	              <div class="cta-row card-cta">
+	                <a
+	                  class="btn primary"
+	                  href="https://github.com/boggedbrush/PatchOpsIII/releases/latest/download/PatchOpsIII.AppImage"
+                    data-download-linux
+	                  rel="noreferrer"
+	                >
+	                  AppImage Download
+	                </a>
+	              </div>
+	              <div class="code-block">
+	                <div class="code-head">
+	                  <span>Manual launch (optional)</span>
+	                  <button class="copy-btn" type="button" data-copy="#cmd-appimage">Copy</button>
+	                </div>
+                <pre><code id="cmd-appimage">chmod +x PatchOpsIII.AppImage
+./PatchOpsIII.AppImage</code></pre>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container">
+          <h2>Verify downloads</h2>
+          <p class="muted">
+            When release notes include SHA256 hashes, you can verify integrity locally before running.
+          </p>
+          <div class="grid two">
+            <div class="code-block">
+              <div class="code-head">
+                <span>Windows (PowerShell)</span>
+                <button class="copy-btn" type="button" data-copy="#cmd-win-sha">Copy</button>
+              </div>
+              <pre><code id="cmd-win-sha">Get-FileHash .\\PatchOpsIII.exe -Algorithm SHA256</code></pre>
+            </div>
+            <div class="code-block">
+              <div class="code-head">
+                <span>Linux</span>
+                <button class="copy-btn" type="button" data-copy="#cmd-linux-sha">Copy</button>
+              </div>
+              <pre><code id="cmd-linux-sha">sha256sum PatchOpsIII.AppImage</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container">
+          <h2>Developer setup</h2>
+          <p class="muted">Clone the repo, create a virtual environment, install dependencies, then run the app.</p>
+          <div class="code-block">
+            <div class="code-head">
+              <span>Local run</span>
+              <button class="copy-btn" type="button" data-copy="#cmd-dev">Copy</button>
+            </div>
+            <pre><code id="cmd-dev">git clone https://github.com/boggedbrush/PatchOpsIII.git
+cd PatchOpsIII
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\\Scripts\\activate
+pip install -r requirements.txt
+python main.py</code></pre>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-grid">
+        <div>
+          <a class="brand footer-brand" href="/">
+            <img src="/assets/img/patchopsiii.png" width="28" height="28" alt="" aria-hidden="true" />
+            <span class="brand-name">PatchOpsIII</span>
+          </a>
+          <p class="muted">
+            A modern control center for Call of Duty: Black Ops III modding, maintenance, and performance tuning.
+          </p>
+        </div>
+        <div class="footer-links">
+          <h3>Product</h3>
+          <a href="/features/">Features</a>
+          <a href="/download/">Download</a>
+          <a href="/docs/">Docs</a>
+          <a href="/changelog/">Changelog</a>
+        </div>
+        <div class="footer-links">
+          <h3>Community</h3>
+          <a href="https://github.com/boggedbrush/PatchOpsIII" rel="noreferrer">GitHub</a>
+          <a href="https://github.com/boggedbrush/PatchOpsIII/issues" rel="noreferrer">Issues</a>
+          <a href="https://github.com/boggedbrush/PatchOpsIII/releases" rel="noreferrer">Releases</a>
+        </div>
+        <div class="footer-links">
+          <h3>Legal</h3>
+          <a href="https://github.com/boggedbrush/PatchOpsIII/blob/main/LICENSE" rel="noreferrer">MIT License</a>
+          <a href="/.well-known/security.txt">Security</a>
+        </div>
+      </div>
+
+      <div class="container footer-meta">
+        <span>© <span data-year></span> PatchOpsIII</span>
+        <span class="muted">Call of Duty is a trademark of Activision. This project is not affiliated.</span>
+      </div>
+    </footer>
+
+    <script src="/assets/js/site.js" type="module"></script>
+  </body>
+</html>
