@@ -1751,8 +1751,10 @@ class MainWindow(QMainWindow):
             state = "good"
         elif exe_installed:
             state = "info"
+        elif launch_active:
+            state = "info"
         else:
-            state = "bad"
+            state = "neutral"
 
         self.dashboard_reforged_status.setText(self._status_html(status_text, state))
 
@@ -1780,20 +1782,20 @@ class MainWindow(QMainWindow):
         if t7_installed and t7_status.get("gamertag"):
             t7_label = f"Installed ({t7_status.get('plain_name', t7_status['gamertag'])})"
         self.dashboard_t7_status.setText(
-            self._status_html(t7_label, "good" if t7_installed else "bad")
+            self._status_html(t7_label, "good" if t7_installed else "neutral")
         )
 
         dxvk_installed = is_dxvk_async_installed(game_dir)
         self.dashboard_dxvk_status.setText(
             self._status_html("Installed" if dxvk_installed else "Not Installed",
-                              "good" if dxvk_installed else "bad")
+                              "good" if dxvk_installed else "neutral")
         )
 
         enhanced_summary = status_summary(game_dir, STORAGE_PATH)
         enhanced_active = bool(enhanced_summary.get("installed"))
         self.dashboard_enhanced_status.setText(
             self._status_html("Active" if enhanced_active else "Not Installed",
-                              "good" if enhanced_active else "bad")
+                              "good" if enhanced_active else "neutral")
         )
 
         applied_launch_options = self._get_applied_launch_options() or ""
@@ -1813,7 +1815,7 @@ class MainWindow(QMainWindow):
         active_qol = []
         if self.qol_widget.reduce_stutter_cb.isChecked():
             active_qol.append("Latest d3dcompiler")
-        if self.qol_widget.skip_intro_cb.isChecked():
+        if self.qol_widget.skip_intro_cb.isChecked() and not self.qol_widget.skip_all_intro_cb.isChecked():
             active_qol.append("Skip Intro")
         if self.qol_widget.skip_all_intro_cb.isChecked():
             active_qol.append("Skip All Intros")
