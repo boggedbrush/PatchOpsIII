@@ -20,11 +20,12 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QCheckBox,
     QComboBox,
-    QFormLayout,
     QSpinBox,
     QSlider,
+    QGridLayout,
+    QFrame,
 )
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import Qt
 from utils import write_log
 
 # ---------- DXVK Helper Functions (unchanged) ----------
@@ -58,7 +59,7 @@ def _preset_settings(preset):
         "enable_async": True,
         "gpl_async_cache": True,
         "num_compiler_threads": 0,
-        "max_frame_rate": 165,
+        "max_frame_rate": 0,
         "max_frame_latency": 1,
         "tear_free": "True",
         "hud_enabled": False,
@@ -300,83 +301,194 @@ class DXVKWidget(QWidget):
         self.group = QGroupBox("DXVK-GPLAsync Management")
         self.group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.init_ui()
-        self.update_theme()
 
     @property
     def groupbox(self):
         return self.group
 
+    @staticmethod
+    def _status_html(text: str, state: str = "neutral") -> str:
+        colors = {
+            "good": "#4ade80",
+            "bad": "#f87171",
+            "info": "#60a5fa",
+            "neutral": "#9ca3af",
+        }
+        color = colors.get(state, colors["neutral"])
+        return f'<span style="color:{color};">&#9679; {text}</span>'
+
+    def _add_separator(self, layout, row):
+        sep = QFrame()
+        sep.setObjectName("DashboardDivider")
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFixedHeight(1)
+        layout.addWidget(sep, row, 0, 1, 4)
+
     def init_ui(self):
         self.group = QGroupBox("DXVK-GPLAsync Management")
-        layout = QVBoxLayout(self.group)
-        # Match T7 Patch margins/spacing:
-        layout.setContentsMargins(5, 5, 5, 5)
-        layout.setSpacing(5)
+        layout = QGridLayout(self.group)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(0)
+        row = 0
 
-        action_row = QHBoxLayout()
+        # Action buttons
+        btn_row = QWidget()
+        btn_layout = QHBoxLayout(btn_row)
+        btn_layout.setContentsMargins(0, 0, 0, 12)
+        btn_layout.setSpacing(10)
+
         self.install_btn = QPushButton("Install DXVK-GPLAsync")
+        self.install_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.install_btn.clicked.connect(lambda: self.manage_dxvk("Install"))
-        self.uninstall_btn = QPushButton("Uninstall DXVK-GPLAsync")
-        self.uninstall_btn.clicked.connect(lambda: self.manage_dxvk("Uninstall"))
-        self.status_label = QLabel("")
-        action_row.addWidget(self.install_btn)
-        action_row.addWidget(self.uninstall_btn)
-        action_row.addWidget(self.status_label)
-        layout.addLayout(action_row)
+        btn_layout.addWidget(self.install_btn, 1)
 
-        presets_group = QGroupBox("DXVK Presets")
-        presets_layout = QHBoxLayout(presets_group)
-        presets_layout.addWidget(QLabel("Select Preset:"))
+        self.uninstall_btn = QPushButton("Uninstall DXVK-GPLAsync")
+        self.uninstall_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.uninstall_btn.clicked.connect(lambda: self.manage_dxvk("Uninstall"))
+        btn_layout.addWidget(self.uninstall_btn, 1)
+
+        layout.addWidget(btn_row, row, 0, 1, 4)
+        row += 1
+
+        # Status row
+        self._add_separator(layout, row); row += 1
+
+        status_name = QLabel("Status")
+        status_name.setObjectName("DashboardStatusName")
+        status_name.setContentsMargins(0, 8, 0, 8)
+
+        self.status_label = QLabel(self._status_html("Unknown"))
+        self.status_label.setObjectName("DashboardStatusValue")
+        self.status_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.status_label.setTextFormat(Qt.RichText)
+        self.status_label.setContentsMargins(0, 8, 0, 8)
+
+        layout.addWidget(status_name, row, 0)
+        layout.addWidget(self.status_label, row, 1, 1, 3)
+        row += 1
+
+        # Preset row
+        self._add_separator(layout, row); row += 1
+
+        preset_name = QLabel("Preset")
+        preset_name.setObjectName("DashboardStatusName")
+        preset_name.setContentsMargins(0, 8, 0, 8)
+
         self.preset_combo = QComboBox()
         self.preset_combo.addItems(["Recommended", "None"])
-        presets_layout.addWidget(self.preset_combo)
-        self.apply_preset_btn = QPushButton("Apply Preset")
+
+        self.apply_preset_btn = QPushButton("Apply")
         self.apply_preset_btn.clicked.connect(self.apply_selected_preset)
-        presets_layout.addWidget(self.apply_preset_btn)
-        layout.addWidget(presets_group)
 
-        controls_group = QGroupBox("DXVK Settings")
-        controls_layout = QVBoxLayout(controls_group)
-        controls_form = QFormLayout()
+        layout.addWidget(preset_name, row, 0)
+        layout.addWidget(self.preset_combo, row, 1, 1, 2)
+        layout.addWidget(self.apply_preset_btn, row, 3)
+        row += 1
 
-        self.enable_async_checkbox = QCheckBox("Enable async shader compilation")
-        self.gpl_async_cache_checkbox = QCheckBox("Enable GPL async cache")
-        self.hud_checkbox = QCheckBox("Enable fps, frametimes, gpuload HUD")
-        toggle_row = QHBoxLayout()
-        toggle_row.addWidget(self.enable_async_checkbox)
-        toggle_row.addWidget(self.gpl_async_cache_checkbox)
-        toggle_row.addWidget(self.hud_checkbox)
-        toggle_row.addStretch()
-        controls_form.addRow(toggle_row)
+        # Checkboxes row
+        self._add_separator(layout, row); row += 1
+
+        cb_widget = QWidget()
+        cb_layout = QHBoxLayout(cb_widget)
+        cb_layout.setContentsMargins(0, 8, 0, 8)
+        cb_layout.setSpacing(16)
+
+        self.enable_async_checkbox = QCheckBox("Async shader compilation")
+        self.gpl_async_cache_checkbox = QCheckBox("GPL async cache")
+        self.hud_checkbox = QCheckBox("FPS/GPU HUD")
+        cb_layout.addWidget(self.enable_async_checkbox)
+        cb_layout.addWidget(self.gpl_async_cache_checkbox)
+        cb_layout.addWidget(self.hud_checkbox)
+        cb_layout.addStretch()
+
+        layout.addWidget(cb_widget, row, 0, 1, 4)
+        row += 1
+
+        # Compiler Threads
+        self._add_separator(layout, row); row += 1
+
+        ct_name = QLabel("Compiler Threads")
+        ct_name.setObjectName("DashboardStatusName")
+        ct_name.setContentsMargins(0, 8, 0, 8)
 
         self.compiler_threads_spin = QSpinBox()
         self.compiler_threads_spin.setRange(0, 64)
-        controls_form.addRow("Compiler Threads (dxvk.numCompilerThreads):", self.compiler_threads_spin)
 
-        fps_row = QHBoxLayout()
+        layout.addWidget(ct_name, row, 0)
+        layout.addWidget(self.compiler_threads_spin, row, 1, 1, 2)
+        row += 1
+
+        # Frame Rate Cap
+        self._add_separator(layout, row); row += 1
+
+        frc_name = QLabel("Frame Rate Cap")
+        frc_name.setObjectName("DashboardStatusName")
+        frc_name.setContentsMargins(0, 8, 0, 8)
+
+        fps_container = QWidget()
+        fps_layout = QHBoxLayout(fps_container)
+        fps_layout.setContentsMargins(0, 0, 0, 0)
+        fps_layout.setSpacing(8)
+
         self.max_fps_slider = QSlider(Qt.Orientation.Horizontal)
         self.max_fps_slider.setRange(0, 360)
         self.max_fps_slider.setSingleStep(1)
         self.max_fps_slider.setPageStep(5)
+        fps_layout.addWidget(self.max_fps_slider)
+
         self.max_fps_label = QLabel("0")
-        fps_row.addWidget(self.max_fps_slider)
-        fps_row.addWidget(self.max_fps_label)
-        controls_form.addRow("Frame Rate Cap (dxgi.maxFrameRate):", fps_row)
+        self.max_fps_label.setObjectName("DashboardStatusValue")
+        self.max_fps_label.setFixedWidth(36)
+        fps_layout.addWidget(self.max_fps_label)
+
+        layout.addWidget(frc_name, row, 0)
+        layout.addWidget(fps_container, row, 1, 1, 3)
+        row += 1
+
+        # Frame Latency
+        self._add_separator(layout, row); row += 1
+
+        fl_name = QLabel("Frame Latency")
+        fl_name.setObjectName("DashboardStatusName")
+        fl_name.setContentsMargins(0, 8, 0, 8)
 
         self.frame_latency_spin = QSpinBox()
         self.frame_latency_spin.setRange(0, 16)
-        controls_form.addRow("Frame Latency (dxgi.maxFrameLatency):", self.frame_latency_spin)
+
+        layout.addWidget(fl_name, row, 0)
+        layout.addWidget(self.frame_latency_spin, row, 1, 1, 2)
+        row += 1
+
+        # Tear Free
+        self._add_separator(layout, row); row += 1
+
+        tf_name = QLabel("Tear Free")
+        tf_name.setObjectName("DashboardStatusName")
+        tf_name.setContentsMargins(0, 8, 0, 8)
 
         self.tear_free_combo = QComboBox()
         self.tear_free_combo.addItems(["Auto", "True", "False"])
-        controls_form.addRow("Tear Free (dxvk.tearFree):", self.tear_free_combo)
 
-        controls_layout.addLayout(controls_form)
-        layout.addWidget(controls_group)
+        layout.addWidget(tf_name, row, 0)
+        layout.addWidget(self.tear_free_combo, row, 1, 1, 2)
+        row += 1
+
+        # Notes
+        self._add_separator(layout, row); row += 1
 
         self.notes_label = QLabel("Note: dxvk.gplAsyncCache is skipped automatically on gplasync v2.7+.")
+        self.notes_label.setObjectName("DashboardStatusName")
         self.notes_label.setWordWrap(True)
-        layout.addWidget(self.notes_label)
+        self.notes_label.setContentsMargins(0, 8, 0, 8)
+        layout.addWidget(self.notes_label, row, 0, 1, 4)
+        row += 1
+
+        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(2, 2)
+        layout.setColumnStretch(3, 0)
+        layout.setRowStretch(row, 1)
 
         self.preset_combo.setCurrentText("Recommended")
         self._apply_preset("recommended")
@@ -390,8 +502,7 @@ class DXVKWidget(QWidget):
 
         main_layout = QVBoxLayout(self)
         main_layout.addWidget(self.group)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.group.setMaximumHeight(340)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
     def apply_selected_preset(self):
         preset_text = self.preset_combo.currentText()
@@ -429,28 +540,6 @@ class DXVKWidget(QWidget):
     def _update_conf_preview(self):
         return
 
-    def update_theme(self):
-        is_dark = self.palette().window().color().lightness() < 128
-        if (is_dark):
-            control_color = "#2D2D30"
-            fore_color = "#FFFFFF"
-        else:
-            control_color = "#F0F0F0"
-            fore_color = "#000000"
-
-        # Update button styles
-        for btn in [self.install_btn, self.uninstall_btn, self.apply_preset_btn]:
-            btn.setStyleSheet(f"background-color: {control_color}; color: {fore_color};")
-
-        # Update label style
-        self.status_label.setStyleSheet(f"color: {fore_color};")
-        self.notes_label.setStyleSheet(f"color: {fore_color};")
-
-    def changeEvent(self, event):
-        if event.type() == QEvent.Type.PaletteChange:
-            self.update_theme()
-        super().changeEvent(event)
-
     def set_game_directory(self, game_dir):
         self.game_dir = game_dir
         self.update_status()
@@ -461,11 +550,11 @@ class DXVKWidget(QWidget):
     def update_status(self):
         if self.game_dir and os.path.exists(self.game_dir):
             if is_dxvk_async_installed(self.game_dir):
-                self.status_label.setText("DXVK-GPLAsync: Installed")
+                self.status_label.setText(self._status_html("Installed", "good"))
             else:
-                self.status_label.setText("DXVK-GPLAsync: Not Installed")
+                self.status_label.setText(self._status_html("Not Installed", "bad"))
         else:
-            self.status_label.setText("Game directory not set")
+            self.status_label.setText(self._status_html("Game directory not set", "neutral"))
 
     def manage_dxvk(self, action):
         if not self.game_dir or not os.path.exists(self.game_dir):

@@ -9,7 +9,7 @@ from typing import Optional
 from PySide6.QtWidgets import (
     QMessageBox, QWidget, QGroupBox, QVBoxLayout, QHBoxLayout, QLabel,
     QComboBox, QPushButton, QFormLayout, QCheckBox, QSpinBox, QLineEdit, QSlider,
-    QSizePolicy, QTabWidget
+    QSizePolicy, QTabWidget, QGridLayout, QFrame
 )
 from PySide6.QtGui import QIntValidator, QGuiApplication
 from PySide6.QtCore import Qt, QTimer
@@ -222,46 +222,108 @@ class GraphicsSettingsWidget(QWidget):
         self._fov_update_timer.setInterval(250)
         self._fov_update_timer.timeout.connect(self._commit_pending_fov_value)
 
+    def _add_separator(self, layout, row):
+        sep = QFrame()
+        sep.setObjectName("DashboardDivider")
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFixedHeight(1)
+        layout.addWidget(sep, row, 0, 1, 4)
+
     def init_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # ================= Graphics Presets =================
-        presets_group = QGroupBox("Graphics Presets")
-        presets_layout = QHBoxLayout(presets_group)
-        presets_layout.addWidget(QLabel("Select Preset:"))
+        graphics_group = QGroupBox("Graphics Settings")
+        layout = QGridLayout(graphics_group)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(0)
+        row = 0
+
+        # Preset row
+        preset_lbl = QLabel("Preset")
+        preset_lbl.setObjectName("DashboardStatusName")
+        preset_lbl.setContentsMargins(0, 8, 0, 8)
 
         self.preset_combo = QComboBox()
         self.preset_combo.addItems(["Quality", "Balanced", "Performance", "Ultra Performance", "Custom"])
-        presets_layout.addWidget(self.preset_combo)
 
-        self.apply_preset_btn = QPushButton("Apply Preset")
+        self.apply_preset_btn = QPushButton("Apply")
         self.apply_preset_btn.clicked.connect(self.apply_preset_clicked)
-        presets_layout.addWidget(self.apply_preset_btn)
 
-        # ================= Graphics Settings Section =================
-        settings_group = QGroupBox("Graphics Settings")
-        settings_layout = QVBoxLayout(settings_group)
+        layout.addWidget(preset_lbl, row, 0)
+        layout.addWidget(self.preset_combo, row, 1, 1, 2)
+        layout.addWidget(self.apply_preset_btn, row, 3)
+        row += 1
 
-        settings_form = QFormLayout()
+        # Display Mode
+        self._add_separator(layout, row); row += 1
 
-        # Create horizontal layout for checkboxes
-        checkbox_layout = QHBoxLayout()
-        self.vsync_cb = QCheckBox("Enable V-Sync")
-        self.vsync_cb.stateChanged.connect(self.vsync_changed)
-        self.draw_fps_cb = QCheckBox("Show FPS Counter")
-        self.draw_fps_cb.stateChanged.connect(self.draw_fps_changed)
-        checkbox_layout.addWidget(self.vsync_cb)
-        checkbox_layout.addWidget(self.draw_fps_cb)
-        checkbox_layout.addStretch()
-        settings_form.addRow(checkbox_layout)
+        dm_lbl = QLabel("Display Mode")
+        dm_lbl.setObjectName("DashboardStatusName")
+        dm_lbl.setContentsMargins(0, 8, 0, 8)
+
+        self.display_mode_combo = QComboBox()
+        self.display_mode_combo.addItems(["Windowed", "Fullscreen", "Fullscreen Windowed"])
+        self.display_mode_combo.currentIndexChanged.connect(self.display_mode_changed)
+
+        layout.addWidget(dm_lbl, row, 0)
+        layout.addWidget(self.display_mode_combo, row, 1, 1, 3)
+        row += 1
+
+        # Resolution
+        self._add_separator(layout, row); row += 1
+
+        res_lbl = QLabel("Resolution")
+        res_lbl.setObjectName("DashboardStatusName")
+        res_lbl.setContentsMargins(0, 8, 0, 8)
+
+        self.resolution_edit = QLineEdit("2560x1440")
+        self.resolution_edit.editingFinished.connect(self.resolution_changed)
+
+        layout.addWidget(res_lbl, row, 0)
+        layout.addWidget(self.resolution_edit, row, 1, 1, 3)
+        row += 1
+
+        # Refresh Rate
+        self._add_separator(layout, row); row += 1
+
+        rr_lbl = QLabel("Refresh Rate")
+        rr_lbl.setObjectName("DashboardStatusName")
+        rr_lbl.setContentsMargins(0, 8, 0, 8)
+
+        self.refresh_rate_spin = QSpinBox()
+        self.refresh_rate_spin.setRange(1, 240)
+        self.refresh_rate_spin.setValue(165)
+        self.refresh_rate_spin.valueChanged.connect(self.refresh_rate_changed)
+
+        layout.addWidget(rr_lbl, row, 0)
+        layout.addWidget(self.refresh_rate_spin, row, 1, 1, 2)
+        row += 1
+
+        # FPS Limiter
+        self._add_separator(layout, row); row += 1
+
+        fps_lbl = QLabel("FPS Limiter")
+        fps_lbl.setObjectName("DashboardStatusName")
+        fps_lbl.setContentsMargins(0, 8, 0, 8)
 
         self.fps_limiter_spin = QSpinBox()
         self.fps_limiter_spin.setRange(0, 1000)
         self.fps_limiter_spin.setValue(165)
         self.fps_limiter_spin.valueChanged.connect(self.fps_limiter_changed)
-        settings_form.addRow("FPS Limiter (0=Unlimited):", self.fps_limiter_spin)
+
+        layout.addWidget(fps_lbl, row, 0)
+        layout.addWidget(self.fps_limiter_spin, row, 1, 1, 2)
+        row += 1
+
+        # FOV
+        self._add_separator(layout, row); row += 1
+
+        fov_lbl = QLabel("FOV")
+        fov_lbl.setObjectName("DashboardStatusName")
+        fov_lbl.setContentsMargins(0, 8, 0, 8)
 
         self.fov_slider = QSlider(Qt.Horizontal)
         self.fov_slider.setRange(65, 120)
@@ -282,31 +344,51 @@ class GraphicsSettingsWidget(QWidget):
         fov_layout.addWidget(self.fov_slider)
         fov_layout.addWidget(self.fov_input)
 
-        settings_form.addRow("FOV:", fov_container)
+        layout.addWidget(fov_lbl, row, 0)
+        layout.addWidget(fov_container, row, 1, 1, 3)
+        row += 1
 
-        self.display_mode_combo = QComboBox()
-        self.display_mode_combo.addItems(["Windowed", "Fullscreen", "Fullscreen Windowed"])
-        self.display_mode_combo.currentIndexChanged.connect(self.display_mode_changed)
-        settings_form.addRow("Display Mode:", self.display_mode_combo)
+        # Render Resolution %
+        self._add_separator(layout, row); row += 1
 
-        self.resolution_edit = QLineEdit("2560x1440")
-        self.resolution_edit.editingFinished.connect(self.resolution_changed)
-        settings_form.addRow("Resolution:", self.resolution_edit)
-
-        self.refresh_rate_spin = QSpinBox()
-        self.refresh_rate_spin.setRange(1, 240)
-        self.refresh_rate_spin.setValue(165)
-        self.refresh_rate_spin.valueChanged.connect(self.refresh_rate_changed)
-        settings_form.addRow("Refresh Rate:", self.refresh_rate_spin)
+        rres_lbl = QLabel("Render Resolution %")
+        rres_lbl.setObjectName("DashboardStatusName")
+        rres_lbl.setContentsMargins(0, 8, 0, 8)
 
         self.render_res_spin = QSpinBox()
         self.render_res_spin.setRange(50, 200)
         self.render_res_spin.setSingleStep(10)
         self.render_res_spin.setValue(100)
         self.render_res_spin.valueChanged.connect(self.render_res_percent_changed)
-        settings_form.addRow("Render Res %:", self.render_res_spin)
 
-        settings_layout.addLayout(settings_form)
+        layout.addWidget(rres_lbl, row, 0)
+        layout.addWidget(self.render_res_spin, row, 1, 1, 2)
+        row += 1
+
+        # Checkboxes row
+        self._add_separator(layout, row); row += 1
+
+        cb_widget = QWidget()
+        cb_layout = QHBoxLayout(cb_widget)
+        cb_layout.setContentsMargins(0, 8, 0, 8)
+        cb_layout.setSpacing(16)
+
+        self.vsync_cb = QCheckBox("Enable V-Sync")
+        self.vsync_cb.stateChanged.connect(self.vsync_changed)
+        self.draw_fps_cb = QCheckBox("Show FPS Counter")
+        self.draw_fps_cb.stateChanged.connect(self.draw_fps_changed)
+        cb_layout.addWidget(self.vsync_cb)
+        cb_layout.addWidget(self.draw_fps_cb)
+        cb_layout.addStretch()
+
+        layout.addWidget(cb_widget, row, 0, 1, 4)
+        row += 1
+
+        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(2, 2)
+        layout.setColumnStretch(3, 0)
+        layout.setRowStretch(row, 1)
 
         if self.dxvk_widget:
             tabs = QTabWidget()
@@ -315,25 +397,21 @@ class GraphicsSettingsWidget(QWidget):
             graphics_tab = QWidget()
             graphics_tab_layout = QVBoxLayout(graphics_tab)
             graphics_tab_layout.setContentsMargins(0, 0, 0, 0)
-            graphics_tab_layout.setSpacing(8)
-            graphics_tab_layout.addWidget(presets_group)
-            graphics_tab_layout.addWidget(settings_group)
-            graphics_tab_layout.addStretch(1)
+            graphics_tab_layout.setSpacing(0)
+            graphics_tab_layout.addWidget(graphics_group)
 
             dxvk_tab = QWidget()
             dxvk_tab_layout = QVBoxLayout(dxvk_tab)
             dxvk_tab_layout.setContentsMargins(0, 0, 0, 0)
-            dxvk_tab_layout.setSpacing(8)
-            self.dxvk_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            dxvk_tab_layout.setSpacing(0)
+            self.dxvk_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             dxvk_tab_layout.addWidget(self.dxvk_widget)
-            dxvk_tab_layout.addStretch(1)
 
             tabs.addTab(graphics_tab, "Graphics")
             tabs.addTab(dxvk_tab, "DXVK")
             main_layout.addWidget(tabs)
         else:
-            main_layout.addWidget(presets_group)
-            main_layout.addWidget(settings_group)
+            main_layout.addWidget(graphics_group)
 
     def set_game_directory(self, game_dir):
         self.game_dir = game_dir
