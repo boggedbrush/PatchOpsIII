@@ -9,7 +9,7 @@ from typing import Optional
 from PySide6.QtWidgets import (
     QMessageBox, QWidget, QGroupBox, QVBoxLayout, QHBoxLayout, QLabel,
     QComboBox, QPushButton, QFormLayout, QCheckBox, QSpinBox, QLineEdit, QSlider,
-    QSizePolicy
+    QSizePolicy, QTabWidget
 )
 from PySide6.QtGui import QIntValidator, QGuiApplication
 from PySide6.QtCore import Qt, QTimer
@@ -240,16 +240,6 @@ class GraphicsSettingsWidget(QWidget):
         self.apply_preset_btn.clicked.connect(self.apply_preset_clicked)
         presets_layout.addWidget(self.apply_preset_btn)
 
-        if self.dxvk_widget:
-            self.dxvk_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            presets_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            top_row_layout = QHBoxLayout()
-            top_row_layout.addWidget(self.dxvk_widget)
-            top_row_layout.addWidget(presets_group)
-            main_layout.addLayout(top_row_layout)
-        else:
-            main_layout.addWidget(presets_group)
-
         # ================= Graphics Settings Section =================
         settings_group = QGroupBox("Graphics Settings")
         settings_layout = QVBoxLayout(settings_group)
@@ -317,7 +307,33 @@ class GraphicsSettingsWidget(QWidget):
         settings_form.addRow("Render Res %:", self.render_res_spin)
 
         settings_layout.addLayout(settings_form)
-        main_layout.addWidget(settings_group)
+
+        if self.dxvk_widget:
+            tabs = QTabWidget()
+            tabs.setDocumentMode(True)
+
+            graphics_tab = QWidget()
+            graphics_tab_layout = QVBoxLayout(graphics_tab)
+            graphics_tab_layout.setContentsMargins(0, 0, 0, 0)
+            graphics_tab_layout.setSpacing(8)
+            graphics_tab_layout.addWidget(presets_group)
+            graphics_tab_layout.addWidget(settings_group)
+            graphics_tab_layout.addStretch(1)
+
+            dxvk_tab = QWidget()
+            dxvk_tab_layout = QVBoxLayout(dxvk_tab)
+            dxvk_tab_layout.setContentsMargins(0, 0, 0, 0)
+            dxvk_tab_layout.setSpacing(8)
+            self.dxvk_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            dxvk_tab_layout.addWidget(self.dxvk_widget)
+            dxvk_tab_layout.addStretch(1)
+
+            tabs.addTab(graphics_tab, "Graphics")
+            tabs.addTab(dxvk_tab, "DXVK")
+            main_layout.addWidget(tabs)
+        else:
+            main_layout.addWidget(presets_group)
+            main_layout.addWidget(settings_group)
 
     def set_game_directory(self, game_dir):
         self.game_dir = game_dir

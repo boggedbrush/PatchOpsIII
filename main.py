@@ -1414,13 +1414,6 @@ class MainWindow(QMainWindow):
         t7_layout.addStretch(1)
         self.tabs.addTab(t7_tab, load_ui_icon("t7patch"), "T7 Patch")
 
-        # DXVK Tab
-        dxvk_tab = QWidget()
-        dxvk_layout = QVBoxLayout(dxvk_tab)
-        dxvk_layout.addWidget(self.dxvk_widget.groupbox)
-        dxvk_layout.addStretch(1)
-        self.tabs.addTab(dxvk_tab, load_ui_icon("dxvk"), "DXVK")
-
         # Enhanced Tab
         enhanced_tab = QWidget()
         enhanced_layout = QVBoxLayout(enhanced_tab)
