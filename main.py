@@ -1387,25 +1387,6 @@ class MainWindow(QMainWindow):
 
         row = 0
 
-        # Action buttons
-        btn_row = QWidget()
-        btn_layout = QHBoxLayout(btn_row)
-        btn_layout.setContentsMargins(0, 0, 0, 12)
-        btn_layout.setSpacing(10)
-
-        self.enhanced_install_btn = QPushButton("Install / Update Enhanced")
-        self.enhanced_install_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.enhanced_install_btn.clicked.connect(self.on_enhanced_install_clicked)
-        btn_layout.addWidget(self.enhanced_install_btn, 1)
-
-        self.enhanced_uninstall_btn = QPushButton("Uninstall Enhanced")
-        self.enhanced_uninstall_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.enhanced_uninstall_btn.clicked.connect(self.on_enhanced_uninstall_clicked)
-        btn_layout.addWidget(self.enhanced_uninstall_btn, 1)
-
-        layout.addWidget(btn_row, row, 0, 1, 4)
-        row += 1
-
         def _add_sep(r):
             sep = QFrame()
             sep.setObjectName("DashboardDivider")
@@ -1446,6 +1427,27 @@ class MainWindow(QMainWindow):
         layout.addWidget(dump_name, row, 0)
         layout.addWidget(self.enhanced_dump_edit, row, 1, 1, 2)
         layout.addWidget(browse_btn, row, 3)
+        row += 1
+
+        # Action buttons
+        _add_sep(row); row += 1
+
+        btn_row = QWidget()
+        btn_layout = QHBoxLayout(btn_row)
+        btn_layout.setContentsMargins(0, 8, 0, 12)
+        btn_layout.setSpacing(10)
+
+        self.enhanced_install_btn = QPushButton("Install / Update Enhanced")
+        self.enhanced_install_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.enhanced_install_btn.clicked.connect(self.on_enhanced_install_clicked)
+        btn_layout.addWidget(self.enhanced_install_btn, 1)
+
+        self.enhanced_uninstall_btn = QPushButton("Uninstall Enhanced")
+        self.enhanced_uninstall_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.enhanced_uninstall_btn.clicked.connect(self.on_enhanced_uninstall_clicked)
+        btn_layout.addWidget(self.enhanced_uninstall_btn, 1)
+
+        layout.addWidget(btn_row, row, 0, 1, 4)
         row += 1
 
         # Info / guide
