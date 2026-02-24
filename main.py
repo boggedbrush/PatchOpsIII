@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
     QPushButton, QLabel, QFileDialog, QTextEdit, QSizePolicy,
     QGroupBox, QRadioButton, QButtonGroup, QCheckBox, QGridLayout,
-    QMessageBox, QDialog, QStyle, QMenu, QListWidget, QListWidgetItem,
+    QMessageBox, QMenu, QListWidget, QListWidgetItem,
     QStackedWidget, QAbstractItemView, QFrame
 )
 from PySide6.QtGui import QIcon, QDesktopServices, QAction, QFont
@@ -735,128 +735,6 @@ class ApplyLaunchOptionsWorker(QThread):
             self.log_message.emit(f"Error applying launch options: {e}", "Error")
             self.error.emit(str(e))
 
-class DumpSelectionDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("BO3 Enhanced - Dump Required")
-        self.setFixedWidth(600)
-        self.result_path = None
-
-        layout = QVBoxLayout(self)
-        layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
-
-        # Header
-        header = QLabel("<h3>Step 1: Obtain Game Dump</h3>")
-        header.setTextFormat(Qt.RichText)
-        layout.addWidget(header)
-
-        info = QLabel(
-            "To avoid legal risks, PatchOpsIII cannot download game files automatically.\n"
-            "You must provide a UWP dump file manually."
-        )
-        info.setWordWrap(True)
-        layout.addWidget(info)
-
-        # Guide Link
-        guide_layout = QHBoxLayout()
-        guide_icon = QLabel()
-        guide_icon.setPixmap(self.style().standardIcon(QStyle.SP_MessageBoxInformation).pixmap(32, 32))
-        guide_layout.addWidget(guide_icon)
-        
-        link_label = QLabel('<a href="https://youtu.be/rBZZTcSJ9_s?si=41p0r_Enten3h5AQ">Click here to watch the guide on how to get the dump</a>')
-        link_label.setOpenExternalLinks(True)
-        guide_layout.addWidget(link_label)
-        guide_layout.addStretch()
-        layout.addLayout(guide_layout)
-
-        # Divider
-        line = QLabel()
-        line.setFrameShape(QLabel.HLine)
-        line.setFrameShadow(QLabel.Sunken)
-        layout.addWidget(line)
-
-        # Selection
-        step2 = QLabel("<h3>Step 2: Install</h3>")
-        step2.setTextFormat(Qt.RichText)
-        layout.addWidget(step2)
-
-        # Browse Bar
-        browse_layout = QHBoxLayout()
-        browse_layout.setSpacing(10)
-
-        self.path_edit = QLineEdit()
-        self.path_edit.setPlaceholderText("Select DUMP.zip or BlackOps3.exe from dump folder...")
-        browse_layout.addWidget(self.path_edit)
-
-        # Smart Browse Button
-        browse_btn = QPushButton("Browse")
-        browse_btn.clicked.connect(self.smart_browse)
-        browse_layout.addWidget(browse_btn)
-        
-        layout.addLayout(browse_layout)
-
-        # Install Button
-        action_layout = QHBoxLayout()
-        action_layout.addStretch()
-        
-        self.install_btn = QPushButton("Install Enhanced")
-        self.install_btn.clicked.connect(self.validate_and_install)
-        self.install_btn.setEnabled(False) # Disabled until path set
-        self.install_btn.setMinimumWidth(120)
-        
-        action_layout.addWidget(self.install_btn)
-        layout.addLayout(action_layout)
-
-        # Enable install button when text changes
-        self.path_edit.textChanged.connect(self.on_text_changed)
-
-    def on_text_changed(self, text):
-        self.install_btn.setEnabled(bool(text.strip()))
-
-    def smart_browse(self):
-        # We allow selecting ZIPs or specific marker files to identify a folder
-        filter_str = "Dump Sources (DUMP.zip BlackOps3.exe *.zip);;All Files (*)"
-        path, _ = QFileDialog.getOpenFileName(self, "Select Dump Source", "", filter_str)
-        
-        if not path:
-            return
-
-        # Smart inference logic
-        if path.lower().endswith(".zip"):
-            final_path = path
-        elif os.path.basename(path).lower() == "blackops3.exe":
-            # User selected the exe inside the dump folder; infer the folder
-            final_path = os.path.dirname(path)
-        else:
-            # Fallback: just use what they picked, validation will catch if wrong
-            # If it's a file but not a zip, maybe they picked another file in the folder?
-            # Let's try to infer folder if it's unlikely to be the archive
-            if os.path.isfile(path):
-                 final_path = os.path.dirname(path)
-            else:
-                 final_path = path
-
-        self.path_edit.setText(final_path)
-
-    def validate_and_install(self):
-        path = self.path_edit.text().strip()
-        if not path:
-            return
-            
-        if not os.path.exists(path):
-            QMessageBox.critical(self, "Invalid Path", "The selected path does not exist.")
-            return
-
-        # Basic validation before closing
-        # validate_dump_source expects a zip path or a folder path
-        if not validate_dump_source(path):
-             QMessageBox.critical(self, "Invalid Dump", "The selected source is missing required files (appxmanifest.xml, BlackOps3.exe, MicrosoftGame.config).")
-             return
-
-        self.result_path = path
-        self.accept()
-
 
 class EnhancedDownloadWorker(QThread):
     progress = Signal(str)
@@ -1489,42 +1367,100 @@ class MainWindow(QMainWindow):
                 signal.connect(self._on_dashboard_state_changed)
 
     def _build_enhanced_group(self):
-        group = QGroupBox("BO3 Enhanced (Preview)")
+        group = QGroupBox("BO3 Enhanced")
         layout = QGridLayout(group)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setContentsMargins(14, 14, 14, 14)
         layout.setHorizontalSpacing(10)
-        layout.setVerticalSpacing(8)
+        layout.setVerticalSpacing(0)
+
+        row = 0
+
+        # Action buttons
+        btn_row = QWidget()
+        btn_layout = QHBoxLayout(btn_row)
+        btn_layout.setContentsMargins(0, 0, 0, 12)
+        btn_layout.setSpacing(10)
+
+        self.enhanced_install_btn = QPushButton("Install / Update Enhanced")
+        self.enhanced_install_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.enhanced_install_btn.clicked.connect(self.on_enhanced_install_clicked)
+        btn_layout.addWidget(self.enhanced_install_btn, 1)
+
+        self.enhanced_uninstall_btn = QPushButton("Uninstall Enhanced")
+        self.enhanced_uninstall_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.enhanced_uninstall_btn.clicked.connect(self.on_enhanced_uninstall_clicked)
+        btn_layout.addWidget(self.enhanced_uninstall_btn, 1)
+
+        layout.addWidget(btn_row, row, 0, 1, 4)
+        row += 1
+
+        def _add_sep(r):
+            sep = QFrame()
+            sep.setObjectName("DashboardDivider")
+            sep.setFrameShape(QFrame.HLine)
+            sep.setFixedHeight(1)
+            layout.addWidget(sep, r, 0, 1, 4)
+
+        # Status row
+        _add_sep(row); row += 1
+
+        status_name = QLabel("Status")
+        status_name.setObjectName("DashboardStatusName")
+        status_name.setContentsMargins(0, 8, 0, 8)
+
+        self.enhanced_status_label = QLabel(self._status_html("Not installed"))
+        self.enhanced_status_label.setObjectName("DashboardStatusValue")
+        self.enhanced_status_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.enhanced_status_label.setTextFormat(Qt.RichText)
+        self.enhanced_status_label.setContentsMargins(0, 8, 0, 8)
+
+        layout.addWidget(status_name, row, 0)
+        layout.addWidget(self.enhanced_status_label, row, 1, 1, 3)
+        row += 1
+
+        # Game Dump row
+        _add_sep(row); row += 1
+
+        dump_name = QLabel("Game Dump")
+        dump_name.setObjectName("DashboardStatusName")
+        dump_name.setContentsMargins(0, 8, 0, 8)
+
+        self.enhanced_dump_edit = QLineEdit()
+        self.enhanced_dump_edit.setPlaceholderText("Select DUMP.zip or BlackOps3.exe from dump folder…")
+
+        browse_btn = QPushButton("Browse")
+        browse_btn.clicked.connect(self._enhanced_smart_browse)
+
+        layout.addWidget(dump_name, row, 0)
+        layout.addWidget(self.enhanced_dump_edit, row, 1, 1, 2)
+        layout.addWidget(browse_btn, row, 3)
+        row += 1
+
+        # Info / guide
+        _add_sep(row); row += 1
 
         info = QLabel(
-            "BO3 Enhanced improves the game with community fixes, including higher frame rates and faster load times.\n"
-            "Click Install to automatically download and apply the latest version."
+            "PatchOpsIII cannot download game files automatically due to legal restrictions. "
+            "A UWP game dump must be provided manually."
         )
+        info.setObjectName("DashboardStatusName")
         info.setWordWrap(True)
-        layout.addWidget(info, 0, 0, 1, 2)
+        info.setContentsMargins(0, 8, 0, 4)
+        layout.addWidget(info, row, 0, 1, 4)
+        row += 1
 
-        # Primary install/uninstall actions
-        install_row = QHBoxLayout()
-        install_row.setSpacing(10)
-        self.enhanced_install_btn = QPushButton("Install / Update Enhanced")
-        self.enhanced_install_btn.clicked.connect(self.on_enhanced_install_clicked)
-        self.enhanced_uninstall_btn = QPushButton("Uninstall Enhanced")
-        self.enhanced_uninstall_btn.clicked.connect(self.on_enhanced_uninstall_clicked)
-        
-        for btn in (self.enhanced_install_btn, self.enhanced_uninstall_btn):
-            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            
-        install_row.addWidget(self.enhanced_install_btn)
-        install_row.addWidget(self.enhanced_uninstall_btn)
-        
-        layout.addLayout(install_row, 1, 0, 1, 2)
+        guide_link = QLabel('<a href="https://youtu.be/rBZZTcSJ9_s?si=41p0r_Enten3h5AQ">Watch the dump guide on YouTube, and read the video description →</a>')
+        guide_link.setOpenExternalLinks(True)
+        guide_link.setContentsMargins(0, 0, 0, 8)
+        layout.addWidget(guide_link, row, 0, 1, 4)
+        row += 1
 
-        # Status line
-        self.enhanced_status_label = QLabel("Status: Enhanced not installed")
-        layout.addWidget(self.enhanced_status_label, 2, 0, 1, 2)
-        
-        # Add a stretch to push everything up
-        layout.setRowStretch(3, 1)
-        
+        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(2, 2)
+        layout.setColumnStretch(3, 0)
+        layout.setRowStretch(row, 1)
+
         return group
 
     def _build_dashboard_status_group(self):
@@ -1850,7 +1786,8 @@ class MainWindow(QMainWindow):
         active = bool(summary.get("installed"))
         self._enhanced_active = active
         self.enhanced_status_label.setText(
-            "Status: Enhanced Mode Active" if active else "Status: Enhanced not installed"
+            self._status_html("Enhanced Mode Active", "good") if active
+            else self._status_html("Not installed", "neutral")
         )
         self._toggle_launch_options_enabled(not active)
         self.refresh_dashboard_status()
@@ -1875,21 +1812,40 @@ class MainWindow(QMainWindow):
         set_acknowledged(STORAGE_PATH)
         self._enhanced_warning_session_shown = True
 
-    def on_enhanced_install_clicked(self):
-        # Manual dump selection flow
-        dialog = DumpSelectionDialog(self)
-        if dialog.exec() != QDialog.Accepted or not dialog.result_path:
+    def _enhanced_smart_browse(self):
+        filter_str = "Dump Sources (DUMP.zip BlackOps3.exe *.zip);;All Files (*)"
+        path, _ = QFileDialog.getOpenFileName(self, "Select Dump Source", "", filter_str)
+        if not path:
             return
-            
-        self._pending_dump_source = dialog.result_path
+        if path.lower().endswith(".zip"):
+            final_path = path
+        elif os.path.basename(path).lower() == "blackops3.exe":
+            final_path = os.path.dirname(path)
+        else:
+            final_path = os.path.dirname(path) if os.path.isfile(path) else path
+        self.enhanced_dump_edit.setText(final_path)
+
+    def on_enhanced_install_clicked(self):
+        path = self.enhanced_dump_edit.text().strip()
+        if not path:
+            QMessageBox.warning(self, "Dump Required", "Please select a game dump source before installing.")
+            return
+        if not os.path.exists(path):
+            QMessageBox.critical(self, "Invalid Path", "The selected path does not exist.")
+            return
+        if not validate_dump_source(path):
+            QMessageBox.critical(self, "Invalid Dump", "The selected source is missing required files (appxmanifest.xml, BlackOps3.exe, MicrosoftGame.config).")
+            return
+
+        self._pending_dump_source = path
 
         if self._enhanced_worker and self._enhanced_worker.isRunning():
             return
-            
+
         self.enhanced_install_btn.setEnabled(False)
         self.enhanced_uninstall_btn.setEnabled(False)
-        self.enhanced_status_label.setText("Status: Downloading Enhanced files...")
-        
+        self.enhanced_status_label.setText(self._status_html("Downloading Enhanced files…", "info"))
+
         self._enhanced_worker = EnhancedDownloadWorker(MOD_FILES_DIR, STORAGE_PATH)
         self._enhanced_worker.progress.connect(self._on_enhanced_progress)
         self._enhanced_worker.download_complete.connect(self._on_enhanced_download_finished)
@@ -1898,7 +1854,7 @@ class MainWindow(QMainWindow):
         self._enhanced_worker.start()
 
     def _on_enhanced_progress(self, message: str):
-        self.enhanced_status_label.setText(f"Status: {message}")
+        self.enhanced_status_label.setText(self._status_html(message, "info"))
         write_log(message, "Info", self.log_text)
 
     def _on_enhanced_download_finished(self):
@@ -1913,32 +1869,32 @@ class MainWindow(QMainWindow):
             self._reset_enhanced_buttons()
             return
             
-        self.enhanced_status_label.setText("Status: Installing files...")
+        self.enhanced_status_label.setText(self._status_html("Installing files…", "info"))
         write_log("Download complete. Installing BO3 Enhanced files...", "Success", self.log_text)
-        
+
         # Proceed immediately to install using the pending dump source
         game_dir = self.game_dir_edit.text().strip()
         dump_source = getattr(self, "_pending_dump_source", None)
-        
+
         if not dump_source or not os.path.exists(dump_source):
-             self.enhanced_status_label.setText("Status: Installation Failed (Dump missing)")
-             write_log("Pending dump source missing.", "Error", self.log_text)
-             self._reset_enhanced_buttons()
-             return
+            self.enhanced_status_label.setText(self._status_html("Installation Failed — Dump missing", "bad"))
+            write_log("Pending dump source missing.", "Error", self.log_text)
+            self._reset_enhanced_buttons()
+            return
 
         if install_enhanced_files(game_dir, MOD_FILES_DIR, STORAGE_PATH, dump_source, log_widget=self.log_text):
-            self.enhanced_status_label.setText("Status: Enhanced Installed Successfully")
+            self.enhanced_status_label.setText(self._status_html("Installed Successfully", "good"))
             write_exe_variant(game_dir, "enhanced")
             self.refresh_enhanced_status(show_warning=True)
             self.t7_patch_widget.refresh_t7_mode_indicator()
         else:
-            self.enhanced_status_label.setText("Status: Installation Failed")
+            self.enhanced_status_label.setText(self._status_html("Installation Failed", "bad"))
             
         self._reset_enhanced_buttons()
 
     def _on_enhanced_download_failed(self, reason: str):
         self._enhanced_last_failed = True
-        self.enhanced_status_label.setText(f"Status: Failed - {reason}")
+        self.enhanced_status_label.setText(self._status_html(f"Download Failed — {reason}", "bad"))
         write_log(f"BO3 Enhanced download failed: {reason}", "Error", self.log_text)
         self._reset_enhanced_buttons()
 
@@ -1953,21 +1909,21 @@ class MainWindow(QMainWindow):
     def on_enhanced_uninstall_clicked(self):
         self.enhanced_install_btn.setEnabled(False)
         self.enhanced_uninstall_btn.setEnabled(False)
-        self.enhanced_status_label.setText("Status: Uninstalling...")
-        
+        self.enhanced_status_label.setText(self._status_html("Uninstalling…", "info"))
+
         game_dir = self.game_dir_edit.text().strip()
         # Use QTimer to allow UI update before blocking operation
         QTimer.singleShot(100, lambda: self._perform_uninstall(game_dir))
 
     def _perform_uninstall(self, game_dir):
         if uninstall_enhanced_files(game_dir, MOD_FILES_DIR, STORAGE_PATH, log_widget=self.log_text):
-            self.enhanced_status_label.setText("Status: Enhanced Uninstalled")
+            self.enhanced_status_label.setText(self._status_html("Uninstalled", "neutral"))
             write_exe_variant(game_dir, "default")
             self.refresh_enhanced_status(show_warning=False)
             self.t7_patch_widget.refresh_t7_mode_indicator()
         else:
-            self.enhanced_status_label.setText("Status: Uninstall execution failed")
-            
+            self.enhanced_status_label.setText(self._status_html("Uninstall Failed", "bad"))
+
         self.enhanced_install_btn.setEnabled(True)
         self.enhanced_uninstall_btn.setEnabled(True)
 
