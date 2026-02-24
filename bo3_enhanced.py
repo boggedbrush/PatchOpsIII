@@ -742,6 +742,8 @@ def uninstall_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str
     # Reload state after dump uninstall, since uninstall_dump_only may mutate persisted keys.
     state = load_state(storage_dir)
     installed_files = state.get("installed_files", [])
+    # Dump payload files are handled by uninstall_dump_only; avoid reprocessing them here.
+    installed_files = [rel_path for rel_path in installed_files if not _should_copy_dump_member(rel_path)]
 
     restored = 0
     removed = 0
