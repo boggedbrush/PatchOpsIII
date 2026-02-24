@@ -20,7 +20,10 @@ NUITKA_ARGS=(
 )
 
 if [ -d "assets" ]; then
-  NUITKA_ARGS+=("--include-data-files=assets/**=assets/")
+  NUITKA_ARGS+=("--include-data-dir=assets=assets")
+fi
+if [ -d "icons" ]; then
+  NUITKA_ARGS+=("--include-data-dir=icons=icons")
 fi
 if [ -f "presets.json" ]; then
   NUITKA_ARGS+=("--include-data-files=presets.json=presets.json")

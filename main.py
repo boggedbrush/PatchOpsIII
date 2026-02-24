@@ -6,10 +6,12 @@ import errno
 import shutil
 import time
 import tempfile
+import urllib.request
 import vdf
 import platform
 import argparse
 import json
+import inspect
 from functools import lru_cache
 from typing import Optional
 
@@ -18,15 +20,29 @@ os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.*=false;qt.scenegraph.general=
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
-    QPushButton, QLabel, QFileDialog, QTextEdit, QTabWidget, QSizePolicy,
+    QPushButton, QLabel, QFileDialog, QTextEdit, QSizePolicy,
     QGroupBox, QRadioButton, QButtonGroup, QCheckBox, QGridLayout,
-    QMessageBox
+    QMessageBox, QMenu, QListWidget, QListWidgetItem,
+    QStackedWidget, QAbstractItemView, QFrame
 )
-from PySide6.QtGui import QIcon, QDesktopServices
-from PySide6.QtCore import Qt, QUrl, QThread, Signal, QTimer
+from PySide6.QtGui import QIcon, QDesktopServices, QAction, QFont
+from PySide6.QtCore import Qt, QUrl, QThread, Signal, QTimer, QSize
 
-from t7_patch import T7PatchWidget, is_admin
-from dxvk_manager import DXVKWidget
+# QtModernRedux (Qt6 fork) imports are resolved dynamically to support both module names
+try:
+    import qtmodernredux6.styles as qt_styles
+    import qtmodernredux6.windows as qt_windows
+    QT_MODERN_AVAILABLE = True
+except ModuleNotFoundError:
+    try:
+        import qtmodernredux.styles as qt_styles
+        import qtmodernredux.windows as qt_windows
+        QT_MODERN_AVAILABLE = True
+    except ModuleNotFoundError:
+        QT_MODERN_AVAILABLE = False
+
+from t7_patch import T7PatchWidget, is_admin, check_t7_patch_status, restore_lpc_backups
+from dxvk_manager import DXVKWidget, is_dxvk_async_installed, manage_dxvk_async
 from config import GraphicsSettingsWidget, AdvancedSettingsWidget
 from updater import ReleaseInfo, WindowsUpdater, prompt_linux_update
 from utils import (
@@ -37,8 +53,68 @@ from utils import (
     app_id,
     launch_game_via_steam,
     manage_log_retention_on_launch,
+    patchops_backup_path,
+    existing_backup_path,
+    PATCHOPS_BACKUP_SUFFIX,
+    LEGACY_BACKUP_SUFFIX,
+    read_exe_variant,
+    write_exe_variant,
+    file_sha256,
+    get_workshop_item_state,
+)
+from bo3_enhanced import (
+    download_latest_enhanced,
+    detect_enhanced_install,
+    GITHUB_LATEST_ENHANCED_PAGE,
+    install_enhanced_files,
+    install_dump_only,
+    uninstall_dump_only,
+    mark_enhanced_detected,
+    set_acknowledged,
+    status_summary,
+    uninstall_enhanced_files,
+    validate_dump_source,
 )
 from version import APP_VERSION
+
+REFORGED_DOWNLOAD_URL = "https://downloads.bo3reforged.com/BlackOps3.exe"
+REFORGED_WORKSHOP_URL = "https://steamcommunity.com/sharedfiles/filedetails/?id=3667377161"
+REFORGED_WORKSHOP_STEAM_URL = f"steam://openurl/{REFORGED_WORKSHOP_URL}"
+REFORGED_DOWNLOAD_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/octet-stream,*/*;q=0.8",
+    "Referer": "https://bo3reforged.com/",
+}
+
+WORKSHOP_PROFILES = {
+    "all_around": {
+        "name": "All-around Enhancement Lite",
+        "workshop_id": "2994481309",
+        "workshop_url": "https://steamcommunity.com/sharedfiles/filedetails/?id=2994481309",
+        "launch_option": "+set fs_game 2994481309",
+    },
+    "ultimate": {
+        "name": "Ultimate Experience Mod",
+        "workshop_id": "2942053577",
+        "workshop_url": "https://steamcommunity.com/sharedfiles/filedetails/?id=2942053577",
+        "launch_option": "+set fs_game 2942053577",
+    },
+    "forged": {
+        "name": "Reforged",
+        "workshop_id": "3667377161",
+        "workshop_url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3667377161",
+        "launch_option": "+set fs_game 3667377161",
+    },
+}
+
+# Trusted SHA-256 hashes for known-good Reforged executables.
+# Update when upstream publishes a new verified build.
+REFORGED_TRUSTED_SHA256 = {
+    "66b95eb4667bd5b3b3d230e7bed1d29ccd261d48ca2699f01216c863be24ff44",
+}
 
 
 NUITKA_ENVIRONMENT_KEYS = (
@@ -48,6 +124,72 @@ NUITKA_ENVIRONMENT_KEYS = (
 )
 
 _NUITKA_DETECTION_KEYS = NUITKA_ENVIRONMENT_KEYS + ("NUITKA_ONEFILE_TEMP",)
+
+
+def apply_modern_theme(app: QApplication) -> None:
+    """Lightweight overlay styles to complement QtModernRedux."""
+    app.setStyleSheet(
+        """
+        QLabel#HeadingTitle {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        QLabel#HeadingVersion {
+            font-size: 11px;
+            color: rgb(150, 155, 165);
+        }
+        QPushButton#PrimaryButton {
+            font-weight: 600;
+            padding: 6px 14px;
+        }
+        QPushButton#SecondaryButton {
+            padding: 6px 12px;
+        }
+        QTextEdit#LogView {
+            font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+            font-size: 11px;
+        }
+        QListWidget#SidebarTabs {
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.12);
+            padding: 6px;
+        }
+        QListWidget#SidebarTabs::item {
+            padding: 8px 10px;
+            border-radius: 8px;
+        }
+        QListWidget#SidebarTabs::item:hover {
+            background: rgba(255, 255, 255, 0.06);
+        }
+        QListWidget#SidebarTabs::item:selected {
+            background: rgba(255, 255, 255, 0.12);
+        }
+        QLabel#DashboardStatusName {
+            color: rgb(170, 175, 185);
+            font-size: 12px;
+        }
+        QLabel#DashboardStatusValue {
+            font-size: 12px;
+            font-weight: 600;
+        }
+        QLabel[workshopState="good"] {
+            color: #4ade80;
+            font-weight: 600;
+        }
+        QLabel[workshopState="info"] {
+            color: #60a5fa;
+            font-weight: 600;
+        }
+        QLabel[workshopState="bad"] {
+            color: #f87171;
+            font-weight: 600;
+        }
+        QFrame#DashboardDivider {
+            color: rgba(255, 255, 255, 0.08);
+        }
+        """
+    )
 
 
 def _normalize_dir(path):
@@ -268,6 +410,83 @@ def load_application_icon():
             return icon, resolved
 
     return QIcon(), None
+
+
+@lru_cache(maxsize=64)
+def load_ui_icon(icon_name: str) -> QIcon:
+    resolved = resource_path(os.path.join("icons", f"{icon_name}.svg"))
+    if not resolved:
+        return QIcon()
+    return QIcon(resolved)
+
+
+class SidebarTabWidget(QWidget):
+    currentChanged = Signal(int)
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self._nav = QListWidget()
+        self._nav.setObjectName("SidebarTabs")
+        self._nav.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._nav.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._nav.setIconSize(QSize(20, 20))
+        self._nav.setSpacing(2)
+        self._nav.setFocusPolicy(Qt.NoFocus)
+        self._nav.setUniformItemSizes(True)
+        self._nav.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        self._nav.setFixedWidth(160)
+
+        self._stack = QStackedWidget()
+        self._stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+        layout.addWidget(self._nav)
+        layout.addWidget(self._stack, 1)
+
+        self._nav.currentRowChanged.connect(self._on_row_changed)
+
+    def setDocumentMode(self, enabled: bool) -> None:  # noqa: ARG002
+        # Kept for compatibility with QTabWidget callers.
+        return
+
+    def addTab(self, widget: QWidget, *args):
+        if len(args) == 1:
+            icon = QIcon()
+            label = args[0]
+        elif len(args) == 2:
+            icon, label = args
+        else:
+            raise TypeError("addTab(widget, label) or addTab(widget, icon, label)")
+
+        index = self._stack.addWidget(widget)
+        item = QListWidgetItem(icon, label)
+        item.setSizeHint(QSize(0, 40))
+        self._nav.addItem(item)
+
+        if self._nav.count() == 1:
+            self._nav.setCurrentRow(0)
+
+        return index
+
+    def widget(self, index: int) -> Optional[QWidget]:
+        return self._stack.widget(index)
+
+    def currentIndex(self) -> int:
+        return self._stack.currentIndex()
+
+    def setCurrentIndex(self, index: int) -> None:
+        self._nav.setCurrentRow(index)
+
+    def count(self) -> int:
+        return self._stack.count()
+
+    def _on_row_changed(self, row: int) -> None:
+        if row < 0 or row >= self._stack.count():
+            return
+        self._stack.setCurrentIndex(row)
+        self.currentChanged.emit(row)
 
 @lru_cache(maxsize=1)
 def get_application_path():
@@ -565,80 +784,377 @@ class ApplyLaunchOptionsWorker(QThread):
             self.log_message.emit(f"Error applying launch options: {e}", "Error")
             self.error.emit(str(e))
 
+
+class EnhancedDownloadWorker(QThread):
+    progress = Signal(str)
+    download_complete = Signal()
+    failed = Signal(str)
+
+    def __init__(self, mod_files_dir: str, storage_dir: str):
+        super().__init__()
+        self.mod_files_dir = mod_files_dir
+        self.storage_dir = storage_dir
+
+    def run(self):
+        try:
+            self.progress.emit("Fetching latest BO3 Enhanced release...")
+            enhanced_path = download_latest_enhanced(self.mod_files_dir, self.storage_dir)
+            if not enhanced_path:
+                raise RuntimeError("Failed to download BO3 Enhanced.")
+
+            mark_enhanced_detected(self.storage_dir)
+            self.progress.emit("BO3 Enhanced assets ready.")
+            self.download_complete.emit()
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(str(exc))
+
+
+class ReforgedInstallWorker(QThread):
+    progress = Signal(str)
+    installed = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, game_dir: str):
+        super().__init__()
+        self.game_dir = game_dir
+
+    def run(self):
+        temp_path = None
+        try:
+            if not self.game_dir or not os.path.isdir(self.game_dir):
+                raise RuntimeError("Invalid game directory.")
+
+            target_exe = find_game_executable(self.game_dir) or os.path.join(self.game_dir, "BlackOps3.exe")
+            os.makedirs(self.game_dir, exist_ok=True)
+
+            self.progress.emit("Downloading Reforged executable...")
+            fd, temp_path = tempfile.mkstemp(prefix="patchops_reforged_", suffix=".exe")
+            os.close(fd)
+
+            request = urllib.request.Request(REFORGED_DOWNLOAD_URL, headers=REFORGED_DOWNLOAD_HEADERS)
+            with urllib.request.urlopen(request, timeout=120) as response, open(temp_path, "wb") as handle:
+                while True:
+                    chunk = response.read(1024 * 256)
+                    if not chunk:
+                        break
+                    handle.write(chunk)
+
+            if os.path.getsize(temp_path) <= 0:
+                raise RuntimeError("Downloaded file is empty.")
+
+            with open(temp_path, "rb") as handle:
+                if handle.read(2) != b"MZ":
+                    raise RuntimeError("Downloaded file is not a valid Windows executable.")
+            downloaded_hash = file_sha256(temp_path)
+            if not downloaded_hash:
+                raise RuntimeError("Failed to compute SHA-256 for downloaded Reforged executable.")
+            if downloaded_hash.lower() not in REFORGED_TRUSTED_SHA256:
+                raise RuntimeError(
+                    "Downloaded Reforged executable failed integrity verification (unknown SHA-256)."
+                )
+
+            if os.path.exists(target_exe):
+                backup_path = patchops_backup_path(target_exe)
+                if existing_backup_path(target_exe):
+                    self.progress.emit("Existing executable backup found. Preserving original backup...")
+                else:
+                    self.progress.emit("Backing up current executable...")
+                    shutil.copy2(target_exe, backup_path)
+
+            os.replace(temp_path, target_exe)
+            temp_path = None
+            self.installed.emit(target_exe)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
+
+
+class ResetToStockWorker(QThread):
+    progress = Signal(str, str)
+    finished = Signal(bool, str)
+
+    def __init__(self, game_dir: str, mod_files_dir: str, storage_dir: str):
+        super().__init__()
+        self.game_dir = game_dir
+        self.mod_files_dir = mod_files_dir
+        self.storage_dir = storage_dir
+
+    def _emit(self, message: str, category: str = "Info"):
+        self.progress.emit(message, category)
+
+    def _uninstall_t7_patch_silent(self):
+        game_files = [
+            "t7patch.dll",
+            "t7patch.conf",
+            "discord_game_sdk.dll",
+            "dsound.dll",
+            "t7patchloader.dll",
+            "zbr2.dll",
+        ]
+        removed = 0
+        for filename in game_files:
+            path = os.path.join(self.game_dir, filename)
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                    removed += 1
+                except Exception as exc:
+                    self._emit(f"Failed removing {filename}: {exc}", "Warning")
+        if removed:
+            self._emit(f"Removed {removed} T7 Patch files from game directory.", "Success")
+        restore_lpc_backups(self.game_dir, None)
+
+    @staticmethod
+    def _restore_qol_files_to_stock(game_dir: str):
+        dll_file = os.path.join(game_dir, "d3dcompiler_46.dll")
+        dll_backup = existing_backup_path(dll_file)
+        if dll_backup and not os.path.exists(dll_file):
+            os.rename(dll_backup, dll_file)
+
+        video_dir = os.path.join(game_dir, "video")
+        if not os.path.isdir(video_dir):
+            return
+        for filename in os.listdir(video_dir):
+            src = os.path.join(video_dir, filename)
+            if filename.endswith(PATCHOPS_BACKUP_SUFFIX):
+                restored_name = filename[:-len(PATCHOPS_BACKUP_SUFFIX)]
+            elif filename.endswith(LEGACY_BACKUP_SUFFIX):
+                restored_name = filename[:-len(LEGACY_BACKUP_SUFFIX)]
+            else:
+                continue
+            dst = os.path.join(video_dir, restored_name)
+            if not os.path.exists(dst):
+                os.rename(src, dst)
+
+    @staticmethod
+    def _set_config_defaults(game_dir: str):
+        config_path = os.path.join(game_dir, "players", "config.ini")
+        if not os.path.exists(config_path):
+            return
+        try:
+            os.chmod(config_path, 0o644)
+        except Exception:
+            pass
+
+        replacements = {
+            "SmoothFramerate": "0",
+            "VideoMemory": "1",
+            "StreamMinResident": "0",
+            "MaxFrameLatency": "1",
+            "SerializeRender": "0",
+            "RestrictGraphicsOptions": "1",
+        }
+
+        with open(config_path, "r", encoding="utf-8") as handle:
+            lines = handle.readlines()
+
+        updated = []
+        seen = set()
+        for line in lines:
+            replaced = False
+            for key, value in replacements.items():
+                pattern = rf'^\s*{re.escape(key)}\s*='
+                if re.search(pattern, line):
+                    updated.append(f'{key} = "{value}"\n')
+                    seen.add(key)
+                    replaced = True
+                    break
+            if not replaced:
+                updated.append(line)
+
+        for key, value in replacements.items():
+            if key not in seen:
+                updated.append(f'{key} = "{value}"\n')
+
+        with open(config_path, "w", encoding="utf-8") as handle:
+            handle.writelines(updated)
+
+    def run(self):
+        try:
+            self._emit("Starting full reset to stock configuration...", "Info")
+
+            try:
+                enhanced_summary = status_summary(self.game_dir, self.storage_dir)
+                if enhanced_summary.get("installed") or detect_enhanced_install(self.game_dir):
+                    uninstall_enhanced_files(self.game_dir, self.mod_files_dir, self.storage_dir, log_widget=None)
+            except Exception as exc:
+                self._emit(f"Enhanced reset step failed: {exc}", "Warning")
+
+            try:
+                target_exe = find_game_executable(self.game_dir) or os.path.join(self.game_dir, "BlackOps3.exe")
+                backup_path = existing_backup_path(target_exe)
+                if backup_path and os.path.exists(backup_path):
+                    if os.path.exists(target_exe):
+                        os.remove(target_exe)
+                    os.rename(backup_path, target_exe)
+                    self._emit("Restored original executable from backup.", "Success")
+                write_exe_variant(self.game_dir, "default")
+            except Exception as exc:
+                self._emit(f"Reforged reset step failed: {exc}", "Warning")
+
+            try:
+                apply_launch_options("", None)
+                self._emit("Cleared Steam launch options.", "Success")
+            except Exception as exc:
+                self._emit(f"Launch options reset failed: {exc}", "Warning")
+
+            try:
+                self._uninstall_t7_patch_silent()
+            except Exception as exc:
+                self._emit(f"T7 reset step failed: {exc}", "Warning")
+
+            try:
+                manage_dxvk_async(self.game_dir, "Uninstall", None, self.mod_files_dir)
+                dxvk_conf_path = os.path.join(self.game_dir, "dxvk.conf")
+                if os.path.exists(dxvk_conf_path):
+                    os.remove(dxvk_conf_path)
+                    self._emit("Removed dxvk.conf.", "Success")
+            except Exception as exc:
+                self._emit(f"DXVK reset step failed: {exc}", "Warning")
+
+            try:
+                self._restore_qol_files_to_stock(self.game_dir)
+                self._set_config_defaults(self.game_dir)
+            except Exception as exc:
+                self._emit(f"Settings reset step failed: {exc}", "Warning")
+
+            self.finished.emit(True, "Stock reset complete.")
+        except Exception as exc:
+            self.finished.emit(False, f"Stock reset failed: {exc}")
+
+
 class QualityOfLifeWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.game_dir = None
         self.log_widget = None
+        self.worker = None
+        self.workshop_install_worker = None
 
         # --- Launch Options group box ---
         self.launch_group = QGroupBox("Launch Options")
         self.launch_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        launch_grid = QGridLayout(self.launch_group)
-        launch_grid.setContentsMargins(5, 5, 5, 5)
-        launch_grid.setSpacing(5)
-        launch_grid.setAlignment(Qt.AlignTop)
+        launch_layout = QGridLayout(self.launch_group)
+        launch_layout.setContentsMargins(14, 14, 14, 14)
+        launch_layout.setHorizontalSpacing(10)
+        launch_layout.setVerticalSpacing(0)
 
         self.radio_group = QButtonGroup(self)
         self.radio_none = QRadioButton("Default (None)")
-        self.radio_all_around = QRadioButton("All-around Enhancement Lite")
-        self.radio_ultimate = QRadioButton("Ultimate Experience Mod")
+        self.radio_all_around = QRadioButton(WORKSHOP_PROFILES["all_around"]["name"])
+        self.radio_ultimate = QRadioButton(WORKSHOP_PROFILES["ultimate"]["name"])
+        self.radio_forged = QRadioButton(WORKSHOP_PROFILES["forged"]["name"])
         self.radio_offline = QRadioButton("Play Offline")
         self.radio_none.setChecked(True)
+        self.workshop_profile_radios = {}
+        self.workshop_profile_status_labels = {}
 
-        # Block signals during initialization
-        for rb in [self.radio_none, self.radio_all_around, self.radio_ultimate, self.radio_offline]:
+        for rb in [self.radio_none, self.radio_all_around, self.radio_ultimate, self.radio_forged, self.radio_offline]:
             rb.blockSignals(True)
             self.radio_group.addButton(rb)
             rb.blockSignals(False)
 
-        # Create help buttons with links
+        # Help buttons (flat, fixed-size, link to mod pages)
         all_around_help = QPushButton("?")
         ultimate_help = QPushButton("?")
-        all_around_help.setFixedSize(20, 20)
-        ultimate_help.setFixedSize(20, 20)
-        
-        # Connect buttons to open URLs
+        forged_help = QPushButton("?")
+        for btn in [all_around_help, ultimate_help, forged_help]:
+            btn.setFixedSize(22, 22)
+            btn.setFlat(True)
         all_around_help.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl("steam://openurl/https://steamcommunity.com/sharedfiles/filedetails/?id=2994481309"))
         )
         ultimate_help.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl("steam://openurl/https://steamcommunity.com/sharedfiles/filedetails/?id=2942053577"))
         )
+        forged_help.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl("https://bo3reforged.com/"))
+        )
 
-        # Put the radio buttons and help buttons in rows
-        launch_grid.addWidget(self.radio_none, 0, 0)
-        launch_grid.addWidget(self.radio_offline, 1, 0)
-        
-        all_around_widget = QWidget()
-        all_around_layout = QHBoxLayout(all_around_widget)
-        all_around_layout.setContentsMargins(0, 0, 0, 0)
-        all_around_layout.addWidget(self.radio_all_around)
-        all_around_layout.addWidget(all_around_help)
-        all_around_layout.addStretch()
-        launch_grid.addWidget(all_around_widget, 2, 0)
-        
-        ultimate_widget = QWidget()
-        ultimate_layout = QHBoxLayout(ultimate_widget)
-        ultimate_layout.setContentsMargins(0, 0, 0, 0)
-        ultimate_layout.addWidget(self.radio_ultimate)
-        ultimate_layout.addWidget(ultimate_help)
-        ultimate_layout.addStretch()
-        launch_grid.addWidget(ultimate_widget, 3, 0)
+        def _launch_row(layout, row, radio, help_btn=None, status_label=None):
+            container = QWidget()
+            hbox = QHBoxLayout(container)
+            hbox.setContentsMargins(0, 3, 0, 3)
+            hbox.setSpacing(8)
+            hbox.addWidget(radio, 0)
+            if help_btn:
+                hbox.addWidget(help_btn, 0)
+            hbox.addStretch(1)
+            if status_label:
+                hbox.addWidget(status_label, 0, Qt.AlignRight)
+            layout.addWidget(container, row, 0, 1, 2)
 
-        for rb in [self.radio_none, self.radio_all_around, self.radio_ultimate, self.radio_offline]:
-            self.radio_group.addButton(rb)
+        def _launch_sep(layout, row):
+            sep = QFrame()
+            sep.setObjectName("DashboardDivider")
+            sep.setFrameShape(QFrame.HLine)
+            sep.setFixedHeight(1)
+            layout.addWidget(sep, row, 0, 1, 2)
 
-        # Center the Apply button in row 4
+        def _workshop_status_label():
+            label = QLabel("Not Subscribed")
+            label.setObjectName("DashboardStatusValue")
+            label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            return label
+
+        all_around_status = _workshop_status_label()
+        ultimate_status = _workshop_status_label()
+        forged_status = _workshop_status_label()
+        self.workshop_profile_radios.update({
+            "all_around": self.radio_all_around,
+            "ultimate": self.radio_ultimate,
+            "forged": self.radio_forged,
+        })
+        self.workshop_profile_status_labels.update({
+            "all_around": all_around_status,
+            "ultimate": ultimate_status,
+            "forged": forged_status,
+        })
+
+        lrow = 0
+        _launch_row(launch_layout, lrow, self.radio_none);          lrow += 1
+        _launch_sep(launch_layout, lrow);                           lrow += 1
+        _launch_row(launch_layout, lrow, self.radio_offline);       lrow += 1
+        _launch_sep(launch_layout, lrow);                           lrow += 1
+        _launch_row(launch_layout, lrow, self.radio_all_around, all_around_help, all_around_status); lrow += 1
+        _launch_sep(launch_layout, lrow);                           lrow += 1
+        _launch_row(launch_layout, lrow, self.radio_ultimate, ultimate_help, ultimate_status);     lrow += 1
+        _launch_sep(launch_layout, lrow);                           lrow += 1
+        _launch_row(launch_layout, lrow, self.radio_forged, forged_help, forged_status);         lrow += 1
+
+        # Action buttons row
+        _launch_sep(launch_layout, lrow);                           lrow += 1
+        btn_row = QWidget()
+        btn_layout = QHBoxLayout(btn_row)
+        btn_layout.setContentsMargins(0, 4, 0, 0)
+        btn_layout.setSpacing(10)
+
+        self.install_workshop_button = QPushButton("Install Selected Mod")
+        self.install_workshop_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.install_workshop_button.clicked.connect(self.on_install_selected_workshop_mod)
+        btn_layout.addWidget(self.install_workshop_button, 1)
+
+        self.refresh_workshop_status_button = QPushButton("Refresh")
+        self.refresh_workshop_status_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.refresh_workshop_status_button.clicked.connect(self.refresh_workshop_status)
+        btn_layout.addWidget(self.refresh_workshop_status_button, 1)
+
         self.apply_button = QPushButton("Apply")
+        self.apply_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.apply_button.clicked.connect(self.on_apply_launch_options)
-        apply_hbox = QHBoxLayout()
-        apply_hbox.addStretch()
-        apply_hbox.addWidget(self.apply_button)
-        apply_hbox.addStretch()
-        apply_container = QWidget()
-        apply_container.setLayout(apply_hbox)
-        launch_grid.addWidget(apply_container, 4, 0, 1, 1)
+        btn_layout.addWidget(self.apply_button, 1)
+
+        launch_layout.addWidget(btn_row, lrow, 0, 1, 2)
+        lrow += 1
+
+        launch_layout.setColumnStretch(0, 1)
+        launch_layout.setColumnStretch(1, 0)
+        launch_layout.setRowStretch(lrow, 1)
 
         # --- Quality of Life group box ---
         self.checkbox_group = QGroupBox("Quality of Life")
@@ -668,27 +1184,93 @@ class QualityOfLifeWidget(QWidget):
         self.game_dir = game_dir
         if self.game_dir:
             video_dir = os.path.join(self.game_dir, "video")
-            intro_bak = os.path.join(video_dir, "BO3_Global_Logo_LogoSequence.mkv.bak")
-            self.skip_intro_cb.setChecked(os.path.exists(intro_bak))
+            intro_path = os.path.join(video_dir, "BO3_Global_Logo_LogoSequence.mkv")
+            self.skip_intro_cb.setChecked(existing_backup_path(intro_path) is not None)
             
             if os.path.exists(video_dir):
                 mkv_files = [f for f in os.listdir(video_dir) if f.endswith('.mkv')]
-                bak_files = [f for f in os.listdir(video_dir) if f.endswith('.mkv.bak')]
+                bak_files = [
+                    f for f in os.listdir(video_dir)
+                    if f.endswith(f".mkv{PATCHOPS_BACKUP_SUFFIX}") or f.endswith(f".mkv{LEGACY_BACKUP_SUFFIX}")
+                ]
                 self.skip_all_intro_cb.setChecked(len(bak_files) > 0 and len(mkv_files) == 0)
 
             dll_file = os.path.join(self.game_dir, "d3dcompiler_46.dll")
-            dll_bak = dll_file + ".bak"
-            self.reduce_stutter_cb.setChecked(os.path.exists(dll_bak))
+            self.reduce_stutter_cb.setChecked(existing_backup_path(dll_file) is not None)
 
     def set_log_widget(self, log_widget):
         self.log_widget = log_widget
+
+    def _selected_launch_option(self):
+        if self.radio_none.isChecked():
+            return ""
+        if self.radio_all_around.isChecked() and self.radio_all_around.isEnabled():
+            return WORKSHOP_PROFILES["all_around"]["launch_option"]
+        if self.radio_ultimate.isChecked() and self.radio_ultimate.isEnabled():
+            return WORKSHOP_PROFILES["ultimate"]["launch_option"]
+        if self.radio_forged.isChecked() and self.radio_forged.isEnabled():
+            return WORKSHOP_PROFILES["forged"]["launch_option"]
+        if self.radio_offline.isChecked():
+            return "+set fs_game offlinemp"
+        return ""
+
+    def _selected_workshop_profile(self):
+        if self.radio_all_around.isChecked() and self.radio_all_around.isEnabled():
+            return WORKSHOP_PROFILES["all_around"]
+        if self.radio_ultimate.isChecked() and self.radio_ultimate.isEnabled():
+            return WORKSHOP_PROFILES["ultimate"]
+        if self.radio_forged.isChecked() and self.radio_forged.isEnabled():
+            return WORKSHOP_PROFILES["forged"]
+        return None
+
+    def _preserve_existing_wine_overrides(self, option):
+        user_id = find_steam_user_id()
+        if not user_id:
+            return option
+        config_path = os.path.join(steam_userdata_path, user_id, "config", "localconfig.vdf")
+        if not os.path.exists(config_path):
+            return option
+        try:
+            with open(config_path, "r", encoding="utf-8") as file:
+                data = vdf.load(file)
+            current_options = data.get("UserLocalConfigStore", {}).get("Software", {}).get("Valve", {}).get("Steam", {}).get("apps", {}).get(app_id, {}).get("LaunchOptions", "")
+            if 'WINEDLLOVERRIDES="dsound=n,b"' in current_options:
+                if option:
+                    return f'WINEDLLOVERRIDES="dsound=n,b" %command% {option}'
+                return 'WINEDLLOVERRIDES="dsound=n,b" %command%'
+        except Exception as e:
+            write_log(f"Error reading current launch options: {e}", "Error", self.log_widget)
+        return option
+
+    def refresh_workshop_status(self):
+        for key, radio in self.workshop_profile_radios.items():
+            profile = WORKSHOP_PROFILES[key]
+            state = get_workshop_item_state(app_id, profile["workshop_id"])
+            status_label_widget = self.workshop_profile_status_labels.get(key)
+            if state.get("installed"):
+                status_label = "Installed"
+                status_state = "good"
+            elif state.get("subscribed"):
+                status_label = "Subscribed"
+                status_state = "info"
+            else:
+                status_label = "Not Subscribed"
+                status_state = "bad"
+
+            radio.setText(profile["name"])
+            if status_label_widget is not None:
+                status_label_widget.setText(f"\u25cf {status_label}")
+                status_label_widget.setProperty("workshopState", status_state)
+                status_label_widget.style().unpolish(status_label_widget)
+                status_label_widget.style().polish(status_label_widget)
 
     def skip_intro_changed(self):
         if not self.game_dir:
             return
         video_dir = os.path.join(self.game_dir, "video")
         intro_file = os.path.join(video_dir, "BO3_Global_Logo_LogoSequence.mkv")
-        intro_file_bak = intro_file + ".bak"
+        intro_file_bak = patchops_backup_path(intro_file)
+        legacy_intro_bak = f"{intro_file}{LEGACY_BACKUP_SUFFIX}"
 
         if not os.path.exists(video_dir):
             write_log("Video directory not found.", "Warning", self.log_widget)
@@ -696,7 +1278,7 @@ class QualityOfLifeWidget(QWidget):
 
         if self.skip_intro_cb.isChecked():
             # If backup exists, assume the intro is already skipped
-            if os.path.exists(intro_file_bak):
+            if os.path.exists(intro_file_bak) or os.path.exists(legacy_intro_bak):
                 write_log("Intro video already skipped.", "Success", self.log_widget)
             else:
                 # If the original file exists, rename it
@@ -710,9 +1292,10 @@ class QualityOfLifeWidget(QWidget):
                     # Neither original nor backup exist, but the user wants intros skipped
                     write_log("Intro video skipped.", "Success", self.log_widget)
         else:
-            if os.path.exists(intro_file_bak):
+            backup_path = existing_backup_path(intro_file)
+            if backup_path:
                 try:
-                    os.rename(intro_file_bak, intro_file)
+                    os.rename(backup_path, intro_file)
                     write_log("Intro video restored.", "Success", self.log_widget)
                 except Exception as e:
                     write_log(f"Failed to restore intro video file: {e}", "Error", self.log_widget)
@@ -734,7 +1317,7 @@ class QualityOfLifeWidget(QWidget):
             mkv_files = [f for f in os.listdir(video_dir) if f.endswith('.mkv')]
             for mkv_file in mkv_files:
                 file_path = os.path.join(video_dir, mkv_file)
-                bak_path = file_path + '.bak'
+                bak_path = patchops_backup_path(file_path)
                 try:
                     if not os.path.exists(bak_path):
                         os.rename(file_path, bak_path)
@@ -743,14 +1326,22 @@ class QualityOfLifeWidget(QWidget):
             write_log("All intro videos skipped.", "Success", self.log_widget)
         else:
             main_intro = "BO3_Global_Logo_LogoSequence.mkv"
-            bak_files = [f for f in os.listdir(video_dir) if f.endswith('.mkv.bak')]
-            for bak_file in bak_files:
+            backup_candidates = [
+                f for f in os.listdir(video_dir)
+                if f.endswith(f".mkv{PATCHOPS_BACKUP_SUFFIX}") or f.endswith(f".mkv{LEGACY_BACKUP_SUFFIX}")
+            ]
+            for bak_file in backup_candidates:
+                if bak_file.endswith(PATCHOPS_BACKUP_SUFFIX):
+                    file_name = bak_file[:-len(PATCHOPS_BACKUP_SUFFIX)]
+                else:
+                    file_name = bak_file[:-len(LEGACY_BACKUP_SUFFIX)]
+
                 # If user still wants main intro skipped, don't restore that one
-                if bak_file == main_intro + '.bak' and self.skip_intro_cb.isChecked():
+                if file_name == main_intro and self.skip_intro_cb.isChecked():
                     continue
 
                 bak_path = os.path.join(video_dir, bak_file)
-                file_path = bak_path[:-4]
+                file_path = os.path.join(video_dir, file_name)
                 try:
                     if not os.path.exists(file_path):
                         os.rename(bak_path, file_path)
@@ -762,7 +1353,8 @@ class QualityOfLifeWidget(QWidget):
         if not self.game_dir:
             return
         dll_file = os.path.join(self.game_dir, "d3dcompiler_46.dll")
-        dll_bak = dll_file + ".bak"
+        dll_bak = patchops_backup_path(dll_file)
+        legacy_dll_bak = f"{dll_file}{LEGACY_BACKUP_SUFFIX}"
         if self.reduce_stutter_cb.isChecked():
             if os.path.exists(dll_file):
                 try:
@@ -770,14 +1362,15 @@ class QualityOfLifeWidget(QWidget):
                     write_log("Renamed d3dcompiler_46.dll to reduce stuttering.", "Success", self.log_widget)
                 except Exception:
                     write_log("Failed to rename d3dcompiler_46.dll.", "Error", self.log_widget)
-            elif os.path.exists(dll_bak):
+            elif os.path.exists(dll_bak) or os.path.exists(legacy_dll_bak):
                 write_log("Already using latest d3dcompiler.", "Success", self.log_widget)
             else:
                 write_log("d3dcompiler_46.dll not found.", "Warning", self.log_widget)
         else:
-            if os.path.exists(dll_bak):
+            backup_path = existing_backup_path(dll_file)
+            if backup_path:
                 try:
-                    os.rename(dll_bak, dll_file)
+                    os.rename(backup_path, dll_file)
                     write_log("Restored d3dcompiler_46.dll.", "Success", self.log_widget)
                 except Exception:
                     write_log("Failed to restore d3dcompiler_46.dll.", "Error", self.log_widget)
@@ -785,33 +1378,9 @@ class QualityOfLifeWidget(QWidget):
                 write_log("Backup not found to restore.", "Warning", self.log_widget)
 
     def on_apply_launch_options(self):
-        # Figure out which radio is checked
-        if self.radio_none.isChecked():
-            option = ""
-        elif self.radio_all_around.isChecked():
-            option = "+set fs_game 2994481309"
-        elif self.radio_ultimate.isChecked():
-            option = "+set fs_game 2942053577"
-        elif self.radio_offline.isChecked():
-            option = "+set fs_game offlinemp"
-
-        # Get current launch options to preserve T7Patch settings
-        user_id = find_steam_user_id()
-        if user_id:
-            config_path = os.path.join(steam_userdata_path, user_id, "config", "localconfig.vdf")
-            if os.path.exists(config_path):
-                try:
-                    with open(config_path, "r", encoding="utf-8") as file:
-                        data = vdf.load(file)
-                    current_options = data.get("UserLocalConfigStore", {}).get("Software", {}).get("Valve", {}).get("Steam", {}).get("apps", {}).get(app_id, {}).get("LaunchOptions", "")
-                    if 'WINEDLLOVERRIDES="dsound=n,b"' in current_options:
-                        if option:
-                            option = f'WINEDLLOVERRIDES="dsound=n,b" %command% {option}'
-                        else:
-                            option = 'WINEDLLOVERRIDES="dsound=n,b" %command%'
-                except Exception as e:
-                    write_log(f"Error reading current launch options: {e}", "Error", self.log_widget)
-
+        option = self._preserve_existing_wine_overrides(self._selected_launch_option())
+        if self.worker and self.worker.isRunning():
+            return
         self.apply_button.setEnabled(False)
         self.worker = ApplyLaunchOptionsWorker(option)
         self.worker.log_message.connect(self.log_message_received) # Connect to the new log_message signal
@@ -819,15 +1388,56 @@ class QualityOfLifeWidget(QWidget):
         self.worker.error.connect(self.on_apply_error)
         self.worker.start()
 
+    def on_install_selected_workshop_mod(self):
+        profile = self._selected_workshop_profile()
+        if not profile:
+            write_log(
+                "Select a workshop launch option before using one-click install.",
+                "Warning",
+                self.log_widget,
+            )
+            return
+        if self.workshop_install_worker and self.workshop_install_worker.isRunning():
+            return
+
+        option = self._preserve_existing_wine_overrides(self._selected_launch_option())
+        workshop_url = f"steam://openurl/{profile['workshop_url']}"
+        QDesktopServices.openUrl(QUrl(workshop_url))
+        write_log(f"Opened {profile['name']} workshop page in Steam.", "Info", self.log_widget)
+
+        self.apply_button.setEnabled(False)
+        self.install_workshop_button.setEnabled(False)
+        self.workshop_install_worker = ApplyLaunchOptionsWorker(option)
+        self.workshop_install_worker.log_message.connect(self.log_message_received)
+        self.workshop_install_worker.finished.connect(self.on_workshop_install_finished)
+        self.workshop_install_worker.error.connect(self.on_workshop_install_error)
+        self.workshop_install_worker.start()
+
     def log_message_received(self, message, category):
         write_log(message, category, self.log_widget)
 
     def on_apply_finished(self):
         self.apply_button.setEnabled(True)
+        QTimer.singleShot(1500, self.refresh_workshop_status)
 
     def on_apply_error(self, error_message):
         self.apply_button.setEnabled(True)
         write_log(f"Error applying launch options: {error_message}", "Error", self.log_widget)
+
+    def on_workshop_install_finished(self):
+        self.apply_button.setEnabled(True)
+        self.install_workshop_button.setEnabled(True)
+        write_log(
+            "Applied launch options for selected workshop mod. Steam may still need time to download content.",
+            "Success",
+            self.log_widget,
+        )
+        QTimer.singleShot(2000, self.refresh_workshop_status)
+
+    def on_workshop_install_error(self, error_message):
+        self.apply_button.setEnabled(True)
+        self.install_workshop_button.setEnabled(True)
+        write_log(f"Workshop install flow failed: {error_message}", "Error", self.log_widget)
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -840,6 +1450,14 @@ class MainWindow(QMainWindow):
         self._staged_script_path: Optional[str] = None
         self._default_update_button_text = "Check for Updates"
         self._linux_update_worker = None
+        self._enhanced_warning_session_shown = False
+        self._steam_default_warning_session_shown = False
+        self._enhanced_active = False
+        self._enhanced_worker: Optional[EnhancedDownloadWorker] = None
+        self._reforged_worker: Optional[ReforgedInstallWorker] = None
+        self._reset_stock_worker: Optional[ResetToStockWorker] = None
+        self._reforged_stored_password = ""
+        self._enhanced_last_failed = False
 
         icon, icon_source = load_application_icon()
         if icon.isNull():
@@ -862,35 +1480,25 @@ class MainWindow(QMainWindow):
         if os.path.exists(os.path.join(get_application_path(), "BlackOps3.exe")):
             write_log("Black Ops III found in the same directory as PatchOpsIII", "Info", self.log_text)
 
-        # Connect tab changed signal
-        self.tabs.currentChanged.connect(self.on_tab_changed)
-
         if self._system == "Windows":
             self._initialize_windows_updater()
         elif self._system == "Linux":
             QTimer.singleShot(2500, self._auto_check_for_linux_updates)
 
     def load_launch_options_state(self):
-        # Get the Steam user ID and read current launch options
-        user_id = find_steam_user_id()
-        if not user_id:
-            return
-
-        config_path = os.path.join(steam_userdata_path, user_id, "config", "localconfig.vdf")
-        if not os.path.exists(config_path):
+        current_options = self._get_applied_launch_options()
+        if current_options is None:
+            self.refresh_dashboard_status()
             return
 
         try:
-            with open(config_path, "r", encoding="utf-8") as file:
-                data = vdf.load(file)
-            
-            current_options = data.get("UserLocalConfigStore", {}).get("Software", {}).get("Valve", {}).get("Steam", {}).get("apps", {}).get(app_id, {}).get("LaunchOptions", "")
-            
             # Set radio button state based on current options without applying
             if "+set fs_game 2994481309" in current_options:
                 self.qol_widget.radio_all_around.setChecked(True)
             elif "+set fs_game 2942053577" in current_options:
                 self.qol_widget.radio_ultimate.setChecked(True)
+            elif "+set fs_game 3667377161" in current_options:
+                self.qol_widget.radio_forged.setChecked(True)
             elif "+set fs_game offlinemp" in current_options:
                 self.qol_widget.radio_offline.setChecked(True)
             else:
@@ -898,68 +1506,95 @@ class MainWindow(QMainWindow):
             
         except Exception as e:
             write_log(f"Error loading launch options state: {e}", "Error", self.log_text)
+        finally:
+            self.qol_widget.refresh_workshop_status()
+            self.refresh_dashboard_status()
 
     def init_ui(self):
         central = QWidget()
         main_layout = QVBoxLayout(central)
+        main_layout.setContentsMargins(16, 16, 16, 16)
+        main_layout.setSpacing(12)
 
-        # Game Directory Section
-        game_dir_widget = QWidget()
-        gd_layout = QVBoxLayout(game_dir_widget)
-        gd_layout.setContentsMargins(0, 0, 0, 0)
-        gd_layout.setSpacing(6)
+        # Header bar with title, version, and quick actions
+        header = QWidget()
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(10)
 
-        directory_row = QHBoxLayout()
-        directory_row.setSpacing(10)
-        self.game_dir_edit = QLineEdit(DEFAULT_GAME_DIR)
-        self.game_dir_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        label_text = (
-            "Current Directory:" if DEFAULT_GAME_DIR == get_application_path()
-            else "Game Directory:"
-        )
-        directory_row.addWidget(QLabel(label_text))
-        directory_row.addWidget(self.game_dir_edit, 1)
+        title_label = QLabel("PatchOpsIII")
+        title_label.setObjectName("HeadingTitle")
+        version_label = QLabel(f"v{APP_VERSION}")
+        version_label.setObjectName("HeadingVersion")
 
-        buttons_container = QWidget()
-        buttons_layout = QHBoxLayout(buttons_container)
-        buttons_layout.setContentsMargins(0, 0, 0, 0)
-        buttons_layout.setSpacing(10)
-        buttons_container.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-
-        browse_btn = QPushButton("Browse")
-        browse_btn.clicked.connect(self.browse_game_dir)
-        buttons_layout.addWidget(browse_btn)
-
-        launch_game_btn = QPushButton("Launch Game")
-        launch_game_btn.clicked.connect(self.launch_game)
-        buttons_layout.addWidget(launch_game_btn)
-
-        directory_row.addWidget(buttons_container)
-        gd_layout.addLayout(directory_row)
+        header_layout.addWidget(title_label)
+        header_layout.addWidget(version_label)
+        header_layout.addStretch()
 
         self.update_button = None
         if self._system in ("Windows", "Linux"):
             self.update_button = QPushButton(self._default_update_button_text)
+            self.update_button.setObjectName("SecondaryButton")
             self.update_button.clicked.connect(self.on_update_button_clicked)
             self.update_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            update_icon = load_ui_icon("update")
+            if not update_icon.isNull():
+                self.update_button.setIcon(update_icon)
+                self.update_button.setIconSize(QSize(18, 18))
+            header_layout.addWidget(self.update_button)
 
-            def _sync_update_button_width():
-                total_width = (
-                    browse_btn.sizeHint().width()
-                    + launch_game_btn.sizeHint().width()
-                    + buttons_layout.spacing()
-                )
-                self.update_button.setFixedWidth(total_width)
+        launch_game_btn = QPushButton("Launch Game")
+        launch_game_btn.setObjectName("PrimaryButton")
+        launch_game_btn.clicked.connect(self.launch_game)
+        launch_icon = load_ui_icon("launch")
+        if not launch_icon.isNull():
+            launch_game_btn.setIcon(launch_icon)
+            launch_game_btn.setIconSize(QSize(18, 18))
+        header_layout.addWidget(launch_game_btn)
 
-            _sync_update_button_width()
-            QTimer.singleShot(0, _sync_update_button_width)
+        main_layout.addWidget(header)
 
-            update_row = QHBoxLayout()
-            update_row.addStretch(1)
-            update_row.addWidget(self.update_button)
-            gd_layout.addLayout(update_row)
+        # Game Directory Section
+        path_container = QWidget()
+        path_container_layout = QVBoxLayout(path_container)
+        path_container_layout.setContentsMargins(0, 0, 0, 0)
+        path_container_layout.setSpacing(4)
 
-        main_layout.addWidget(game_dir_widget)
+        path_label = QLabel(
+            "Current Directory:" if DEFAULT_GAME_DIR == get_application_path() else "Game Directory:"
+        )
+        path_label.setObjectName("HeadingVersion")
+        path_container_layout.addWidget(path_label)
+
+        directory_row = QHBoxLayout()
+        directory_row.setContentsMargins(0, 0, 0, 0)
+        directory_row.setSpacing(8)
+
+        self.game_dir_edit = QLineEdit(DEFAULT_GAME_DIR)
+        self.game_dir_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.game_dir_edit.setPlaceholderText("Black Ops III directory")
+        directory_row.addWidget(self.game_dir_edit, 1)
+
+        self.game_dir_edit.ensurePolished()
+        directory_control_height = self.game_dir_edit.sizeHint().height()
+
+        browse_btn = QPushButton("Browse…")
+        browse_btn.setObjectName("SecondaryButton")
+        browse_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        browse_icon = load_ui_icon("browse")
+        if not browse_icon.isNull():
+            browse_btn.setIcon(browse_icon)
+            browse_btn.setIconSize(QSize(18, 18))
+        browse_btn.setFixedHeight(directory_control_height)
+        browse_btn.clicked.connect(self.browse_game_dir)
+        directory_row.addWidget(browse_btn)
+
+        launch_game_btn.setFixedHeight(directory_control_height)
+        if self.update_button is not None:
+            self.update_button.setFixedHeight(directory_control_height)
+
+        path_container_layout.addLayout(directory_row)
+        main_layout.addWidget(path_container)
 
         # Individual widgets
         self.t7_patch_widget = T7PatchWidget(MOD_FILES_DIR)
@@ -967,59 +1602,86 @@ class MainWindow(QMainWindow):
         self.qol_widget = QualityOfLifeWidget()
         self.graphics_widget = GraphicsSettingsWidget(dxvk_widget=self.dxvk_widget)
         self.advanced_widget = AdvancedSettingsWidget()
+        self.advanced_widget.reset_to_stock_requested.connect(self.reset_to_stock)
+        self.enhanced_group = self._build_enhanced_group()
+        self.dashboard_status_group = self._build_dashboard_status_group()
 
         # Tabs
-        self.tabs = QTabWidget()
+        self.tabs = SidebarTabWidget()
         self.tabs.currentChanged.connect(self.on_tab_changed)
+        self.tabs.setDocumentMode(True)
 
-        # Mods Tab with Grid Layout
-        mods_tab = QWidget()
-        mods_grid = QGridLayout(mods_tab)
-        mods_grid.setContentsMargins(5, 5, 5, 5)
-        mods_grid.setSpacing(10)
+        # Dashboard Tab with Grid Layout
+        dashboard_tab = QWidget()
+        dashboard_grid = QGridLayout(dashboard_tab)
+        dashboard_grid.setContentsMargins(5, 5, 5, 5)
+        dashboard_grid.setHorizontalSpacing(14)
+        dashboard_grid.setVerticalSpacing(10)
 
-        # Configure grid spacing
-        mods_grid.setHorizontalSpacing(20)
-        mods_grid.setVerticalSpacing(10)
+        # Row 0: full-width status overview
+        dashboard_grid.addWidget(self.dashboard_status_group, 0, 0, 1, 2)
 
-        # Row 0: T7 Patch and Launch Options - without alignment to fill cells
-        mods_grid.addWidget(self.t7_patch_widget.groupbox, 0, 0)
-        mods_grid.addWidget(self.qol_widget.launch_group, 0, 1)
+        # Row 1: quality-of-life (left) and launch options (right)
+        dashboard_grid.addWidget(self.qol_widget.checkbox_group, 1, 0)
+        dashboard_grid.addWidget(self.qol_widget.launch_group, 1, 1)
 
-        # Row 1: DXVK and Options
-        mods_grid.addWidget(self.dxvk_widget.groupbox, 1, 0)
-        mods_grid.addWidget(self.qol_widget.checkbox_group, 1, 1)
+        # Set column and row stretches
+        dashboard_grid.setColumnStretch(0, 1)
+        dashboard_grid.setColumnStretch(1, 1)
+        dashboard_grid.setRowStretch(0, 0)
+        dashboard_grid.setRowStretch(1, 1)
 
-        # Set equal column and row stretches
-        mods_grid.setColumnStretch(0, 1)
-        mods_grid.setColumnStretch(1, 1)
-        mods_grid.setRowStretch(0, 1)
-        mods_grid.setRowStretch(1, 1)
+        self.tabs.addTab(dashboard_tab, load_ui_icon("mods"), "Dashboard")
 
-        self.tabs.addTab(mods_tab, "Mods")
+        # T7 Patch Tab
+        t7_tab = QWidget()
+        t7_layout = QVBoxLayout(t7_tab)
+        t7_layout.addWidget(self.t7_patch_widget.groupbox)
+        t7_layout.addStretch(1)
+        self.tabs.addTab(t7_tab, load_ui_icon("t7patch"), "T7 Patch")
+
+        # Enhanced Tab
+        enhanced_tab = QWidget()
+        enhanced_layout = QVBoxLayout(enhanced_tab)
+        enhanced_layout.addWidget(self.enhanced_group)
+        enhanced_layout.addStretch(1)
+        self.enhanced_tab_index = self.tabs.addTab(enhanced_tab, load_ui_icon("enhanced"), "Enhanced")
+
+        # Reforged Tab
+        reforged_tab = QWidget()
+        reforged_layout = QVBoxLayout(reforged_tab)
+        reforged_layout.addWidget(self._build_reforged_group())
+        reforged_layout.addStretch(1)
+        self.tabs.addTab(reforged_tab, load_ui_icon("reforged"), "Reforged")
 
         # Graphics Tab
         graphics_tab = QWidget()
         graphics_layout = QVBoxLayout(graphics_tab)
         graphics_layout.addWidget(self.graphics_widget)
-        self.tabs.addTab(graphics_tab, "Graphics")
+        self.tabs.addTab(graphics_tab, load_ui_icon("graphics"), "Graphics")
 
         # Advanced Tab
         advanced_tab = QWidget()
         advanced_layout = QVBoxLayout(advanced_tab)
         advanced_layout.addWidget(self.advanced_widget)
-        self.tabs.addTab(advanced_tab, "Advanced")
+        self.advanced_tab_index = self.tabs.addTab(advanced_tab, load_ui_icon("advanced"), "Advanced")
 
         main_layout.addWidget(self.tabs)
 
         # Log Window
+        log_group = QGroupBox("Activity Log")
+        log_layout = QVBoxLayout(log_group)
+        log_layout.setContentsMargins(8, 8, 8, 8)
         self.log_text = QTextEdit()
+        self.log_text.setObjectName("LogView")
         self.log_text.setReadOnly(True)
-        self.log_text.setStyleSheet("background-color: black; color: white; font-family: Consolas;")
-        main_layout.addWidget(self.log_text)
+        self.log_text.setMaximumHeight(130)
+        log_layout.addWidget(self.log_text)
+        main_layout.addWidget(log_group)
 
         self.setCentralWidget(central)
-        self.adjustSize()
+        self.setMinimumSize(820, 560)
+        self.resize(1020, 680)
 
         # Initialize with the default directory
         game_dir = self.game_dir_edit.text().strip()
@@ -1028,15 +1690,941 @@ class MainWindow(QMainWindow):
         self.dxvk_widget.set_log_widget(self.log_text)
         self.graphics_widget.set_log_widget(self.log_text)
         self.advanced_widget.set_log_widget(self.log_text)
+        self.advanced_widget.set_mod_files_dir(MOD_FILES_DIR)
         self.qol_widget.set_log_widget(self.log_text)
+        self.qol_widget.refresh_workshop_status()
+        self.refresh_enhanced_status(show_warning=True)
+        self.refresh_dashboard_status()
+
+        for control in (
+            self.qol_widget.radio_none,
+            self.qol_widget.radio_all_around,
+            self.qol_widget.radio_ultimate,
+            self.qol_widget.radio_forged,
+            self.qol_widget.radio_offline,
+            self.qol_widget.reduce_stutter_cb,
+            self.qol_widget.skip_intro_cb,
+            self.qol_widget.skip_all_intro_cb,
+        ):
+            signal = getattr(control, "toggled", None)
+            if signal is not None:
+                signal.connect(self._on_dashboard_state_changed)
+
+    def _build_enhanced_group(self):
+        group = QGroupBox("BO3 Enhanced")
+        layout = QGridLayout(group)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(0)
+
+        row = 0
+
+        def _add_sep(r):
+            sep = QFrame()
+            sep.setObjectName("DashboardDivider")
+            sep.setFrameShape(QFrame.HLine)
+            sep.setFixedHeight(1)
+            layout.addWidget(sep, r, 0, 1, 4)
+
+        # Status row
+        _add_sep(row); row += 1
+
+        status_name = QLabel("Status")
+        status_name.setObjectName("DashboardStatusName")
+        status_name.setContentsMargins(0, 8, 0, 8)
+
+        self.enhanced_status_label = QLabel(self._status_html("Not installed"))
+        self.enhanced_status_label.setObjectName("DashboardStatusValue")
+        self.enhanced_status_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.enhanced_status_label.setTextFormat(Qt.RichText)
+        self.enhanced_status_label.setContentsMargins(0, 8, 0, 8)
+
+        layout.addWidget(status_name, row, 0)
+        layout.addWidget(self.enhanced_status_label, row, 1, 1, 3)
+        row += 1
+
+        # Game Dump row
+        _add_sep(row); row += 1
+
+        dump_name = QLabel("Game Dump")
+        dump_name.setObjectName("DashboardStatusName")
+        dump_name.setContentsMargins(0, 8, 0, 8)
+
+        self.enhanced_dump_edit = QLineEdit()
+        self.enhanced_dump_edit.setPlaceholderText("Select DUMP.zip or BlackOps3.exe from dump folder…")
+
+        browse_btn = QPushButton("Browse")
+        browse_btn.clicked.connect(self._enhanced_smart_browse)
+
+        layout.addWidget(dump_name, row, 0)
+        layout.addWidget(self.enhanced_dump_edit, row, 1, 1, 2)
+        layout.addWidget(browse_btn, row, 3)
+        row += 1
+
+        # Action buttons
+        _add_sep(row); row += 1
+
+        btn_row = QWidget()
+        btn_layout = QHBoxLayout(btn_row)
+        btn_layout.setContentsMargins(0, 8, 0, 12)
+        btn_layout.setSpacing(10)
+
+        self.enhanced_install_btn = QPushButton("Install / Update Enhanced")
+        self.enhanced_install_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.enhanced_install_btn.clicked.connect(self.on_enhanced_install_clicked)
+        btn_layout.addWidget(self.enhanced_install_btn, 1)
+
+        self.enhanced_uninstall_btn = QPushButton("Uninstall Enhanced")
+        self.enhanced_uninstall_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.enhanced_uninstall_btn.clicked.connect(self.on_enhanced_uninstall_clicked)
+        btn_layout.addWidget(self.enhanced_uninstall_btn, 1)
+
+        layout.addWidget(btn_row, row, 0, 1, 4)
+        row += 1
+
+        # Info / guide
+        _add_sep(row); row += 1
+
+        info = QLabel(
+            "PatchOpsIII cannot download game files automatically due to legal restrictions. "
+            "A UWP game dump must be provided manually."
+        )
+        info.setObjectName("DashboardStatusName")
+        info.setWordWrap(True)
+        info.setContentsMargins(0, 8, 0, 4)
+        layout.addWidget(info, row, 0, 1, 4)
+        row += 1
+
+        guide_link = QLabel('<a href="https://youtu.be/rBZZTcSJ9_s?si=41p0r_Enten3h5AQ">Watch the dump guide on YouTube, and read the video description →</a>')
+        guide_link.setOpenExternalLinks(True)
+        guide_link.setContentsMargins(0, 0, 0, 8)
+        layout.addWidget(guide_link, row, 0, 1, 4)
+        row += 1
+
+        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(2, 2)
+        layout.setColumnStretch(3, 0)
+        layout.setRowStretch(row, 1)
+
+        return group
+
+    def _build_dashboard_status_group(self):
+        group = QGroupBox("Status Overview")
+        layout = QGridLayout(group)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setHorizontalSpacing(0)
+        layout.setVerticalSpacing(0)
+
+        status_rows = [
+            ("T7 Patch", "dashboard_t7_status"),
+            ("DXVK-GPLAsync", "dashboard_dxvk_status"),
+            ("BO3 Enhanced", "dashboard_enhanced_status"),
+            ("BO3 Reforged", "dashboard_reforged_status"),
+            ("Launch Option", "dashboard_launch_status"),
+            ("Quality of Life", "dashboard_qol_status"),
+        ]
+
+        for i, (name_text, attr) in enumerate(status_rows):
+            # Thin separator line between rows (except first)
+            if i > 0:
+                sep = QFrame()
+                sep.setObjectName("DashboardDivider")
+                sep.setFrameShape(QFrame.HLine)
+                sep.setFixedHeight(1)
+                layout.addWidget(sep, i * 2 - 1, 0, 1, 2)
+
+            name_lbl = QLabel(name_text)
+            name_lbl.setObjectName("DashboardStatusName")
+            name_lbl.setContentsMargins(0, 5, 0, 5)
+
+            val_lbl = QLabel(self._status_html("—"))
+            val_lbl.setObjectName("DashboardStatusValue")
+            val_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            val_lbl.setTextFormat(Qt.RichText)
+            val_lbl.setContentsMargins(0, 5, 0, 5)
+
+            setattr(self, attr, val_lbl)
+
+            layout.addWidget(name_lbl, i * 2, 0)
+            layout.addWidget(val_lbl, i * 2, 1)
+
+        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(1, 2)
+        layout.setRowStretch(len(status_rows) * 2, 1)
+        return group
+
+    def _on_dashboard_state_changed(self, *_):
+        self.refresh_dashboard_status()
+
+    @staticmethod
+    def _status_html(text: str, state: str = "neutral") -> str:
+        """Return an HTML-colored status string for dashboard labels.
+
+        state values: 'good' (green), 'bad' (muted red), 'info' (blue), 'neutral' (gray)
+        """
+        colors = {
+            "good": "#4ade80",
+            "bad": "#f87171",
+            "info": "#60a5fa",
+            "neutral": "#9ca3af",
+        }
+        color = colors.get(state, colors["neutral"])
+        return f'<span style="color:{color};">&#9679; {text}</span>'
+
+    def _get_applied_launch_options(self):
+        user_id = find_steam_user_id()
+        if not user_id:
+            return None
+        config_path = os.path.join(steam_userdata_path, user_id, "config", "localconfig.vdf")
+        if not os.path.exists(config_path):
+            return None
+        try:
+            with open(config_path, "r", encoding="utf-8") as file:
+                data = vdf.load(file)
+            return data.get("UserLocalConfigStore", {}).get("Software", {}).get("Valve", {}).get("Steam", {}).get("apps", {}).get(app_id, {}).get("LaunchOptions", "")
+        except Exception:
+            return None
+
+    def _clear_reforged_launch_option_if_active(self):
+        applied_options = self._get_applied_launch_options() or ""
+        if "+set fs_game 3667377161" not in applied_options:
+            return
+        try:
+            cleaned_options = self._without_reforged_launch_option(applied_options)
+            write_log(
+                "Reforged launch option is active. Clearing it because Reforged was uninstalled.",
+                "Info",
+                self.log_text,
+            )
+            apply_launch_options(cleaned_options, None)
+            self.load_launch_options_state()
+            write_log("Reforged launch option cleared.", "Success", self.log_text)
+        except Exception as exc:
+            write_log(
+                f"Failed to clear Reforged launch option after uninstall: {exc}",
+                "Error",
+                self.log_text,
+            )
+
+    @staticmethod
+    def _without_reforged_launch_option(launch_options: str) -> str:
+        cleaned = re.sub(
+            r"(?:^|\s)\+set\s+fs_game\s+3667377161(?=\s|$)",
+            " ",
+            launch_options or "",
+        )
+        return re.sub(r"\s{2,}", " ", cleaned).strip()
+
+    def _apply_post_reset_ui_defaults(self):
+        # Keep UI updates quiet after worker has already applied file-level changes.
+        qol_controls = [
+            self.qol_widget.skip_all_intro_cb,
+            self.qol_widget.skip_intro_cb,
+            self.qol_widget.reduce_stutter_cb,
+        ]
+        adv_controls = [
+            self.advanced_widget.lock_config_cb,
+            self.advanced_widget.smooth_cb,
+            self.advanced_widget.vram_cb,
+            self.advanced_widget.vram_limit_spin,
+            self.advanced_widget.latency_spin,
+            self.advanced_widget.reduce_cpu_cb,
+            self.advanced_widget.all_settings_cb,
+        ]
+
+        for control in qol_controls + adv_controls:
+            control.blockSignals(True)
+        try:
+            self.qol_widget.skip_all_intro_cb.setChecked(False)
+            self.qol_widget.skip_intro_cb.setChecked(False)
+            self.qol_widget.reduce_stutter_cb.setChecked(False)
+
+            self.advanced_widget.lock_config_cb.setChecked(False)
+            self.advanced_widget.smooth_cb.setChecked(False)
+            self.advanced_widget.vram_cb.setChecked(False)
+            self.advanced_widget.vram_limit_spin.setValue(75)
+            self.advanced_widget.latency_spin.setValue(1)
+            self.advanced_widget.reduce_cpu_cb.setChecked(False)
+            self.advanced_widget.all_settings_cb.setChecked(False)
+        finally:
+            for control in qol_controls + adv_controls:
+                control.blockSignals(False)
+
+    def _on_reset_stock_progress(self, message: str, category: str):
+        write_log(message, category, self.log_text)
+
+    def _on_reset_stock_finished(self, success: bool, message: str):
+        if getattr(self.advanced_widget, "reset_stock_btn", None):
+            self.advanced_widget.reset_stock_btn.setEnabled(True)
+
+        game_dir = self.game_dir_edit.text().strip()
+        self.load_launch_options_state()
+        self._apply_post_reset_ui_defaults()
+        self._apply_game_directory(game_dir, save=False)
+        self.refresh_enhanced_status(show_warning=False)
+        self.refresh_dashboard_status()
+        self.t7_patch_widget.refresh_t7_mode_indicator()
+
+        write_log(message, "Success" if success else "Error", self.log_text)
+        self._reset_stock_worker = None
+
+    def reset_to_stock(self):
+        game_dir = self.game_dir_edit.text().strip()
+        if not os.path.isdir(game_dir):
+            write_log("Set a valid game directory before resetting to stock.", "Error", self.log_text)
+            return
+        if self._reset_stock_worker and self._reset_stock_worker.isRunning():
+            return
+
+        if getattr(self.advanced_widget, "reset_stock_btn", None):
+            self.advanced_widget.reset_stock_btn.setEnabled(False)
+        self._reset_stock_worker = ResetToStockWorker(game_dir, MOD_FILES_DIR, STORAGE_PATH)
+        self._reset_stock_worker.progress.connect(self._on_reset_stock_progress)
+        self._reset_stock_worker.finished.connect(self._on_reset_stock_finished)
+        self._reset_stock_worker.start()
+
+    @staticmethod
+    def _launch_option_name_from_string(launch_options: str):
+        options = launch_options or ""
+        if "+set fs_game 2994481309" in options:
+            return "All-around Enhancement Lite"
+        if "+set fs_game 2942053577" in options:
+            return "Ultimate Experience Mod"
+        if "+set fs_game 3667377161" in options:
+            return "Forged"
+        if "+set fs_game offlinemp" in options:
+            return "Play Offline"
+        return "Default (None)"
+
+    def _is_reforged_active(self, game_dir: str) -> bool:
+        if not game_dir or not os.path.isdir(game_dir):
+            return False
+
+        exe_path = find_game_executable(game_dir)
+        exe_hash = file_sha256(exe_path) if exe_path else None
+        if exe_hash and exe_hash.lower() in REFORGED_TRUSTED_SHA256:
+            return True
+
+        # Do not trust persisted variant state on its own; executable content is source of truth.
+        if read_exe_variant(game_dir) == "reforged" and exe_hash is None and exe_path and os.path.exists(exe_path):
+            return True
+
+        return False
+
+    def _set_reforged_composite_status(self, *, exe_installed: bool, launch_active: bool):
+        exe_text = "Installed" if exe_installed else "Not Installed"
+        launch_text = "Active" if launch_active else "Inactive"
+        status_text = f"{exe_text} | {launch_text}"
+
+        if exe_installed and launch_active:
+            state = "good"
+        elif exe_installed:
+            state = "info"
+        elif launch_active:
+            state = "info"
+        else:
+            state = "neutral"
+
+        self.dashboard_reforged_status.setText(self._status_html(status_text, state))
+
+        # Keep the Reforged tab status aligned with dashboard state unless a worker
+        # is currently reporting install/uninstall progress.
+        worker_running = bool(self._reforged_worker and self._reforged_worker.isRunning())
+        if not worker_running and hasattr(self, "reforged_status_label"):
+            self.reforged_status_label.setText(self._status_html(status_text, state))
+
+    def refresh_dashboard_status(self):
+        game_dir = self.game_dir_edit.text().strip()
+        if not os.path.isdir(game_dir):
+            _na = self._status_html("Not configured", "neutral")
+            self.dashboard_t7_status.setText(_na)
+            self.dashboard_dxvk_status.setText(_na)
+            self.dashboard_enhanced_status.setText(_na)
+            self.dashboard_reforged_status.setText(_na)
+            self.dashboard_launch_status.setText(_na)
+            self.dashboard_qol_status.setText(_na)
+            return
+
+        t7_status = check_t7_patch_status(game_dir)
+        t7_installed = os.path.exists(os.path.join(game_dir, "t7patch.conf"))
+        t7_label = "Installed" if t7_installed else "Not Installed"
+        if t7_installed and t7_status.get("gamertag"):
+            t7_label = f"Installed ({t7_status.get('plain_name', t7_status['gamertag'])})"
+        self.dashboard_t7_status.setText(
+            self._status_html(t7_label, "good" if t7_installed else "neutral")
+        )
+
+        dxvk_installed = is_dxvk_async_installed(game_dir)
+        self.dashboard_dxvk_status.setText(
+            self._status_html("Installed" if dxvk_installed else "Not Installed",
+                              "good" if dxvk_installed else "neutral")
+        )
+
+        enhanced_summary = status_summary(game_dir, STORAGE_PATH)
+        enhanced_active = bool(enhanced_summary.get("installed"))
+        self.dashboard_enhanced_status.setText(
+            self._status_html("Active" if enhanced_active else "Not Installed",
+                              "good" if enhanced_active else "neutral")
+        )
+
+        applied_launch_options = self._get_applied_launch_options() or ""
+        launch_name = self._launch_option_name_from_string(applied_launch_options)
+
+        reforged_exe_installed = self._is_reforged_active(game_dir)
+        reforged_launch_active = "+set fs_game 3667377161" in applied_launch_options
+        self._set_reforged_composite_status(
+            exe_installed=reforged_exe_installed,
+            launch_active=reforged_launch_active,
+        )
+
+        launch_state = "neutral" if launch_name == "Default (None)" else "info"
+        self.dashboard_launch_status.setText(self._status_html(launch_name, launch_state))
+
+        active_qol = []
+        if self.qol_widget.reduce_stutter_cb.isChecked():
+            active_qol.append("Latest d3dcompiler")
+        if self.qol_widget.skip_intro_cb.isChecked() and not self.qol_widget.skip_all_intro_cb.isChecked():
+            active_qol.append("Skip Intro")
+        if self.qol_widget.skip_all_intro_cb.isChecked():
+            active_qol.append("Skip All Intros")
+        qol_text = ", ".join(active_qol) if active_qol else "None enabled"
+        self.dashboard_qol_status.setText(
+            self._status_html(qol_text, "good" if active_qol else "neutral")
+        )
+
+    def _set_reforged_password(self, password: str):
+        self._reforged_stored_password = password or ""
+        if self._reforged_stored_password:
+            text = self._reforged_stored_password if self._reforged_pw_display_eye.isChecked() else "••••••"
+        else:
+            text = "None"
+        self.reforged_current_pw_label.setText(text)
+
+    def _toggle_reforged_pw_display(self, checked: bool):
+        self._reforged_pw_display_eye.setIcon(load_ui_icon("eye" if checked else "eye-off"))
+        if self._reforged_stored_password:
+            self.reforged_current_pw_label.setText(self._reforged_stored_password if checked else "••••••")
+
+    def _toggle_reforged_pw_edit(self, checked: bool):
+        self._reforged_pw_edit_eye.setIcon(load_ui_icon("eye" if checked else "eye-off"))
+        self.reforged_password_edit.setEchoMode(QLineEdit.Normal if checked else QLineEdit.Password)
+
+    def _build_reforged_group(self):
+        group = QGroupBox("BO3 Reforged")
+        layout = QGridLayout(group)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(0)
+
+        row = 0
+
+        # Action buttons
+        btn_row = QWidget()
+        btn_layout = QHBoxLayout(btn_row)
+        btn_layout.setContentsMargins(0, 0, 0, 12)
+        btn_layout.setSpacing(10)
+
+        self.reforged_install_btn = QPushButton("Install Reforged")
+        self.reforged_install_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.reforged_install_btn.clicked.connect(self.install_reforged)
+        btn_layout.addWidget(self.reforged_install_btn, 1)
+
+        self.reforged_uninstall_btn = QPushButton("Uninstall Reforged")
+        self.reforged_uninstall_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.reforged_uninstall_btn.clicked.connect(self.uninstall_reforged)
+        btn_layout.addWidget(self.reforged_uninstall_btn, 1)
+
+        refresh_btn = QPushButton("Refresh T7")
+        refresh_btn.clicked.connect(lambda: self.load_reforged_t7_options(user_initiated=True))
+        btn_layout.addWidget(refresh_btn)
+
+        layout.addWidget(btn_row, row, 0, 1, 4)
+        row += 1
+
+        def _add_sep(r):
+            sep = QFrame()
+            sep.setObjectName("DashboardDivider")
+            sep.setFrameShape(QFrame.HLine)
+            sep.setFixedHeight(1)
+            layout.addWidget(sep, r, 0, 1, 4)
+
+        # Status row
+        _add_sep(row); row += 1
+
+        status_name = QLabel("Status")
+        status_name.setObjectName("DashboardStatusName")
+        status_name.setContentsMargins(0, 8, 0, 8)
+
+        self.reforged_status_label = QLabel(self._status_html("Not installed"))
+        self.reforged_status_label.setObjectName("DashboardStatusValue")
+        self.reforged_status_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.reforged_status_label.setTextFormat(Qt.RichText)
+        self.reforged_status_label.setContentsMargins(0, 8, 0, 8)
+
+        layout.addWidget(status_name, row, 0)
+        layout.addWidget(self.reforged_status_label, row, 1, 1, 3)
+        row += 1
+
+        # Network Password row
+        _add_sep(row); row += 1
+
+        pw_name = QLabel("Network Password")
+        pw_name.setObjectName("DashboardStatusName")
+        pw_name.setContentsMargins(0, 8, 0, 8)
+
+        pw_display_container = QWidget()
+        pw_display_layout = QHBoxLayout(pw_display_container)
+        pw_display_layout.setContentsMargins(0, 0, 0, 0)
+        pw_display_layout.setSpacing(4)
+
+        self.reforged_current_pw_label = QLabel("None")
+        self.reforged_current_pw_label.setObjectName("DashboardStatusValue")
+        self.reforged_current_pw_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.reforged_current_pw_label.setContentsMargins(0, 8, 0, 8)
+        pw_display_layout.addWidget(self.reforged_current_pw_label, 1)
+
+        self._reforged_pw_display_eye = QPushButton()
+        self._reforged_pw_display_eye.setIcon(load_ui_icon("eye-off"))
+        self._reforged_pw_display_eye.setIconSize(QSize(14, 14))
+        self._reforged_pw_display_eye.setFixedSize(22, 22)
+        self._reforged_pw_display_eye.setFlat(True)
+        self._reforged_pw_display_eye.setCheckable(True)
+        self._reforged_pw_display_eye.setToolTip("Show / hide password")
+        self._reforged_pw_display_eye.toggled.connect(self._toggle_reforged_pw_display)
+        pw_display_layout.addWidget(self._reforged_pw_display_eye, 0)
+
+        pw_edit_container = QWidget()
+        pw_edit_layout = QHBoxLayout(pw_edit_container)
+        pw_edit_layout.setContentsMargins(0, 0, 0, 0)
+        pw_edit_layout.setSpacing(4)
+
+        self.reforged_password_edit = QLineEdit()
+        self.reforged_password_edit.setPlaceholderText("Enter network password…")
+        self.reforged_password_edit.setEchoMode(QLineEdit.Password)
+        pw_edit_layout.addWidget(self.reforged_password_edit, 1)
+
+        self._reforged_pw_edit_eye = QPushButton()
+        self._reforged_pw_edit_eye.setIcon(load_ui_icon("eye-off"))
+        self._reforged_pw_edit_eye.setIconSize(QSize(14, 14))
+        self._reforged_pw_edit_eye.setFixedSize(22, 22)
+        self._reforged_pw_edit_eye.setFlat(True)
+        self._reforged_pw_edit_eye.setCheckable(True)
+        self._reforged_pw_edit_eye.setToolTip("Show / hide password")
+        self._reforged_pw_edit_eye.toggled.connect(self._toggle_reforged_pw_edit)
+        pw_edit_layout.addWidget(self._reforged_pw_edit_eye, 0)
+
+        update_btn = QPushButton("Update")
+        update_btn.clicked.connect(self.apply_reforged_t7_options)
+
+        layout.addWidget(pw_name, row, 0)
+        layout.addWidget(pw_display_container, row, 1)
+        layout.addWidget(pw_edit_container, row, 2)
+        layout.addWidget(update_btn, row, 3)
+        row += 1
+
+        # Checkboxes row
+        _add_sep(row); row += 1
+
+        cb_row = QWidget()
+        cb_layout = QHBoxLayout(cb_row)
+        cb_layout.setContentsMargins(0, 8, 0, 8)
+        cb_layout.setSpacing(16)
+
+        self.reforged_force_ranked_cb = QCheckBox("Force Ranked Mode")
+        self.reforged_steam_achievements_cb = QCheckBox("Steam Achievements")
+        cb_layout.addWidget(self.reforged_force_ranked_cb)
+        cb_layout.addWidget(self.reforged_steam_achievements_cb)
+        cb_layout.addStretch(1)
+
+        layout.addWidget(cb_row, row, 0, 1, 4)
+        row += 1
+
+        # Notes
+        _add_sep(row); row += 1
+
+        workshop_note = QLabel(
+            f'Installing Reforged also installs the <a href="{REFORGED_WORKSHOP_STEAM_URL}">BO3 Reforged Workshop mod</a>.'
+        )
+        workshop_note.setObjectName("DashboardStatusName")
+        workshop_note.setOpenExternalLinks(True)
+        workshop_note.setContentsMargins(0, 8, 0, 4)
+        layout.addWidget(workshop_note, row, 0, 1, 4)
+        row += 1
+
+        compat_note = QLabel(
+            "T7Patch compatible: Reforged can be used with or without T7Patch. "
+            "If both players use Reforged, matching passwords are cross-compatible."
+        )
+        compat_note.setObjectName("DashboardStatusName")
+        compat_note.setWordWrap(True)
+        compat_note.setContentsMargins(0, 0, 0, 8)
+        layout.addWidget(compat_note, row, 0, 1, 4)
+        row += 1
+
+        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(2, 2)
+        layout.setColumnStretch(3, 0)
+        layout.setRowStretch(row, 1)
+
+        return group
+
+    def install_reforged(self):
+        game_dir = self.game_dir_edit.text().strip()
+        if not os.path.isdir(game_dir):
+            write_log("Set a valid game directory before installing Reforged.", "Error", self.log_text)
+            return
+        if self._reforged_worker and self._reforged_worker.isRunning():
+            return
+
+        self.reforged_install_btn.setEnabled(False)
+        self.reforged_uninstall_btn.setEnabled(False)
+        self.reforged_status_label.setText(self._status_html("Installing Reforged…", "info"))
+
+        self._reforged_worker = ReforgedInstallWorker(game_dir)
+        self._reforged_worker.progress.connect(self._on_reforged_progress)
+        self._reforged_worker.installed.connect(self._on_reforged_installed)
+        self._reforged_worker.failed.connect(self._on_reforged_failed)
+        self._reforged_worker.start()
+
+    def _on_reforged_progress(self, message: str):
+        self.reforged_status_label.setText(self._status_html(message, "info"))
+        write_log(message, "Info", self.log_text)
+
+    def _on_reforged_installed(self, target_path: str):
+        self.reforged_install_btn.setEnabled(True)
+        self.reforged_uninstall_btn.setEnabled(True)
+        self.reforged_status_label.setText(self._status_html("Installed", "good"))
+        write_log(f"Reforged installed to {target_path}", "Success", self.log_text)
+        write_exe_variant(self.game_dir_edit.text().strip(), "reforged")
+        self.refresh_enhanced_status(show_warning=False)
+        self.refresh_dashboard_status()
+        self.t7_patch_widget.refresh_t7_mode_indicator()
+        QDesktopServices.openUrl(QUrl(REFORGED_WORKSHOP_STEAM_URL))
+        write_log("Opened Reforged Workshop page in Steam.", "Info", self.log_text)
+
+    def _on_reforged_failed(self, reason: str):
+        self.reforged_install_btn.setEnabled(True)
+        self.reforged_uninstall_btn.setEnabled(True)
+        self.reforged_status_label.setText(self._status_html(f"Install Failed — {reason}", "bad"))
+        write_log(f"Reforged install failed: {reason}", "Error", self.log_text)
+
+    def uninstall_reforged(self):
+        game_dir = self.game_dir_edit.text().strip()
+        if not os.path.isdir(game_dir):
+            write_log("Set a valid game directory before uninstalling Reforged.", "Error", self.log_text)
+            return
+
+        target_exe = find_game_executable(game_dir) or os.path.join(game_dir, "BlackOps3.exe")
+        backup_path = existing_backup_path(target_exe)
+
+        if not backup_path or not os.path.exists(backup_path):
+            write_log("No backup executable found — cannot restore original.", "Error", self.log_text)
+            self.reforged_status_label.setText(self._status_html("Uninstall Failed — no backup found", "bad"))
+            return
+
+        self.reforged_install_btn.setEnabled(False)
+        self.reforged_uninstall_btn.setEnabled(False)
+        self.reforged_status_label.setText(self._status_html("Uninstalling…", "info"))
+
+        try:
+            if os.path.exists(target_exe):
+                os.remove(target_exe)
+            os.rename(backup_path, target_exe)
+            write_exe_variant(game_dir, "default")
+            self._clear_reforged_launch_option_if_active()
+            write_log("Reforged uninstalled. Original executable restored.", "Success", self.log_text)
+            self.reforged_status_label.setText(self._status_html("Uninstalled", "neutral"))
+            self.refresh_enhanced_status(show_warning=False)
+            self.refresh_dashboard_status()
+            self.t7_patch_widget.refresh_t7_mode_indicator()
+        except Exception as exc:
+            write_log(f"Reforged uninstall failed: {exc}", "Error", self.log_text)
+            self.reforged_status_label.setText(self._status_html(f"Uninstall Failed — {exc}", "bad"))
+        finally:
+            self.reforged_install_btn.setEnabled(True)
+            self.reforged_uninstall_btn.setEnabled(True)
+
+    def _t7_json_path(self):
+        game_dir = self.game_dir_edit.text().strip()
+        if not game_dir:
+            return None
+        return os.path.join(game_dir, "players", "T7.json")
+
+    def load_reforged_t7_options(self, user_initiated: bool = False):
+        path = self._t7_json_path()
+        if not path:
+            return
+
+        if not os.path.exists(path):
+            self.reforged_password_edit.setText("")
+            self.reforged_force_ranked_cb.setChecked(False)
+            self.reforged_steam_achievements_cb.setChecked(False)
+            self._set_reforged_password("")
+            if user_initiated:
+                write_log("T7.json not found. Default values loaded.", "Info", self.log_text)
+            return
+
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            network_pass = str(data.get("network_pass", ""))
+            self.reforged_password_edit.setText(network_pass)
+            self.reforged_force_ranked_cb.setChecked(bool(data.get("force_ranked", False)))
+            self.reforged_steam_achievements_cb.setChecked(bool(data.get("steam_achievements", False)))
+            self._set_reforged_password(network_pass)
+            if user_initiated:
+                write_log(f"Loaded T7 options from {path}", "Success", self.log_text)
+        except Exception as exc:
+            write_log(f"Failed to read T7.json: {exc}", "Error", self.log_text)
+
+    def apply_reforged_t7_options(self):
+        path = self._t7_json_path()
+        if not path:
+            return
+
+        data = {}
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as handle:
+                    data = json.load(handle)
+            except Exception as exc:
+                write_log(f"Failed to parse existing T7.json, creating a fresh file: {exc}", "Warning", self.log_text)
+                data = {}
+
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+
+        password = self.reforged_password_edit.text().strip()
+        if password:
+            data["network_pass"] = password
+        elif "network_pass" in data:
+            data.pop("network_pass", None)
+
+        data["force_ranked"] = self.reforged_force_ranked_cb.isChecked()
+        data["steam_achievements"] = self.reforged_steam_achievements_cb.isChecked()
+
+        try:
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(data, handle, indent=4)
+            write_log(f"Updated T7 settings at {path}", "Success", self.log_text)
+            self._set_reforged_password(password)
+        except Exception as exc:
+            write_log(f"Failed to write T7.json: {exc}", "Error", self.log_text)
 
     def on_tab_changed(self, index):
         tab_widget = self.tabs.widget(index)
         if tab_widget:
             # Refresh advanced settings if on that tab
-            if index == 2:
+            if index == getattr(self, "advanced_tab_index", -1):
                 self.advanced_widget.refresh_settings()
             tab_widget.layout().update()
+        if index == 0 or index == getattr(self, "enhanced_tab_index", -1):
+            self.refresh_enhanced_status(show_warning=False)
+        if index == 0:
+            self.qol_widget.refresh_workshop_status()
+        self.refresh_dashboard_status()
+
+    def refresh_enhanced_status(self, *, show_warning: bool):
+        game_dir = self.game_dir_edit.text().strip()
+        if not game_dir or not os.path.isdir(game_dir) or not find_game_executable(game_dir):
+            self._enhanced_active = False
+            self.enhanced_status_label.setText(self._status_html("Not installed", "neutral"))
+            self._toggle_mod_launch_options_enabled(True)
+            self.refresh_dashboard_status()
+            return
+
+        summary = status_summary(game_dir, STORAGE_PATH)
+        active = bool(summary.get("installed"))
+        self._enhanced_active = active
+        self.enhanced_status_label.setText(
+            self._status_html("Enhanced Mode Active", "good") if active
+            else self._status_html("Not installed", "neutral")
+        )
+
+        reforged_active = self._is_reforged_active(game_dir)
+
+        if active:
+            self._toggle_mod_launch_options_enabled(
+                False,
+                reason=(
+                    "Workshop mod launch options are disabled while BO3 Enhanced is active. "
+                    "Default and Play Offline remain available."
+                ),
+            )
+        elif not reforged_active:
+            self._toggle_mod_launch_options_enabled(
+                False,
+                reason=(
+                    "Workshop mod launch options are disabled on default Steam BO3 after the recent update. "
+                    "Install Reforged to restore mod launch functionality. "
+                    "Default and Play Offline remain available."
+                ),
+            )
+        else:
+            self._toggle_mod_launch_options_enabled(True)
+
+        self.refresh_dashboard_status()
+        if active and show_warning and not self._enhanced_warning_session_shown and not summary.get("acknowledged_at"):
+            self._show_enhanced_warning()
+        elif (not active) and (not reforged_active) and show_warning and not self._steam_default_warning_session_shown:
+            self._show_default_steam_warning()
+
+    def _toggle_mod_launch_options_enabled(self, enabled: bool, reason: str = ""):
+        # Keep Default / Play Offline available; only gate workshop mod options.
+        self.qol_widget.radio_all_around.setEnabled(enabled)
+        self.qol_widget.radio_ultimate.setEnabled(enabled)
+        self.qol_widget.radio_forged.setEnabled(enabled)
+        self.qol_widget.install_workshop_button.setEnabled(enabled)
+        self.qol_widget.refresh_workshop_status_button.setEnabled(enabled)
+
+        tooltip = "" if enabled else (reason or "Workshop mod launch options are disabled.")
+        self.qol_widget.radio_all_around.setToolTip(tooltip)
+        self.qol_widget.radio_ultimate.setToolTip(tooltip)
+        self.qol_widget.radio_forged.setToolTip(tooltip)
+        self.qol_widget.install_workshop_button.setToolTip(tooltip)
+        self.qol_widget.refresh_workshop_status_button.setToolTip(tooltip)
+
+    def _show_enhanced_warning(self):
+        message = (
+            "Launch options are disabled when BO3 Enhanced is active. "
+            "Most third-party mods will not be compatible."
+        )
+        QMessageBox.warning(self, "BO3 Enhanced Warning", message)
+        set_acknowledged(STORAGE_PATH)
+        self._enhanced_warning_session_shown = True
+
+    def _show_default_steam_warning(self):
+        message = (
+            "Launch options are disabled on the default Steam BO3 installation after the recent game update. "
+            "Install Reforged to restore mod launch functionality."
+        )
+        QMessageBox.warning(self, "Reforged Required", message)
+        self._steam_default_warning_session_shown = True
+
+    def _enhanced_smart_browse(self):
+        filter_str = "Dump Sources (DUMP.zip BlackOps3.exe *.zip);;All Files (*)"
+        path, _ = QFileDialog.getOpenFileName(self, "Select Dump Source", "", filter_str)
+        if not path:
+            return
+        if path.lower().endswith(".zip"):
+            final_path = path
+        elif os.path.basename(path).lower() == "blackops3.exe":
+            final_path = os.path.dirname(path)
+        else:
+            final_path = os.path.dirname(path) if os.path.isfile(path) else path
+        self.enhanced_dump_edit.setText(final_path)
+
+    def on_enhanced_install_clicked(self):
+        path = self.enhanced_dump_edit.text().strip()
+        if not path:
+            QMessageBox.warning(self, "Dump Required", "Please select a game dump source before installing.")
+            return
+        if not os.path.exists(path):
+            QMessageBox.critical(self, "Invalid Path", "The selected path does not exist.")
+            return
+        if not validate_dump_source(path):
+            QMessageBox.critical(
+                self,
+                "Invalid Dump",
+                "The selected source is missing required files (BlackOps3.exe, MicrosoftGame.config).",
+            )
+            return
+
+        self._pending_dump_source = path
+
+        if self._enhanced_worker and self._enhanced_worker.isRunning():
+            return
+
+        self.enhanced_install_btn.setEnabled(False)
+        self.enhanced_uninstall_btn.setEnabled(False)
+        self.enhanced_status_label.setText(self._status_html("Downloading Enhanced files…", "info"))
+
+        self._enhanced_worker = EnhancedDownloadWorker(MOD_FILES_DIR, STORAGE_PATH)
+        self._enhanced_worker.progress.connect(self._on_enhanced_progress)
+        self._enhanced_worker.download_complete.connect(self._on_enhanced_download_finished)
+        self._enhanced_worker.failed.connect(self._on_enhanced_download_failed)
+        self._enhanced_last_failed = False
+        self._enhanced_worker.start()
+
+    def _on_enhanced_progress(self, message: str):
+        self.enhanced_status_label.setText(self._status_html(message, "info"))
+        write_log(message, "Info", self.log_text)
+
+    def _on_enhanced_download_finished(self):
+        # Disconnect to prevent double-execution
+        try:
+            if self._enhanced_worker:
+                self._enhanced_worker.download_complete.disconnect(self._on_enhanced_download_finished)
+        except Exception:
+            pass
+
+        if self._enhanced_last_failed:
+            self._reset_enhanced_buttons()
+            return
+            
+        self.enhanced_status_label.setText(self._status_html("Installing files…", "info"))
+        write_log("Download complete. Installing BO3 Enhanced files...", "Success", self.log_text)
+
+        # Proceed immediately to install using the pending dump source
+        game_dir = self.game_dir_edit.text().strip()
+        dump_source = getattr(self, "_pending_dump_source", None)
+
+        if not dump_source or not os.path.exists(dump_source):
+            self.enhanced_status_label.setText(self._status_html("Installation Failed — Dump missing", "bad"))
+            write_log("Pending dump source missing.", "Error", self.log_text)
+            self._reset_enhanced_buttons()
+            return
+
+        if install_enhanced_files(game_dir, MOD_FILES_DIR, STORAGE_PATH, dump_source, log_widget=self.log_text):
+            self.enhanced_status_label.setText(self._status_html("Installed Successfully", "good"))
+            write_exe_variant(game_dir, "enhanced")
+            self.refresh_enhanced_status(show_warning=True)
+            self.t7_patch_widget.refresh_t7_mode_indicator()
+        else:
+            self.enhanced_status_label.setText(self._status_html("Installation Failed", "bad"))
+            
+        self._reset_enhanced_buttons()
+
+    def _on_enhanced_download_failed(self, reason: str):
+        self._enhanced_last_failed = True
+        self.enhanced_status_label.setText(self._status_html(f"Download Failed — {reason}", "bad"))
+        write_log(f"BO3 Enhanced download failed: {reason}", "Error", self.log_text)
+        self._reset_enhanced_buttons()
+
+    def _reset_enhanced_buttons(self):
+        self.enhanced_install_btn.setEnabled(True)
+        self.enhanced_uninstall_btn.setEnabled(True)
+
+
+
+
+
+    def on_enhanced_uninstall_clicked(self):
+        self.enhanced_install_btn.setEnabled(False)
+        self.enhanced_uninstall_btn.setEnabled(False)
+        self.enhanced_status_label.setText(self._status_html("Uninstalling…", "info"))
+
+        game_dir = self.game_dir_edit.text().strip()
+        # Use QTimer to allow UI update before blocking operation
+        QTimer.singleShot(100, lambda: self._perform_uninstall(game_dir))
+
+    def _perform_uninstall(self, game_dir):
+        if uninstall_enhanced_files(game_dir, MOD_FILES_DIR, STORAGE_PATH, log_widget=self.log_text):
+            self.enhanced_status_label.setText(self._status_html("Uninstalled", "neutral"))
+            restored_exe = find_game_executable(game_dir)
+            restored_hash = file_sha256(restored_exe) if restored_exe else None
+            if restored_hash and restored_hash.lower() in REFORGED_TRUSTED_SHA256:
+                write_exe_variant(game_dir, "reforged")
+            else:
+                write_exe_variant(game_dir, "default")
+            self.refresh_enhanced_status(show_warning=False)
+            self.t7_patch_widget.refresh_t7_mode_indicator()
+        else:
+            self.enhanced_status_label.setText(self._status_html("Uninstall Failed", "bad"))
+
+        self.enhanced_install_btn.setEnabled(True)
+        self.enhanced_uninstall_btn.setEnabled(True)
 
     def on_update_button_clicked(self):
         if self._system == "Linux":
@@ -1192,6 +2780,7 @@ class MainWindow(QMainWindow):
 
     def on_t7_patch_uninstalled(self):
         self._t7_just_uninstalled = True
+        self.refresh_dashboard_status()
 
     def launch_game(self):
         game_dir = self.game_dir_edit.text().strip()
@@ -1228,6 +2817,10 @@ class MainWindow(QMainWindow):
         self.graphics_widget.set_game_directory(directory)
         self.advanced_widget.set_game_directory(directory)
         self.qol_widget.set_game_directory(directory)
+        self.qol_widget.refresh_workshop_status()
+        self.refresh_enhanced_status(show_warning=False)
+        self.refresh_dashboard_status()
+        self.load_reforged_t7_options()
 
 
 def main() -> int:
@@ -1238,6 +2831,14 @@ def main() -> int:
         write_log("Cleared logs after three application launches.", "Info")
     write_log(f"Process PID {os.getpid()} elevated={is_admin()}", "Info")
     app = QApplication(sys.argv)
+    base_font = QFont("Inter", 10)
+    app.setFont(base_font)
+    if QT_MODERN_AVAILABLE:
+        try:
+            qt_styles.dark(app)
+        except Exception:
+            pass
+    apply_modern_theme(app)
     global_icon, icon_source = load_application_icon()
     if global_icon.isNull():
         if icon_source:
@@ -1263,7 +2864,20 @@ def main() -> int:
             )
             write_log(message, "Error", window.log_text)
 
-    window.show()
+    target_window = window
+    if QT_MODERN_AVAILABLE:
+        try:
+            modern_kwargs = {}
+            if "use_native_titlebar" in inspect.signature(qt_windows.ModernWindow.__init__).parameters:
+                modern_kwargs["use_native_titlebar"] = False
+            modern_window = qt_windows.ModernWindow(window, **modern_kwargs)
+            if not global_icon.isNull():
+                modern_window.setWindowIcon(global_icon)
+            target_window = modern_window
+        except Exception as exc:
+            write_log(f"QtModernRedux wrapper failed: {exc}", "Warning")
+
+    target_window.show()
 
     if getattr(cli_args, "install_t7", False):
         if is_admin():
