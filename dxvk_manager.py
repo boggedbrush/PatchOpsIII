@@ -298,8 +298,8 @@ class DXVKWidget(QWidget):
         self.mod_files_dir = mod_files_dir
         self.game_dir = None
         self.log_widget = None
-        self.group = QGroupBox("DXVK-GPLAsync Management")
-        self.group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.group = QGroupBox("")
+        self.group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.init_ui()
 
     @property
@@ -325,7 +325,8 @@ class DXVKWidget(QWidget):
         layout.addWidget(sep, row, 0, 1, 4)
 
     def init_ui(self):
-        self.group = QGroupBox("DXVK-GPLAsync Management")
+        self.group = QGroupBox("")
+        self.group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout = QGridLayout(self.group)
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setHorizontalSpacing(10)
@@ -501,8 +502,10 @@ class DXVKWidget(QWidget):
         self.hud_checkbox.stateChanged.connect(self._update_conf_preview)
 
         main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         main_layout.addWidget(self.group)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
     def apply_selected_preset(self):
         preset_text = self.preset_combo.currentText()

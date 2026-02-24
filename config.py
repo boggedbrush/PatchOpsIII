@@ -234,7 +234,7 @@ class GraphicsSettingsWidget(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        graphics_group = QGroupBox("Graphics Settings")
+        graphics_group = QGroupBox("")
         layout = QGridLayout(graphics_group)
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setHorizontalSpacing(10)
