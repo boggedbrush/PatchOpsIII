@@ -60,6 +60,7 @@ from utils import (
     read_exe_variant,
     write_exe_variant,
     file_sha256,
+    get_workshop_item_state,
 )
 from bo3_enhanced import (
     download_latest_enhanced,
@@ -86,6 +87,27 @@ REFORGED_DOWNLOAD_HEADERS = {
     ),
     "Accept": "application/octet-stream,*/*;q=0.8",
     "Referer": "https://bo3reforged.com/",
+}
+
+WORKSHOP_PROFILES = {
+    "all_around": {
+        "name": "All-around Enhancement Lite",
+        "workshop_id": "2994481309",
+        "workshop_url": "https://steamcommunity.com/sharedfiles/filedetails/?id=2994481309",
+        "launch_option": "+set fs_game 2994481309",
+    },
+    "ultimate": {
+        "name": "Ultimate Experience Mod",
+        "workshop_id": "2942053577",
+        "workshop_url": "https://steamcommunity.com/sharedfiles/filedetails/?id=2942053577",
+        "launch_option": "+set fs_game 2942053577",
+    },
+    "forged": {
+        "name": "Reforged",
+        "workshop_id": "3667377161",
+        "workshop_url": "https://steamcommunity.com/sharedfiles/filedetails/?id=3667377161",
+        "launch_option": "+set fs_game 3667377161",
+    },
 }
 
 # Trusted SHA-256 hashes for known-good Reforged executables.
@@ -149,6 +171,18 @@ def apply_modern_theme(app: QApplication) -> None:
         }
         QLabel#DashboardStatusValue {
             font-size: 12px;
+            font-weight: 600;
+        }
+        QLabel[workshopState="good"] {
+            color: #4ade80;
+            font-weight: 600;
+        }
+        QLabel[workshopState="info"] {
+            color: #60a5fa;
+            font-weight: 600;
+        }
+        QLabel[workshopState="bad"] {
+            color: #f87171;
             font-weight: 600;
         }
         QFrame#DashboardDivider {
@@ -845,39 +879,39 @@ class QualityOfLifeWidget(QWidget):
         super().__init__(parent)
         self.game_dir = None
         self.log_widget = None
+        self.worker = None
+        self.workshop_install_worker = None
 
         # --- Launch Options group box ---
         self.launch_group = QGroupBox("Launch Options")
         self.launch_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        launch_grid = QGridLayout(self.launch_group)
-        launch_grid.setContentsMargins(4, 4, 4, 4)
-        launch_grid.setHorizontalSpacing(4)
-        launch_grid.setVerticalSpacing(2)
-        launch_grid.setAlignment(Qt.AlignTop)
+        launch_layout = QGridLayout(self.launch_group)
+        launch_layout.setContentsMargins(14, 14, 14, 14)
+        launch_layout.setHorizontalSpacing(10)
+        launch_layout.setVerticalSpacing(0)
 
         self.radio_group = QButtonGroup(self)
         self.radio_none = QRadioButton("Default (None)")
-        self.radio_all_around = QRadioButton("All-around Enhancement Lite")
-        self.radio_ultimate = QRadioButton("Ultimate Experience Mod")
-        self.radio_forged = QRadioButton("Reforged")
+        self.radio_all_around = QRadioButton(WORKSHOP_PROFILES["all_around"]["name"])
+        self.radio_ultimate = QRadioButton(WORKSHOP_PROFILES["ultimate"]["name"])
+        self.radio_forged = QRadioButton(WORKSHOP_PROFILES["forged"]["name"])
         self.radio_offline = QRadioButton("Play Offline")
         self.radio_none.setChecked(True)
+        self.workshop_profile_radios = {}
+        self.workshop_profile_status_labels = {}
 
-        # Block signals during initialization
         for rb in [self.radio_none, self.radio_all_around, self.radio_ultimate, self.radio_forged, self.radio_offline]:
             rb.blockSignals(True)
             self.radio_group.addButton(rb)
             rb.blockSignals(False)
 
-        # Create help buttons with links
+        # Help buttons (flat, fixed-size, link to mod pages)
         all_around_help = QPushButton("?")
         ultimate_help = QPushButton("?")
         forged_help = QPushButton("?")
-        all_around_help.setFixedSize(20, 20)
-        ultimate_help.setFixedSize(20, 20)
-        forged_help.setFixedSize(20, 20)
-        
-        # Connect buttons to open URLs
+        for btn in [all_around_help, ultimate_help, forged_help]:
+            btn.setFixedSize(22, 22)
+            btn.setFlat(True)
         all_around_help.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl("steam://openurl/https://steamcommunity.com/sharedfiles/filedetails/?id=2994481309"))
         )
@@ -888,44 +922,85 @@ class QualityOfLifeWidget(QWidget):
             lambda: QDesktopServices.openUrl(QUrl("https://bo3reforged.com/"))
         )
 
-        # Put the radio buttons and help buttons in rows
-        launch_grid.addWidget(self.radio_none, 0, 0)
-        launch_grid.addWidget(self.radio_offline, 1, 0)
-        
-        all_around_widget = QWidget()
-        all_around_layout = QHBoxLayout(all_around_widget)
-        all_around_layout.setContentsMargins(0, 0, 0, 0)
-        all_around_layout.addWidget(self.radio_all_around)
-        all_around_layout.addWidget(all_around_help)
-        all_around_layout.addStretch()
-        launch_grid.addWidget(all_around_widget, 2, 0)
-        
-        ultimate_widget = QWidget()
-        ultimate_layout = QHBoxLayout(ultimate_widget)
-        ultimate_layout.setContentsMargins(0, 0, 0, 0)
-        ultimate_layout.addWidget(self.radio_ultimate)
-        ultimate_layout.addWidget(ultimate_help)
-        ultimate_layout.addStretch()
-        launch_grid.addWidget(ultimate_widget, 3, 0)
+        def _launch_row(layout, row, radio, help_btn=None, status_label=None):
+            container = QWidget()
+            hbox = QHBoxLayout(container)
+            hbox.setContentsMargins(0, 3, 0, 3)
+            hbox.setSpacing(8)
+            hbox.addWidget(radio, 0)
+            if help_btn:
+                hbox.addWidget(help_btn, 0)
+            hbox.addStretch(1)
+            if status_label:
+                hbox.addWidget(status_label, 0, Qt.AlignRight)
+            layout.addWidget(container, row, 0, 1, 2)
 
-        forged_widget = QWidget()
-        forged_layout = QHBoxLayout(forged_widget)
-        forged_layout.setContentsMargins(0, 0, 0, 0)
-        forged_layout.addWidget(self.radio_forged)
-        forged_layout.addWidget(forged_help)
-        forged_layout.addStretch()
-        launch_grid.addWidget(forged_widget, 4, 0)
+        def _launch_sep(layout, row):
+            sep = QFrame()
+            sep.setObjectName("DashboardDivider")
+            sep.setFrameShape(QFrame.HLine)
+            sep.setFixedHeight(1)
+            layout.addWidget(sep, row, 0, 1, 2)
 
-        # Center the Apply button in row 5
+        def _workshop_status_label():
+            label = QLabel("Not Subscribed")
+            label.setObjectName("DashboardStatusValue")
+            label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            return label
+
+        all_around_status = _workshop_status_label()
+        ultimate_status = _workshop_status_label()
+        forged_status = _workshop_status_label()
+        self.workshop_profile_radios.update({
+            "all_around": self.radio_all_around,
+            "ultimate": self.radio_ultimate,
+            "forged": self.radio_forged,
+        })
+        self.workshop_profile_status_labels.update({
+            "all_around": all_around_status,
+            "ultimate": ultimate_status,
+            "forged": forged_status,
+        })
+
+        lrow = 0
+        _launch_row(launch_layout, lrow, self.radio_none);          lrow += 1
+        _launch_sep(launch_layout, lrow);                           lrow += 1
+        _launch_row(launch_layout, lrow, self.radio_offline);       lrow += 1
+        _launch_sep(launch_layout, lrow);                           lrow += 1
+        _launch_row(launch_layout, lrow, self.radio_all_around, all_around_help, all_around_status); lrow += 1
+        _launch_sep(launch_layout, lrow);                           lrow += 1
+        _launch_row(launch_layout, lrow, self.radio_ultimate, ultimate_help, ultimate_status);     lrow += 1
+        _launch_sep(launch_layout, lrow);                           lrow += 1
+        _launch_row(launch_layout, lrow, self.radio_forged, forged_help, forged_status);         lrow += 1
+
+        # Action buttons row
+        _launch_sep(launch_layout, lrow);                           lrow += 1
+        btn_row = QWidget()
+        btn_layout = QHBoxLayout(btn_row)
+        btn_layout.setContentsMargins(0, 4, 0, 0)
+        btn_layout.setSpacing(10)
+
+        self.install_workshop_button = QPushButton("Install Selected Mod")
+        self.install_workshop_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.install_workshop_button.clicked.connect(self.on_install_selected_workshop_mod)
+        btn_layout.addWidget(self.install_workshop_button, 1)
+
+        self.refresh_workshop_status_button = QPushButton("Refresh")
+        self.refresh_workshop_status_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.refresh_workshop_status_button.clicked.connect(self.refresh_workshop_status)
+        btn_layout.addWidget(self.refresh_workshop_status_button, 1)
+
         self.apply_button = QPushButton("Apply")
+        self.apply_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.apply_button.clicked.connect(self.on_apply_launch_options)
-        apply_hbox = QHBoxLayout()
-        apply_hbox.addStretch()
-        apply_hbox.addWidget(self.apply_button)
-        apply_hbox.addStretch()
-        apply_container = QWidget()
-        apply_container.setLayout(apply_hbox)
-        launch_grid.addWidget(apply_container, 5, 0, 1, 1)
+        btn_layout.addWidget(self.apply_button, 1)
+
+        launch_layout.addWidget(btn_row, lrow, 0, 1, 2)
+        lrow += 1
+
+        launch_layout.setColumnStretch(0, 1)
+        launch_layout.setColumnStretch(1, 0)
+        launch_layout.setRowStretch(lrow, 1)
 
         # --- Quality of Life group box ---
         self.checkbox_group = QGroupBox("Quality of Life")
@@ -971,6 +1046,69 @@ class QualityOfLifeWidget(QWidget):
 
     def set_log_widget(self, log_widget):
         self.log_widget = log_widget
+
+    def _selected_launch_option(self):
+        if self.radio_none.isChecked():
+            return ""
+        if self.radio_all_around.isChecked():
+            return WORKSHOP_PROFILES["all_around"]["launch_option"]
+        if self.radio_ultimate.isChecked():
+            return WORKSHOP_PROFILES["ultimate"]["launch_option"]
+        if self.radio_forged.isChecked():
+            return WORKSHOP_PROFILES["forged"]["launch_option"]
+        if self.radio_offline.isChecked():
+            return "+set fs_game offlinemp"
+        return ""
+
+    def _selected_workshop_profile(self):
+        if self.radio_all_around.isChecked():
+            return WORKSHOP_PROFILES["all_around"]
+        if self.radio_ultimate.isChecked():
+            return WORKSHOP_PROFILES["ultimate"]
+        if self.radio_forged.isChecked():
+            return WORKSHOP_PROFILES["forged"]
+        return None
+
+    def _preserve_existing_wine_overrides(self, option):
+        user_id = find_steam_user_id()
+        if not user_id:
+            return option
+        config_path = os.path.join(steam_userdata_path, user_id, "config", "localconfig.vdf")
+        if not os.path.exists(config_path):
+            return option
+        try:
+            with open(config_path, "r", encoding="utf-8") as file:
+                data = vdf.load(file)
+            current_options = data.get("UserLocalConfigStore", {}).get("Software", {}).get("Valve", {}).get("Steam", {}).get("apps", {}).get(app_id, {}).get("LaunchOptions", "")
+            if 'WINEDLLOVERRIDES="dsound=n,b"' in current_options:
+                if option:
+                    return f'WINEDLLOVERRIDES="dsound=n,b" %command% {option}'
+                return 'WINEDLLOVERRIDES="dsound=n,b" %command%'
+        except Exception as e:
+            write_log(f"Error reading current launch options: {e}", "Error", self.log_widget)
+        return option
+
+    def refresh_workshop_status(self):
+        for key, radio in self.workshop_profile_radios.items():
+            profile = WORKSHOP_PROFILES[key]
+            state = get_workshop_item_state(app_id, profile["workshop_id"])
+            status_label_widget = self.workshop_profile_status_labels.get(key)
+            if state.get("installed"):
+                status_label = "Installed"
+                status_state = "good"
+            elif state.get("subscribed"):
+                status_label = "Subscribed"
+                status_state = "info"
+            else:
+                status_label = "Not Subscribed"
+                status_state = "bad"
+
+            radio.setText(profile["name"])
+            if status_label_widget is not None:
+                status_label_widget.setText(f"\u25cf {status_label}")
+                status_label_widget.setProperty("workshopState", status_state)
+                status_label_widget.style().unpolish(status_label_widget)
+                status_label_widget.style().polish(status_label_widget)
 
     def skip_intro_changed(self):
         if not self.game_dir:
@@ -1086,35 +1224,9 @@ class QualityOfLifeWidget(QWidget):
                 write_log("Backup not found to restore.", "Warning", self.log_widget)
 
     def on_apply_launch_options(self):
-        # Figure out which radio is checked
-        if self.radio_none.isChecked():
-            option = ""
-        elif self.radio_all_around.isChecked():
-            option = "+set fs_game 2994481309"
-        elif self.radio_ultimate.isChecked():
-            option = "+set fs_game 2942053577"
-        elif self.radio_forged.isChecked():
-            option = "+set fs_game 3667377161"
-        elif self.radio_offline.isChecked():
-            option = "+set fs_game offlinemp"
-
-        # Get current launch options to preserve T7Patch settings
-        user_id = find_steam_user_id()
-        if user_id:
-            config_path = os.path.join(steam_userdata_path, user_id, "config", "localconfig.vdf")
-            if os.path.exists(config_path):
-                try:
-                    with open(config_path, "r", encoding="utf-8") as file:
-                        data = vdf.load(file)
-                    current_options = data.get("UserLocalConfigStore", {}).get("Software", {}).get("Valve", {}).get("Steam", {}).get("apps", {}).get(app_id, {}).get("LaunchOptions", "")
-                    if 'WINEDLLOVERRIDES="dsound=n,b"' in current_options:
-                        if option:
-                            option = f'WINEDLLOVERRIDES="dsound=n,b" %command% {option}'
-                        else:
-                            option = 'WINEDLLOVERRIDES="dsound=n,b" %command%'
-                except Exception as e:
-                    write_log(f"Error reading current launch options: {e}", "Error", self.log_widget)
-
+        option = self._preserve_existing_wine_overrides(self._selected_launch_option())
+        if self.worker and self.worker.isRunning():
+            return
         self.apply_button.setEnabled(False)
         self.worker = ApplyLaunchOptionsWorker(option)
         self.worker.log_message.connect(self.log_message_received) # Connect to the new log_message signal
@@ -1122,15 +1234,56 @@ class QualityOfLifeWidget(QWidget):
         self.worker.error.connect(self.on_apply_error)
         self.worker.start()
 
+    def on_install_selected_workshop_mod(self):
+        profile = self._selected_workshop_profile()
+        if not profile:
+            write_log(
+                "Select a workshop launch option before using one-click install.",
+                "Warning",
+                self.log_widget,
+            )
+            return
+        if self.workshop_install_worker and self.workshop_install_worker.isRunning():
+            return
+
+        option = self._preserve_existing_wine_overrides(self._selected_launch_option())
+        workshop_url = f"steam://openurl/{profile['workshop_url']}"
+        QDesktopServices.openUrl(QUrl(workshop_url))
+        write_log(f"Opened {profile['name']} workshop page in Steam.", "Info", self.log_widget)
+
+        self.apply_button.setEnabled(False)
+        self.install_workshop_button.setEnabled(False)
+        self.workshop_install_worker = ApplyLaunchOptionsWorker(option)
+        self.workshop_install_worker.log_message.connect(self.log_message_received)
+        self.workshop_install_worker.finished.connect(self.on_workshop_install_finished)
+        self.workshop_install_worker.error.connect(self.on_workshop_install_error)
+        self.workshop_install_worker.start()
+
     def log_message_received(self, message, category):
         write_log(message, category, self.log_widget)
 
     def on_apply_finished(self):
         self.apply_button.setEnabled(True)
+        QTimer.singleShot(1500, self.refresh_workshop_status)
 
     def on_apply_error(self, error_message):
         self.apply_button.setEnabled(True)
         write_log(f"Error applying launch options: {error_message}", "Error", self.log_widget)
+
+    def on_workshop_install_finished(self):
+        self.apply_button.setEnabled(True)
+        self.install_workshop_button.setEnabled(True)
+        write_log(
+            "Applied launch options for selected workshop mod. Steam may still need time to download content.",
+            "Success",
+            self.log_widget,
+        )
+        QTimer.singleShot(2000, self.refresh_workshop_status)
+
+    def on_workshop_install_error(self, error_message):
+        self.apply_button.setEnabled(True)
+        self.install_workshop_button.setEnabled(True)
+        write_log(f"Workshop install flow failed: {error_message}", "Error", self.log_widget)
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -1177,23 +1330,12 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(2500, self._auto_check_for_linux_updates)
 
     def load_launch_options_state(self):
-        # Get the Steam user ID and read current launch options
-        user_id = find_steam_user_id()
-        if not user_id:
-            self.refresh_dashboard_status()
-            return
-
-        config_path = os.path.join(steam_userdata_path, user_id, "config", "localconfig.vdf")
-        if not os.path.exists(config_path):
+        current_options = self._get_applied_launch_options()
+        if current_options is None:
             self.refresh_dashboard_status()
             return
 
         try:
-            with open(config_path, "r", encoding="utf-8") as file:
-                data = vdf.load(file)
-            
-            current_options = data.get("UserLocalConfigStore", {}).get("Software", {}).get("Valve", {}).get("Steam", {}).get("apps", {}).get(app_id, {}).get("LaunchOptions", "")
-            
             # Set radio button state based on current options without applying
             if "+set fs_game 2994481309" in current_options:
                 self.qol_widget.radio_all_around.setChecked(True)
@@ -1209,6 +1351,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             write_log(f"Error loading launch options state: {e}", "Error", self.log_text)
         finally:
+            self.qol_widget.refresh_workshop_status()
             self.refresh_dashboard_status()
 
     def init_ui(self):
@@ -1392,6 +1535,7 @@ class MainWindow(QMainWindow):
         self.advanced_widget.set_log_widget(self.log_text)
         self.advanced_widget.set_mod_files_dir(MOD_FILES_DIR)
         self.qol_widget.set_log_widget(self.log_text)
+        self.qol_widget.refresh_workshop_status()
         self.refresh_enhanced_status(show_warning=True)
         self.refresh_dashboard_status()
 
@@ -1571,16 +1715,52 @@ class MainWindow(QMainWindow):
         color = colors.get(state, colors["neutral"])
         return f'<span style="color:{color};">&#9679; {text}</span>'
 
-    def _current_launch_option_name(self):
-        if self.qol_widget.radio_all_around.isChecked():
+    def _get_applied_launch_options(self):
+        user_id = find_steam_user_id()
+        if not user_id:
+            return None
+        config_path = os.path.join(steam_userdata_path, user_id, "config", "localconfig.vdf")
+        if not os.path.exists(config_path):
+            return None
+        try:
+            with open(config_path, "r", encoding="utf-8") as file:
+                data = vdf.load(file)
+            return data.get("UserLocalConfigStore", {}).get("Software", {}).get("Valve", {}).get("Steam", {}).get("apps", {}).get(app_id, {}).get("LaunchOptions", "")
+        except Exception:
+            return None
+
+    @staticmethod
+    def _launch_option_name_from_string(launch_options: str):
+        options = launch_options or ""
+        if "+set fs_game 2994481309" in options:
             return "All-around Enhancement Lite"
-        if self.qol_widget.radio_ultimate.isChecked():
+        if "+set fs_game 2942053577" in options:
             return "Ultimate Experience Mod"
-        if self.qol_widget.radio_forged.isChecked():
+        if "+set fs_game 3667377161" in options:
             return "Forged"
-        if self.qol_widget.radio_offline.isChecked():
+        if "+set fs_game offlinemp" in options:
             return "Play Offline"
         return "Default (None)"
+
+    def _set_reforged_composite_status(self, *, exe_installed: bool, launch_active: bool):
+        exe_text = "Installed" if exe_installed else "Not Installed"
+        launch_text = "Active" if launch_active else "Inactive"
+        status_text = f"{exe_text} | {launch_text}"
+
+        if exe_installed and launch_active:
+            state = "good"
+        elif exe_installed:
+            state = "info"
+        else:
+            state = "bad"
+
+        self.dashboard_reforged_status.setText(self._status_html(status_text, state))
+
+        # Keep the Reforged tab status aligned with dashboard state unless a worker
+        # is currently reporting install/uninstall progress.
+        worker_running = bool(self._reforged_worker and self._reforged_worker.isRunning())
+        if not worker_running and hasattr(self, "reforged_status_label"):
+            self.reforged_status_label.setText(self._status_html(status_text, state))
 
     def refresh_dashboard_status(self):
         game_dir = self.game_dir_edit.text().strip()
@@ -1616,14 +1796,17 @@ class MainWindow(QMainWindow):
                               "good" if enhanced_active else "bad")
         )
 
+        applied_launch_options = self._get_applied_launch_options() or ""
+        launch_name = self._launch_option_name_from_string(applied_launch_options)
+
         exe_variant = read_exe_variant(game_dir)
-        reforged_active = exe_variant == "reforged"
-        self.dashboard_reforged_status.setText(
-            self._status_html("Active" if reforged_active else "Not Installed",
-                              "good" if reforged_active else "bad")
+        reforged_exe_installed = exe_variant == "reforged"
+        reforged_launch_active = "+set fs_game 3667377161" in applied_launch_options
+        self._set_reforged_composite_status(
+            exe_installed=reforged_exe_installed,
+            launch_active=reforged_launch_active,
         )
 
-        launch_name = self._current_launch_option_name()
         launch_state = "neutral" if launch_name == "Default (None)" else "info"
         self.dashboard_launch_status.setText(self._status_html(launch_name, launch_state))
 
@@ -1682,7 +1865,7 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(self.reforged_uninstall_btn, 1)
 
         refresh_btn = QPushButton("Refresh T7")
-        refresh_btn.clicked.connect(self.load_reforged_t7_options)
+        refresh_btn.clicked.connect(lambda: self.load_reforged_t7_options(user_initiated=True))
         btn_layout.addWidget(refresh_btn)
 
         layout.addWidget(btn_row, row, 0, 1, 4)
@@ -1895,7 +2078,7 @@ class MainWindow(QMainWindow):
             return None
         return os.path.join(game_dir, "players", "T7.json")
 
-    def load_reforged_t7_options(self):
+    def load_reforged_t7_options(self, user_initiated: bool = False):
         path = self._t7_json_path()
         if not path:
             return
@@ -1905,7 +2088,8 @@ class MainWindow(QMainWindow):
             self.reforged_force_ranked_cb.setChecked(False)
             self.reforged_steam_achievements_cb.setChecked(False)
             self._set_reforged_password("")
-            write_log("T7.json not found. Default values loaded.", "Info", self.log_text)
+            if user_initiated:
+                write_log("T7.json not found. Default values loaded.", "Info", self.log_text)
             return
 
         try:
@@ -1916,7 +2100,8 @@ class MainWindow(QMainWindow):
             self.reforged_force_ranked_cb.setChecked(bool(data.get("force_ranked", False)))
             self.reforged_steam_achievements_cb.setChecked(bool(data.get("steam_achievements", False)))
             self._set_reforged_password(network_pass)
-            write_log(f"Loaded T7 options from {path}", "Success", self.log_text)
+            if user_initiated:
+                write_log(f"Loaded T7 options from {path}", "Success", self.log_text)
         except Exception as exc:
             write_log(f"Failed to read T7.json: {exc}", "Error", self.log_text)
 
@@ -1962,6 +2147,8 @@ class MainWindow(QMainWindow):
             tab_widget.layout().update()
         if index == 0 or index == getattr(self, "enhanced_tab_index", -1):
             self.refresh_enhanced_status(show_warning=False)
+        if index == 0:
+            self.qol_widget.refresh_workshop_status()
         self.refresh_dashboard_status()
 
     def refresh_enhanced_status(self, *, show_warning: bool):
@@ -2305,6 +2492,7 @@ class MainWindow(QMainWindow):
         self.graphics_widget.set_game_directory(directory)
         self.advanced_widget.set_game_directory(directory)
         self.qol_widget.set_game_directory(directory)
+        self.qol_widget.refresh_workshop_status()
         self.refresh_enhanced_status(show_warning=False)
         self.refresh_dashboard_status()
         self.load_reforged_t7_options()

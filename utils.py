@@ -288,6 +288,166 @@ def find_steam_user_id():
         return None
     return user_ids[0]
 
+
+def _dedupe_existing_dirs(paths):
+    unique = []
+    seen = set()
+    for path in paths:
+        if not path:
+            continue
+        normalized = os.path.normcase(os.path.normpath(os.path.abspath(path)))
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        if os.path.isdir(path):
+            unique.append(os.path.normpath(path))
+    return unique
+
+
+def _candidate_steam_roots():
+    roots = []
+
+    if steam_exe_path and os.path.isabs(steam_exe_path):
+        roots.append(os.path.dirname(steam_exe_path))
+
+    if steam_userdata_path:
+        roots.append(os.path.dirname(steam_userdata_path))
+
+    system = platform.system()
+    home = os.path.expanduser("~")
+    if system == "Linux":
+        roots.extend([
+            os.path.join(home, ".steam", "steam"),
+            os.path.join(home, ".local", "share", "Steam"),
+        ])
+    elif system == "Windows":
+        detected_root = _find_windows_steam_root()
+        if detected_root:
+            roots.append(detected_root)
+    elif system == "Darwin":
+        roots.append(os.path.join(home, "Library", "Application Support", "Steam"))
+
+    return _dedupe_existing_dirs(roots)
+
+
+def _extract_library_paths_from_vdf(library_vdf_path):
+    if not library_vdf_path or not os.path.exists(library_vdf_path):
+        return []
+    try:
+        with open(library_vdf_path, "r", encoding="utf-8") as handle:
+            data = vdf.load(handle)
+    except Exception:
+        return []
+
+    libraryfolders = data.get("libraryfolders")
+    if not isinstance(libraryfolders, dict):
+        return []
+
+    libraries = []
+    for key, value in libraryfolders.items():
+        if key == "contentstatsid":
+            continue
+        if isinstance(value, str):
+            libraries.append(value)
+            continue
+        if isinstance(value, dict):
+            path_value = value.get("path")
+            if isinstance(path_value, str):
+                libraries.append(path_value)
+
+    return _dedupe_existing_dirs(libraries)
+
+
+def get_steam_library_paths():
+    libraries = []
+    for root in _candidate_steam_roots():
+        libraries.append(root)
+        library_vdf = os.path.join(root, "steamapps", "libraryfolders.vdf")
+        libraries.extend(_extract_library_paths_from_vdf(library_vdf))
+    return _dedupe_existing_dirs(libraries)
+
+
+def _workshop_item_installed_in_library(steam_library, game_app_id, workshop_id):
+    install_dir = os.path.join(
+        steam_library,
+        "steamapps",
+        "workshop",
+        "content",
+        str(game_app_id),
+        str(workshop_id),
+    )
+    if not os.path.isdir(install_dir):
+        return False, None
+    try:
+        has_files = any(os.scandir(install_dir))
+    except OSError:
+        has_files = False
+    return has_files, install_dir
+
+
+def _contains_workshop_id(value, workshop_id):
+    if isinstance(value, dict):
+        if str(workshop_id) in value:
+            return True
+        return any(_contains_workshop_id(item, workshop_id) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_workshop_id(item, workshop_id) for item in value)
+    return str(value) == str(workshop_id)
+
+
+def _workshop_item_subscribed_in_library(steam_library, game_app_id, workshop_id):
+    acf_path = os.path.join(
+        steam_library,
+        "steamapps",
+        "workshop",
+        f"appworkshop_{game_app_id}.acf",
+    )
+    if not os.path.exists(acf_path):
+        return False
+    try:
+        with open(acf_path, "r", encoding="utf-8") as handle:
+            data = vdf.load(handle)
+    except Exception:
+        return False
+    workshop_data = data.get("AppWorkshop", {})
+    if not isinstance(workshop_data, dict):
+        return False
+    return _contains_workshop_id(workshop_data, workshop_id)
+
+
+def get_workshop_item_state(game_app_id, workshop_id):
+    """Return the Steam Workshop state for a BO3 workshop item."""
+    workshop_id = str(workshop_id)
+    game_app_id = str(game_app_id)
+
+    subscribed = False
+    for steam_library in get_steam_library_paths():
+        installed, install_dir = _workshop_item_installed_in_library(steam_library, game_app_id, workshop_id)
+        if installed:
+            return {
+                "state": "Installed",
+                "installed": True,
+                "subscribed": True,
+                "path": install_dir,
+            }
+        if _workshop_item_subscribed_in_library(steam_library, game_app_id, workshop_id):
+            subscribed = True
+
+    if subscribed:
+        return {
+            "state": "Subscribed (not installed yet)",
+            "installed": False,
+            "subscribed": True,
+            "path": None,
+        }
+
+    return {
+        "state": "Not Subscribed",
+        "installed": False,
+        "subscribed": False,
+        "path": None,
+    }
+
 def get_backup_locations():
     user_backup_dir = os.path.join(get_app_data_dir(), "backups")
     module_backup_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backups")
