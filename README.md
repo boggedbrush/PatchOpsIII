@@ -1,7 +1,7 @@
 # PatchOpsIII
 
 [![Latest Release](https://img.shields.io/github/v/release/boggedbrush/PatchOpsIII?style=for-the-badge&color=0a84ff)](https://github.com/boggedbrush/PatchOpsIII/releases)
-[![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/boggedbrush/PatchOpsIII/total?style=for-the-badge&color=34c759)](https://github.com/boggedbrush/PatchOpsIII/releases)
+[![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/boggedbrush/patchopsiii/total.svg?style=for-the-badge&color=34c759&cacheSeconds=300)](https://github.com/boggedbrush/PatchOpsIII/releases)
 [![GitHub Stars](https://img.shields.io/github/stars/boggedbrush/PatchOpsIII?style=for-the-badge&color=ff9f0a)](https://github.com/boggedbrush/PatchOpsIII/stargazers)
 [![GitHub Issues](https://img.shields.io/github/issues/boggedbrush/PatchOpsIII?style=for-the-badge&color=ff453a)](https://github.com/boggedbrush/PatchOpsIII/issues)
 [![License](https://img.shields.io/github/license/boggedbrush/PatchOpsIII?style=for-the-badge&color=5e5ce6)](LICENSE)
