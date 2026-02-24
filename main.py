@@ -54,6 +54,10 @@ from utils import (
     app_id,
     launch_game_via_steam,
     manage_log_retention_on_launch,
+    patchops_backup_path,
+    existing_backup_path,
+    PATCHOPS_BACKUP_SUFFIX,
+    LEGACY_BACKUP_SUFFIX,
 )
 from bo3_enhanced import (
     download_latest_enhanced,
@@ -72,6 +76,7 @@ from version import APP_VERSION
 
 REFORGED_DOWNLOAD_URL = "https://downloads.bo3reforged.com/BlackOps3.exe"
 REFORGED_WORKSHOP_URL = "https://steamcommunity.com/sharedfiles/filedetails/?id=3667377161"
+REFORGED_WORKSHOP_STEAM_URL = f"steam://openurl/{REFORGED_WORKSHOP_URL}"
 DOWNGRADE_DEPOT_COMMAND = "download_depot 311210 311211 9084453472036406216"
 DOWNGRADE_APP_ID = "311210"
 DOWNGRADE_DEPOT_ID = "311211"
@@ -906,9 +911,12 @@ class ReforgedInstallWorker(QThread):
                     raise RuntimeError("Downloaded file is not a valid Windows executable.")
 
             if os.path.exists(target_exe):
-                backup_path = f"{target_exe}.patchops.bak"
-                self.progress.emit("Backing up current executable...")
-                shutil.copy2(target_exe, backup_path)
+                backup_path = patchops_backup_path(target_exe)
+                if existing_backup_path(target_exe):
+                    self.progress.emit("Existing executable backup found. Preserving original backup...")
+                else:
+                    self.progress.emit("Backing up current executable...")
+                    shutil.copy2(target_exe, backup_path)
 
             shutil.move(temp_path, target_exe)
             temp_path = None
@@ -966,9 +974,12 @@ class DowngradeInstallWorker(QThread):
 
             target_exe = find_game_executable(self.game_dir) or os.path.join(self.game_dir, "BlackOps3.exe")
             if os.path.exists(target_exe):
-                backup_path = f"{target_exe}.patchops.bak"
-                self.progress.emit("Backing up current executable...")
-                shutil.copy2(target_exe, backup_path)
+                backup_path = patchops_backup_path(target_exe)
+                if existing_backup_path(target_exe):
+                    self.progress.emit("Existing executable backup found. Preserving original backup...")
+                else:
+                    self.progress.emit("Backing up current executable...")
+                    shutil.copy2(target_exe, backup_path)
 
             shutil.copy2(depot_exe, target_exe)
             self.installed.emit(target_exe)
@@ -1138,17 +1149,19 @@ class QualityOfLifeWidget(QWidget):
         self.game_dir = game_dir
         if self.game_dir:
             video_dir = os.path.join(self.game_dir, "video")
-            intro_bak = os.path.join(video_dir, "BO3_Global_Logo_LogoSequence.mkv.bak")
-            self.skip_intro_cb.setChecked(os.path.exists(intro_bak))
+            intro_path = os.path.join(video_dir, "BO3_Global_Logo_LogoSequence.mkv")
+            self.skip_intro_cb.setChecked(existing_backup_path(intro_path) is not None)
             
             if os.path.exists(video_dir):
                 mkv_files = [f for f in os.listdir(video_dir) if f.endswith('.mkv')]
-                bak_files = [f for f in os.listdir(video_dir) if f.endswith('.mkv.bak')]
+                bak_files = [
+                    f for f in os.listdir(video_dir)
+                    if f.endswith(f".mkv{PATCHOPS_BACKUP_SUFFIX}") or f.endswith(f".mkv{LEGACY_BACKUP_SUFFIX}")
+                ]
                 self.skip_all_intro_cb.setChecked(len(bak_files) > 0 and len(mkv_files) == 0)
 
             dll_file = os.path.join(self.game_dir, "d3dcompiler_46.dll")
-            dll_bak = dll_file + ".bak"
-            self.reduce_stutter_cb.setChecked(os.path.exists(dll_bak))
+            self.reduce_stutter_cb.setChecked(existing_backup_path(dll_file) is not None)
 
     def set_log_widget(self, log_widget):
         self.log_widget = log_widget
@@ -1158,7 +1171,8 @@ class QualityOfLifeWidget(QWidget):
             return
         video_dir = os.path.join(self.game_dir, "video")
         intro_file = os.path.join(video_dir, "BO3_Global_Logo_LogoSequence.mkv")
-        intro_file_bak = intro_file + ".bak"
+        intro_file_bak = patchops_backup_path(intro_file)
+        legacy_intro_bak = f"{intro_file}{LEGACY_BACKUP_SUFFIX}"
 
         if not os.path.exists(video_dir):
             write_log("Video directory not found.", "Warning", self.log_widget)
@@ -1166,7 +1180,7 @@ class QualityOfLifeWidget(QWidget):
 
         if self.skip_intro_cb.isChecked():
             # If backup exists, assume the intro is already skipped
-            if os.path.exists(intro_file_bak):
+            if os.path.exists(intro_file_bak) or os.path.exists(legacy_intro_bak):
                 write_log("Intro video already skipped.", "Success", self.log_widget)
             else:
                 # If the original file exists, rename it
@@ -1180,9 +1194,10 @@ class QualityOfLifeWidget(QWidget):
                     # Neither original nor backup exist, but the user wants intros skipped
                     write_log("Intro video skipped.", "Success", self.log_widget)
         else:
-            if os.path.exists(intro_file_bak):
+            backup_path = existing_backup_path(intro_file)
+            if backup_path:
                 try:
-                    os.rename(intro_file_bak, intro_file)
+                    os.rename(backup_path, intro_file)
                     write_log("Intro video restored.", "Success", self.log_widget)
                 except Exception as e:
                     write_log(f"Failed to restore intro video file: {e}", "Error", self.log_widget)
@@ -1204,7 +1219,7 @@ class QualityOfLifeWidget(QWidget):
             mkv_files = [f for f in os.listdir(video_dir) if f.endswith('.mkv')]
             for mkv_file in mkv_files:
                 file_path = os.path.join(video_dir, mkv_file)
-                bak_path = file_path + '.bak'
+                bak_path = patchops_backup_path(file_path)
                 try:
                     if not os.path.exists(bak_path):
                         os.rename(file_path, bak_path)
@@ -1213,14 +1228,22 @@ class QualityOfLifeWidget(QWidget):
             write_log("All intro videos skipped.", "Success", self.log_widget)
         else:
             main_intro = "BO3_Global_Logo_LogoSequence.mkv"
-            bak_files = [f for f in os.listdir(video_dir) if f.endswith('.mkv.bak')]
-            for bak_file in bak_files:
+            backup_candidates = [
+                f for f in os.listdir(video_dir)
+                if f.endswith(f".mkv{PATCHOPS_BACKUP_SUFFIX}") or f.endswith(f".mkv{LEGACY_BACKUP_SUFFIX}")
+            ]
+            for bak_file in backup_candidates:
+                if bak_file.endswith(PATCHOPS_BACKUP_SUFFIX):
+                    file_name = bak_file[:-len(PATCHOPS_BACKUP_SUFFIX)]
+                else:
+                    file_name = bak_file[:-len(LEGACY_BACKUP_SUFFIX)]
+
                 # If user still wants main intro skipped, don't restore that one
-                if bak_file == main_intro + '.bak' and self.skip_intro_cb.isChecked():
+                if file_name == main_intro and self.skip_intro_cb.isChecked():
                     continue
 
                 bak_path = os.path.join(video_dir, bak_file)
-                file_path = bak_path[:-4]
+                file_path = os.path.join(video_dir, file_name)
                 try:
                     if not os.path.exists(file_path):
                         os.rename(bak_path, file_path)
@@ -1232,7 +1255,8 @@ class QualityOfLifeWidget(QWidget):
         if not self.game_dir:
             return
         dll_file = os.path.join(self.game_dir, "d3dcompiler_46.dll")
-        dll_bak = dll_file + ".bak"
+        dll_bak = patchops_backup_path(dll_file)
+        legacy_dll_bak = f"{dll_file}{LEGACY_BACKUP_SUFFIX}"
         if self.reduce_stutter_cb.isChecked():
             if os.path.exists(dll_file):
                 try:
@@ -1240,14 +1264,15 @@ class QualityOfLifeWidget(QWidget):
                     write_log("Renamed d3dcompiler_46.dll to reduce stuttering.", "Success", self.log_widget)
                 except Exception:
                     write_log("Failed to rename d3dcompiler_46.dll.", "Error", self.log_widget)
-            elif os.path.exists(dll_bak):
+            elif os.path.exists(dll_bak) or os.path.exists(legacy_dll_bak):
                 write_log("Already using latest d3dcompiler.", "Success", self.log_widget)
             else:
                 write_log("d3dcompiler_46.dll not found.", "Warning", self.log_widget)
         else:
-            if os.path.exists(dll_bak):
+            backup_path = existing_backup_path(dll_file)
+            if backup_path:
                 try:
-                    os.rename(dll_bak, dll_file)
+                    os.rename(backup_path, dll_file)
                     write_log("Restored d3dcompiler_46.dll.", "Success", self.log_widget)
                 except Exception:
                     write_log("Failed to restore d3dcompiler_46.dll.", "Error", self.log_widget)
@@ -1614,12 +1639,20 @@ class MainWindow(QMainWindow):
         self.reforged_status_label = QLabel("Status: Reforged Not installed")
         layout.addWidget(self.reforged_status_label)
 
-        workshop_info = QLabel(
-            f'<a href="{REFORGED_WORKSHOP_URL}">Open BO3 Reforged Workshop page</a>'
+        workshop_note_row = QHBoxLayout()
+        workshop_note_row.setContentsMargins(0, 0, 0, 0)
+        workshop_note_row.setSpacing(8)
+        workshop_note = QLabel("Installing Reforged also installs the BO3 Reforged Workshop mod.")
+        workshop_note.setWordWrap(False)
+        workshop_note_row.addWidget(workshop_note)
+        workshop_help_btn = QPushButton("?")
+        workshop_help_btn.setFixedSize(20, 20)
+        workshop_help_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(REFORGED_WORKSHOP_STEAM_URL))
         )
-        workshop_info.setOpenExternalLinks(True)
-        workshop_info.setTextInteractionFlags(Qt.TextBrowserInteraction)
-        layout.addWidget(workshop_info)
+        workshop_note_row.addWidget(workshop_help_btn)
+        workshop_note_row.addStretch(1)
+        layout.addLayout(workshop_note_row)
 
         compat_note = QLabel(
             "T7Patch compatibility: Reforged can be used with or without T7Patch. "
@@ -1731,7 +1764,7 @@ class MainWindow(QMainWindow):
         self.reforged_install_btn.setEnabled(True)
         self.reforged_status_label.setText("Status: Reforged installed")
         write_log(f"Reforged installed to {target_path}", "Success", self.log_text)
-        QDesktopServices.openUrl(QUrl(f"steam://openurl/{REFORGED_WORKSHOP_URL}"))
+        QDesktopServices.openUrl(QUrl(REFORGED_WORKSHOP_STEAM_URL))
         write_log("Opened Reforged Workshop page in Steam.", "Info", self.log_text)
 
     def _on_reforged_failed(self, reason: str):

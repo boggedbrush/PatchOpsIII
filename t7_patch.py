@@ -5,7 +5,14 @@ from PySide6.QtWidgets import (
     QLabel, QHBoxLayout, QVBoxLayout, QRadioButton, QButtonGroup, QCheckBox, QSizePolicy
 )
 from PySide6.QtCore import Signal, QEvent, QThread
-from utils import write_log, apply_launch_options
+from utils import (
+    write_log,
+    apply_launch_options,
+    patchops_backup_path,
+    existing_backup_path,
+    PATCHOPS_BACKUP_SUFFIX,
+    LEGACY_BACKUP_SUFFIX,
+)
 
 # Add module-level flag
 defender_warning_logged = False
@@ -112,7 +119,7 @@ def update_t7patch_conf(game_dir, new_name=None, new_password=None, friends_only
         write_log(f"t7patch.conf not found in {game_dir}.", "Warning", log_widget)
 
 def backup_lpc_files(game_dir, log_widget):
-    """Create backups of original LPC files by renaming them with .bak extension"""
+    """Create backups of original LPC files by renaming them with .patchops.bak extension."""
     lpc_dir = os.path.join(game_dir, "LPC")
     if not os.path.exists(lpc_dir):
         os.makedirs(lpc_dir)
@@ -122,12 +129,12 @@ def backup_lpc_files(game_dir, log_widget):
     try:
         backed_up = 0
         for file in os.listdir(lpc_dir):
-            if file.endswith(".ff") and not file.endswith(".bak"):
+            if file.endswith(".ff"):
                 src = os.path.join(lpc_dir, file)
-                dst = src + ".bak"
-                if not os.path.exists(dst):
+                dst = patchops_backup_path(src)
+                if not existing_backup_path(src):
                     try:
-                        # Just rename the file to .bak
+                        # Keep the first backup as the rollback target.
                         os.rename(src, dst)
                         backed_up += 1
                     except Exception as e:
@@ -142,21 +149,28 @@ def backup_lpc_files(game_dir, log_widget):
         return False
 
 def restore_lpc_backups(game_dir, log_widget):
-    """Restore original LPC files from .bak backups"""
+    """Restore original LPC files from PatchOps and legacy backups."""
     lpc_dir = os.path.join(game_dir, "LPC")
     if not os.path.exists(lpc_dir):
         return
     
     try:
         restored = 0
+        selected_backups = {}
         for file in os.listdir(lpc_dir):
-            if file.endswith(".bak"):
-                src = os.path.join(lpc_dir, file)
-                dst = src[:-4]  # Remove .bak extension
-                if os.path.exists(dst):
-                    os.remove(dst)
-                os.rename(src, dst)
-                restored += 1
+            if file.endswith(PATCHOPS_BACKUP_SUFFIX):
+                base = file[:-len(PATCHOPS_BACKUP_SUFFIX)]
+                selected_backups[base] = os.path.join(lpc_dir, file)
+            elif file.endswith(LEGACY_BACKUP_SUFFIX):
+                base = file[:-len(LEGACY_BACKUP_SUFFIX)]
+                selected_backups.setdefault(base, os.path.join(lpc_dir, file))
+
+        for base_name, src in selected_backups.items():
+            dst = os.path.join(lpc_dir, base_name)
+            if os.path.exists(dst):
+                os.remove(dst)
+            os.rename(src, dst)
+            restored += 1
         
         if restored > 0:
             write_log(f"Restored {restored} LPC backup files", "Success", log_widget)
@@ -206,7 +220,7 @@ def install_lpc_files(game_dir, mod_files_dir, log_widget):
                 # Try without LPC subfolder
                 src_lpc = temp_dir
             
-            # Copy new files, preserving existing .bak files
+            # Copy new files while preserving existing backup files.
             for file in os.listdir(src_lpc):
                 if file.endswith(".ff"):
                     src_file = os.path.join(src_lpc, file)

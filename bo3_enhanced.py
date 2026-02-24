@@ -13,7 +13,11 @@ from typing import Callable, Dict, Iterable, Optional, Tuple
 import requests
 
 
-from utils import write_log
+from utils import (
+    write_log,
+    patchops_backup_path,
+    existing_backup_path,
+)
 import shutil
 import re
 
@@ -364,9 +368,12 @@ def _safe_extract_member(archive: zipfile.ZipFile, member: zipfile.ZipInfo, dest
 def _backup_with_bak(target_path: str) -> Optional[str]:
     if not os.path.exists(target_path):
         return None
-    bak_path = target_path + ".bak"
-    if os.path.exists(bak_path):
-        return bak_path
+    bak_path = patchops_backup_path(target_path)
+    # Keep the first backup as the original rollback point.
+    existing_backup = existing_backup_path(target_path)
+    if existing_backup:
+        write_log(f"Existing backup found for {os.path.basename(target_path)}; preserving original backup.", "Info", None)
+        return existing_backup
     os.rename(target_path, bak_path)
     return bak_path
 
@@ -558,7 +565,7 @@ def install_dump_only(game_dir: str, mod_files_dir: str, storage_dir: str, dump_
 
 
 def uninstall_dump_only(game_dir: str, mod_files_dir: str, storage_dir: str, log_widget=None) -> bool:
-    """Uninstall dump-only changes by restoring .bak files or removing added files."""
+    """Uninstall dump-only changes by restoring backups or removing added files."""
     if not game_dir or not os.path.isdir(game_dir):
         write_log("Invalid game directory for dump uninstall.", "Error", log_widget)
         return False
@@ -589,8 +596,8 @@ def uninstall_dump_only(game_dir: str, mod_files_dir: str, storage_dir: str, log
             target = os.path.normpath(os.path.join(game_dir, rel_path))
             if not target.startswith(os.path.normpath(game_dir)):
                 continue
-            bak_path = target + ".bak"
-            if os.path.exists(bak_path):
+            bak_path = existing_backup_path(target)
+            if bak_path and os.path.exists(bak_path):
                 try:
                     if os.path.exists(target):
                         os.remove(target)
@@ -653,8 +660,8 @@ def uninstall_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str
 
     for rel_path in installed_files:
         target = os.path.join(game_dir, rel_path)
-        backup_path = target + ".bak"
-        if os.path.exists(backup_path):
+        backup_path = existing_backup_path(target)
+        if backup_path and os.path.exists(backup_path):
             try:
                 os.makedirs(os.path.dirname(target), exist_ok=True)
                 if os.path.exists(target):
@@ -686,8 +693,8 @@ def uninstall_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str
         attempted = True
         for filename in EXPECTED_ENHANCED_FILES:
             target = os.path.join(game_dir, filename)
-            backup_path = target + ".bak"
-            if os.path.exists(backup_path):
+            backup_path = existing_backup_path(target)
+            if backup_path and os.path.exists(backup_path):
                 try:
                     if os.path.exists(target):
                         os.remove(target)

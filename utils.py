@@ -10,6 +10,23 @@ import platform
 
 DEFAULT_LOG_FILENAME = "PatchOpsIII.log"
 LAUNCH_COUNTER_FILENAME = "launch_counter.txt"
+PATCHOPS_BACKUP_SUFFIX = ".patchops.bak"
+LEGACY_BACKUP_SUFFIX = ".bak"
+
+
+def patchops_backup_path(path):
+    return f"{path}{PATCHOPS_BACKUP_SUFFIX}"
+
+
+def legacy_backup_path(path):
+    return f"{path}{LEGACY_BACKUP_SUFFIX}"
+
+
+def existing_backup_path(path):
+    for candidate in (patchops_backup_path(path), legacy_backup_path(path)):
+        if os.path.exists(candidate):
+            return candidate
+    return None
 
 def get_app_data_dir():
     system = platform.system()

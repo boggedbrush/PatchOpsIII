@@ -14,7 +14,13 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QIntValidator, QGuiApplication
 from PySide6.QtCore import Qt, QTimer
 from version import APP_VERSION
-from utils import write_log, get_log_file_path, clear_log_file
+from utils import (
+    write_log,
+    get_log_file_path,
+    clear_log_file,
+    patchops_backup_path,
+    existing_backup_path,
+)
 
 def set_config_value(game_dir, key, value, comment, log_widget):
     config_path = os.path.join(game_dir, "players", "config.ini")
@@ -61,7 +67,7 @@ def update_config_values(config_path, changes, success_message, log_widget, supp
 
 def toggle_stuttering_setting(game_dir, reduce_stutter, log_widget):
     dll_file = os.path.join(game_dir, "d3dcompiler_46.dll")
-    dll_bak = dll_file + ".bak"
+    dll_bak = patchops_backup_path(dll_file)
     if reduce_stutter:
         if os.path.exists(dll_file):
             try:
@@ -69,14 +75,15 @@ def toggle_stuttering_setting(game_dir, reduce_stutter, log_widget):
                 write_log("Renamed d3dcompiler_46.dll to reduce stuttering.", "Success", log_widget)
             except Exception:
                 write_log("Failed to rename d3dcompiler_46.dll.", "Error", log_widget)
-        elif os.path.exists(dll_bak):
+        elif existing_backup_path(dll_file):
             write_log("Stutter reduction already enabled.", "Success", log_widget)
         else:
             write_log("d3dcompiler_46.dll not found.", "Warning", log_widget)
     else:
-        if os.path.exists(dll_bak):
+        backup_path = existing_backup_path(dll_file)
+        if backup_path:
             try:
-                os.rename(dll_bak, dll_file)
+                os.rename(backup_path, dll_file)
                 write_log("Restored d3dcompiler_46.dll.", "Success", log_widget)
             except Exception:
                 write_log("Failed to restore d3dcompiler_46.dll.", "Error", log_widget)
@@ -178,8 +185,8 @@ def check_essential_status(game_dir):
         status["reduce_cpu"] = bool(re.search(r'SerializeRender\s*=\s*"2"', content))
 
         video_dir = os.path.join(game_dir, "video")
-        intro_bak = os.path.join(video_dir, "BO3_Global_Logo_LogoSequence.mkv.bak")
-        status["skip_intro"] = os.path.exists(intro_bak)
+        intro_file = os.path.join(video_dir, "BO3_Global_Logo_LogoSequence.mkv")
+        status["skip_intro"] = existing_backup_path(intro_file) is not None
     else:
         status = {
             "max_fps": 60,
