@@ -711,14 +711,13 @@ def uninstall_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str
             except Exception as exc:  # noqa: BLE001
                 write_log(f"Failed to restore backup for {rel_path}: {exc}", "Warning", log_widget)
         
-        # Backup missing. Only delete if we are sure it is a pure addon (e.g. one of the enhanced DLLs).
-        # Do NOT delete potential core game files like BlackOps3.exe if backup is lost.
+        # Backup missing. Remove tracked files, but protect the executable.
+        # A normal first-time install has no backups for newly added dump files.
         if os.path.exists(target):
-            # Check if this file is one of the known 'Enhanced' addons.
-            # If it came from the DUMP (like BlackOps3.exe), we should NOT delete it without a backup.
-            is_pure_addon = os.path.basename(rel_path) in EXPECTED_ENHANCED_FILES
-            
-            if is_pure_addon:
+            filename = os.path.basename(rel_path)
+            is_protected_executable = filename.lower() == "blackops3.exe"
+
+            if not is_protected_executable:
                 try:
                     os.remove(target)
                     removed += 1
