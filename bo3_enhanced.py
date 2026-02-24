@@ -570,17 +570,17 @@ def uninstall_dump_only(game_dir: str, mod_files_dir: str, storage_dir: str, log
         write_log("Invalid game directory for dump uninstall.", "Error", log_widget)
         return False
 
-    dump_zip = os.path.join(mod_files_dir, DUMP_ARCHIVE_NAME)
-    if not os.path.exists(dump_zip):
-        write_log(f"Dump archive not found at {dump_zip}", "Error", log_widget)
-        return False
-
     state = load_state(storage_dir)
     tracked = state.get("dump_only_files", [])
+
+    dump_zip = os.path.join(mod_files_dir, DUMP_ARCHIVE_NAME)
     restored = 0
     removed = 0
     try:
         if not tracked:
+            if not os.path.exists(dump_zip):
+                # Nothing was ever installed; nothing to uninstall.
+                return True
             with zipfile.ZipFile(dump_zip, "r") as archive:
                 for info in archive.infolist():
                     if not info.filename.startswith("DUMP/"):
