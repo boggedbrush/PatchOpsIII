@@ -29,6 +29,27 @@
     <link rel="icon" href="/assets/img/favicon-16.png" type="image/png" sizes="16x16" />
     <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
+    <link rel="preload" as="image" href="/assets/img/patchopsiii.png" />
+    <script>
+      (() => {
+        const key = "patchopsiii-theme";
+        const root = document.documentElement;
+
+        let stored = null;
+        try {
+          stored = window.localStorage.getItem(key);
+        } catch {}
+
+        const prefersLight =
+          typeof window.matchMedia === "function" && window.matchMedia("(prefers-color-scheme: light)").matches;
+        const theme = stored || (prefersLight ? "light" : "dark");
+
+        root.dataset.theme = theme;
+
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute("content", theme === "light" ? "#ffffff" : "#0d0d0f");
+      })();
+    </script>
     <link rel="stylesheet" href="/assets/css/site.css" />
 
     <script>
@@ -42,7 +63,7 @@
     <header class="site-header" data-header>
       <div class="container header-inner">
         <a class="brand" href="/" aria-label="PatchOpsIII home">
-          <img src="/assets/img/patchopsiii.png" width="28" height="28" alt="" aria-hidden="true" />
+          <img src="/assets/img/patchopsiii.png" width="28" height="28" alt="" aria-hidden="true" fetchpriority="high" decoding="async" />
           <span class="brand-name">PatchOpsIII</span>
         </a>
 
@@ -120,23 +141,22 @@
       <section class="section">
         <div class="container feature-split">
           <div class="feature-copy">
-            <h2>Mods tab</h2>
-            <p class="muted">Secure, patch, and launch BO3 with confident defaults and one-click helpers.</p>
+            <h2>Dashboard</h2>
+            <p class="muted">A real-time status overview and launch control center in one glance.</p>
             <ul class="checklist">
+              <li>Status overview for T7 Patch, DXVK, Enhanced, Reforged, and launch options.</li>
+              <li>Quality of Life toggles: skip intros, use latest d3dcompiler.</li>
+              <li>Launch profiles: Default, Play Offline, All-around Enhancement Lite, Ultimate Experience Mod, Reforged.</li>
               <li>Smart Black Ops III directory detection (automatic + manual browse).</li>
-              <li>T7 Patch install/update + gamertag + colors + network password + Friends Only toggle.</li>
-              <li>DXVK-GPLAsync install/remove for smoother frametimes and reduced shader stutter.</li>
-              <li>Workshop helper links and curated mod launch profiles.</li>
-              <li>Skip intro videos and other quality-of-life options.</li>
             </ul>
           </div>
           <div class="feature-media">
             <div class="media-frame">
               <img
-                src="/assets/img/screenshots/mods.png"
-                alt="PatchOpsIII Mods tab screenshot"
-                width="1124"
-                height="638"
+                src="/assets/img/screenshots/dashboard.png"
+                alt="PatchOpsIII Dashboard screenshot"
+                width="1150"
+                height="838"
                 loading="lazy"
                 decoding="async"
               />
@@ -148,22 +168,22 @@
       <section class="section">
         <div class="container feature-split reverse">
           <div class="feature-copy">
-            <h2>Graphics tab</h2>
-            <p class="muted">Fast, practical graphics controls — from curated presets to your exact refresh rate.</p>
+            <h2>T7 Patch</h2>
+            <p class="muted">Secure your multiplayer sessions with one-click patch management.</p>
             <ul class="checklist">
-              <li>Preset loader for curated JSON configurations.</li>
-              <li>FOV, display mode, resolution, refresh rate, render resolution %, and V-Sync.</li>
-              <li>FPS limiter (0–1000) and FPS counter toggle.</li>
-              <li>Intro skip automation via safe file renames.</li>
+              <li>Install or update T7 Patch to mitigate known remote code execution vulnerabilities.</li>
+              <li>Set your gamertag and choose from multiple gamertag colors.</li>
+              <li>Configure a network password with Friends Only mode support.</li>
+              <li>Clean uninstall when needed.</li>
             </ul>
           </div>
           <div class="feature-media">
             <div class="media-frame">
               <img
-                src="/assets/img/screenshots/graphics.png"
-                alt="PatchOpsIII Graphics tab screenshot"
-                width="1124"
-                height="638"
+                src="/assets/img/screenshots/t7patch.png"
+                alt="PatchOpsIII T7 Patch tab screenshot"
+                width="1150"
+                height="838"
                 loading="lazy"
                 decoding="async"
               />
@@ -175,12 +195,118 @@
       <section class="section">
         <div class="container feature-split">
           <div class="feature-copy">
-            <h2>Advanced tab</h2>
+            <h2>BO3 Enhanced</h2>
+            <p class="muted">Install and manage the Enhanced mod that unlocks higher-fidelity assets.</p>
+            <ul class="checklist">
+              <li>Install or update BO3 Enhanced from a local game dump.</li>
+              <li>Step-by-step guidance for providing a UWP game dump.</li>
+              <li>Clean uninstall preserves your base game files.</li>
+            </ul>
+          </div>
+          <div class="feature-media">
+            <div class="media-frame">
+              <img
+                src="/assets/img/screenshots/enhanced.png"
+                alt="PatchOpsIII Enhanced tab screenshot"
+                width="1150"
+                height="838"
+                loading="lazy"
+                decoding="async"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container feature-split reverse">
+          <div class="feature-copy">
+            <h2>BO3 Reforged</h2>
+            <p class="muted">Deploy the Reforged overhaul mod with full T7 Patch compatibility.</p>
+            <ul class="checklist">
+              <li>Install Reforged (also installs the BO3 Reforged Workshop mod).</li>
+              <li>Force Ranked Mode and Steam Achievements toggles.</li>
+              <li>Network password synced to players/T7.json for cross-compatible multiplayer.</li>
+              <li>Works with or without T7 Patch; cross-compatible when both players use Reforged.</li>
+            </ul>
+          </div>
+          <div class="feature-media">
+            <div class="media-frame">
+              <img
+                src="/assets/img/screenshots/reforged.png"
+                alt="PatchOpsIII Reforged tab screenshot"
+                width="1150"
+                height="838"
+                loading="lazy"
+                decoding="async"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container feature-split">
+          <div class="feature-copy">
+            <h2>Graphics</h2>
+            <p class="muted">Fast, practical graphics controls — from curated presets to your exact refresh rate.</p>
+            <ul class="checklist">
+              <li>Preset loader for curated JSON configurations (e.g. Smooth Preset).</li>
+              <li>FOV slider, display mode, resolution, refresh rate, render resolution %, and V-Sync.</li>
+              <li>FPS limiter (0–1000) and FPS counter toggle.</li>
+            </ul>
+          </div>
+          <div class="feature-media">
+            <div class="media-frame">
+              <img
+                src="/assets/img/screenshots/graphics.png"
+                alt="PatchOpsIII Graphics tab screenshot"
+                width="1150"
+                height="838"
+                loading="lazy"
+                decoding="async"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container feature-split reverse">
+          <div class="feature-copy">
+            <h2>DXVK-GPLAsync</h2>
+            <p class="muted">Reduce shader stutter with async Vulkan compilation tuned for BO3.</p>
+            <ul class="checklist">
+              <li>Install or uninstall DXVK-GPLAsync with one click.</li>
+              <li>Configure async shader compilation, GPL async cache, and FPS/GPU HUD.</li>
+              <li>Tune compiler threads, frame rate cap, frame latency, and tear-free mode.</li>
+              <li>Presets for quick recommended configuration.</li>
+            </ul>
+          </div>
+          <div class="feature-media">
+            <div class="media-frame">
+              <img
+                src="/assets/img/screenshots/dxvk.png"
+                alt="PatchOpsIII DXVK tab screenshot"
+                width="1150"
+                height="838"
+                loading="lazy"
+                decoding="async"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container feature-split">
+          <div class="feature-copy">
+            <h2>Advanced</h2>
             <p class="muted">Unlock hidden settings and apply power tweaks while keeping your config safe.</p>
             <ul class="checklist">
-              <li>SmoothFramerate, full VRAM usage, frame latency, and CPU pressure toggles.</li>
-              <li>Stutter fixes and modern DirectX DLL enforcement.</li>
-              <li>Unlock hidden graphics options and set config.ini read-only.</li>
+              <li>SmoothFramerate, VRAM target limit, frame latency, and Reduce CPU Usage toggles.</li>
+              <li>Unlock all graphics options and set config.ini read-only.</li>
+              <li>Clear logs, copy logs, clear mod files, and reset to stock.</li>
               <li>Guarded writes that reduce accidental overwrites of user settings.</li>
             </ul>
           </div>
@@ -189,8 +315,8 @@
               <img
                 src="/assets/img/screenshots/advanced.png"
                 alt="PatchOpsIII Advanced tab screenshot"
-                width="1124"
-                height="638"
+                width="1150"
+                height="838"
                 loading="lazy"
                 decoding="async"
               />
@@ -243,7 +369,7 @@
       <div class="container footer-grid">
         <div>
           <a class="brand footer-brand" href="/">
-            <img src="/assets/img/patchopsiii.png" width="28" height="28" alt="" aria-hidden="true" />
+            <img src="/assets/img/patchopsiii.png" width="28" height="28" alt="" aria-hidden="true" fetchpriority="high" decoding="async" />
             <span class="brand-name">PatchOpsIII</span>
           </a>
           <p class="muted">

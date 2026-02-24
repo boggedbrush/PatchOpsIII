@@ -26,6 +26,27 @@
     <link rel="icon" href="/assets/img/favicon-16.png" type="image/png" sizes="16x16" />
     <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
+    <link rel="preload" as="image" href="/assets/img/patchopsiii.png" />
+    <script>
+      (() => {
+        const key = "patchopsiii-theme";
+        const root = document.documentElement;
+
+        let stored = null;
+        try {
+          stored = window.localStorage.getItem(key);
+        } catch {}
+
+        const prefersLight =
+          typeof window.matchMedia === "function" && window.matchMedia("(prefers-color-scheme: light)").matches;
+        const theme = stored || (prefersLight ? "light" : "dark");
+
+        root.dataset.theme = theme;
+
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute("content", theme === "light" ? "#ffffff" : "#0d0d0f");
+      })();
+    </script>
     <link rel="stylesheet" href="/assets/css/site.css" />
 
     <script>
@@ -39,7 +60,7 @@
     <header class="site-header" data-header>
       <div class="container header-inner">
         <a class="brand" href="/" aria-label="PatchOpsIII home">
-          <img src="/assets/img/patchopsiii.png" width="28" height="28" alt="" aria-hidden="true" />
+          <img src="/assets/img/patchopsiii.png" width="28" height="28" alt="" aria-hidden="true" fetchpriority="high" decoding="async" />
           <span class="brand-name">PatchOpsIII</span>
         </a>
 
@@ -147,7 +168,7 @@
       <div class="container footer-grid">
         <div>
           <a class="brand footer-brand" href="/">
-            <img src="/assets/img/patchopsiii.png" width="28" height="28" alt="" aria-hidden="true" />
+            <img src="/assets/img/patchopsiii.png" width="28" height="28" alt="" aria-hidden="true" fetchpriority="high" decoding="async" />
             <span class="brand-name">PatchOpsIII</span>
           </a>
           <p class="muted">

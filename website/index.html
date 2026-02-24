@@ -31,7 +31,28 @@
     <link rel="icon" href="/assets/img/favicon-16.png" type="image/png" sizes="16x16" />
     <link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
-    <link rel="stylesheet" href="assets/css/site.css" />
+    <link rel="preload" as="image" href="/assets/img/patchopsiii.png" />
+    <script>
+      (() => {
+        const key = "patchopsiii-theme";
+        const root = document.documentElement;
+
+        let stored = null;
+        try {
+          stored = window.localStorage.getItem(key);
+        } catch {}
+
+        const prefersLight =
+          typeof window.matchMedia === "function" && window.matchMedia("(prefers-color-scheme: light)").matches;
+        const theme = stored || (prefersLight ? "light" : "dark");
+
+        root.dataset.theme = theme;
+
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute("content", theme === "light" ? "#ffffff" : "#0d0d0f");
+      })();
+    </script>
+    <link rel="stylesheet" href="/assets/css/site.css" />
 
     <script>
       document.documentElement.classList.remove("no-js");
@@ -58,7 +79,7 @@
     <header class="site-header" data-header>
       <div class="container header-inner">
         <a class="brand" href="/" aria-label="PatchOpsIII home">
-          <img src="assets/img/patchopsiii.png" width="28" height="28" alt="" aria-hidden="true" />
+          <img src="/assets/img/patchopsiii.png" width="28" height="28" alt="" aria-hidden="true" fetchpriority="high" decoding="async" />
           <span class="brand-name">PatchOpsIII</span>
         </a>
 
@@ -152,15 +173,15 @@
           <div class="hero-media">
             <div class="media-frame">
               <img
-                src="assets/img/screenshots/mods.png"
-                alt="PatchOpsIII Mods tab screenshot"
-                width="1124"
-                height="638"
+                src="assets/img/screenshots/dashboard.png"
+                alt="PatchOpsIII Dashboard screenshot"
+                width="1150"
+                height="838"
                 loading="eager"
                 decoding="async"
               />
             </div>
-            <p class="media-caption">Mods tab: T7 Patch, DXVK, launch profiles, and helpers — in one place.</p>
+            <p class="media-caption">Dashboard: status overview, launch options, and quality-of-life toggles — all at a glance.</p>
           </div>
         </div>
       </section>
@@ -212,23 +233,49 @@
             <figure class="shot">
               <div class="media-frame">
                 <img
-                  src="assets/img/screenshots/mods.png"
-                  alt="PatchOpsIII Mods tab screenshot"
-                  width="1124"
-                  height="638"
+                  src="assets/img/screenshots/t7patch.png"
+                  alt="PatchOpsIII T7 Patch tab screenshot"
+                  width="1150"
+                  height="838"
                   loading="lazy"
                   decoding="async"
                 />
               </div>
-              <figcaption>Mods</figcaption>
+              <figcaption>T7 Patch</figcaption>
+            </figure>
+            <figure class="shot">
+              <div class="media-frame">
+                <img
+                  src="assets/img/screenshots/enhanced.png"
+                  alt="PatchOpsIII Enhanced tab screenshot"
+                  width="1150"
+                  height="838"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </div>
+              <figcaption>Enhanced</figcaption>
+            </figure>
+            <figure class="shot">
+              <div class="media-frame">
+                <img
+                  src="assets/img/screenshots/reforged.png"
+                  alt="PatchOpsIII Reforged tab screenshot"
+                  width="1150"
+                  height="838"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </div>
+              <figcaption>Reforged</figcaption>
             </figure>
             <figure class="shot">
               <div class="media-frame">
                 <img
                   src="assets/img/screenshots/graphics.png"
                   alt="PatchOpsIII Graphics tab screenshot"
-                  width="1124"
-                  height="638"
+                  width="1150"
+                  height="838"
                   loading="lazy"
                   decoding="async"
                 />
@@ -238,10 +285,23 @@
             <figure class="shot">
               <div class="media-frame">
                 <img
+                  src="assets/img/screenshots/dxvk.png"
+                  alt="PatchOpsIII DXVK tab screenshot"
+                  width="1150"
+                  height="838"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </div>
+              <figcaption>DXVK</figcaption>
+            </figure>
+            <figure class="shot">
+              <div class="media-frame">
+                <img
                   src="assets/img/screenshots/advanced.png"
                   alt="PatchOpsIII Advanced tab screenshot"
-                  width="1124"
-                  height="638"
+                  width="1150"
+                  height="838"
                   loading="lazy"
                   decoding="async"
                 />
@@ -272,7 +332,7 @@
       <div class="container footer-grid">
         <div>
           <a class="brand footer-brand" href="/">
-            <img src="assets/img/patchopsiii.png" width="28" height="28" alt="" aria-hidden="true" />
+            <img src="/assets/img/patchopsiii.png" width="28" height="28" alt="" aria-hidden="true" fetchpriority="high" decoding="async" />
             <span class="brand-name">PatchOpsIII</span>
           </a>
           <p class="muted">

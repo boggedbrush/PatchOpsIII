@@ -10,7 +10,7 @@
 
 ---
 
-![Program Screenshot](https://github.com/user-attachments/assets/a79e7273-4274-4a43-8d4d-e81a12cbd1ff)
+![PatchOpsIII Dashboard](https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/dashboard.png)
 
 ---
 
@@ -89,11 +89,19 @@ PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popul
 ## Screenshots
 <table>
   <tr>
-    <td align="center"><img src="https://github.com/user-attachments/assets/a79e7273-4274-4a43-8d4d-e81a12cbd1ff" alt="Mods Tab" /></td>
-    <td align="center"><img src="https://github.com/user-attachments/assets/1188883e-7bf2-464e-a4a7-5f9806806fb2" alt="Graphics Tab" /></td>
+    <td align="center"><img src="https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/dashboard.png" alt="Dashboard" /><br/><sub>Dashboard</sub></td>
+    <td align="center"><img src="https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/t7patch.png" alt="T7 Patch" /><br/><sub>T7 Patch</sub></td>
   </tr>
   <tr>
-    <td align="center" colspan="2"><img src="https://github.com/user-attachments/assets/0c6ba5d4-f86a-4645-9b07-a5667c8305b9" alt="Advanced Tab" /></td>
+    <td align="center"><img src="https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/enhanced.png" alt="BO3 Enhanced" /><br/><sub>Enhanced</sub></td>
+    <td align="center"><img src="https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/reforged.png" alt="BO3 Reforged" /><br/><sub>Reforged</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/graphics.png" alt="Graphics" /><br/><sub>Graphics</sub></td>
+    <td align="center"><img src="https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/dxvk.png" alt="DXVK" /><br/><sub>DXVK</sub></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2"><img src="https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/advanced.png" alt="Advanced" /><br/><sub>Advanced</sub></td>
   </tr>
 </table>
 
