@@ -415,6 +415,24 @@ def _backup_with_bak(target_path: str) -> Optional[str]:
     return bak_path
 
 
+def _backup_with_bak_for_install(target_path: str, created_backups: list[Tuple[str, str]]) -> bool:
+    """Create a backup if needed and track newly created backups for rollback."""
+    if not os.path.exists(target_path):
+        return False
+    existing_backup = existing_backup_path(target_path)
+    if existing_backup:
+        write_log(
+            f"Existing backup found for {os.path.basename(target_path)}; preserving original backup.",
+            "Info",
+            None,
+        )
+        return True
+    bak_path = patchops_backup_path(target_path)
+    os.rename(target_path, bak_path)
+    created_backups.append((target_path, bak_path))
+    return True
+
+
 def _should_copy_dump_member(rel_path: str) -> bool:
     """
     Decide whether a file from DUMP.zip should be copied into the game dir.
@@ -459,6 +477,8 @@ def install_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str, 
 
     try:
         installed_rel_paths = []
+        created_backups: list[Tuple[str, str]] = []
+        created_files: list[str] = []
 
         # 1) Install all dump contents
         if os.path.isdir(dump_source):
@@ -483,10 +503,12 @@ def install_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str, 
                     target = os.path.normpath(os.path.join(game_dir, final_rel_path))
                     if not _is_within_root(game_dir, target):
                         continue
-                        
-                    _backup_with_bak(target)
+
+                    had_target = _backup_with_bak_for_install(target, created_backups)
                     os.makedirs(os.path.dirname(target), exist_ok=True)
                     shutil.copy2(src_path, target)
+                    if not had_target:
+                        created_files.append(target)
                     installed_rel_paths.append(final_rel_path)
         else:
             # Install from ZIP
@@ -509,11 +531,12 @@ def install_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str, 
                     if not _is_within_root(game_dir, target):
                         raise ValueError(f"Unsafe path detected in dump archive: {info.filename}")
 
-                    _backup_with_bak(target)
+                    had_target = _backup_with_bak_for_install(target, created_backups)
                     os.makedirs(os.path.dirname(target), exist_ok=True)
                     with archive.open(info, "r") as src, open(target, "wb") as dst:
                         shutil.copyfileobj(src, dst)
-
+                    if not had_target:
+                        created_files.append(target)
                     installed_rel_paths.append(final_rel_path)
 
         # 2) Install BO3 Enhanced DLLs on top
@@ -522,8 +545,10 @@ def install_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str, 
                 name = os.path.basename(info.filename)
                 if name in EXPECTED_ENHANCED_FILES:
                     dest_path = os.path.join(game_dir, name)
-                    _backup_with_bak(dest_path)
+                    had_target = _backup_with_bak_for_install(dest_path, created_backups)
                     _safe_extract_member(archive, info, game_dir)
+                    if not had_target:
+                        created_files.append(dest_path)
                     installed_rel_paths.append(name)
 
         write_log("Installed BO3 Enhanced files and dump into game directory.", "Success", log_widget)
@@ -536,6 +561,22 @@ def install_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str, 
         save_state(storage_dir, state)
         return True
     except Exception as exc:  # noqa: BLE001
+        for created_file in reversed(created_files):
+            try:
+                if os.path.exists(created_file):
+                    os.remove(created_file)
+            except Exception as rollback_exc:  # noqa: BLE001
+                write_log(f"Failed to remove partial file during rollback: {rollback_exc}", "Warning", log_widget)
+
+        for target, backup in reversed(created_backups):
+            try:
+                if os.path.exists(target):
+                    os.remove(target)
+                if os.path.exists(backup):
+                    os.rename(backup, target)
+            except Exception as rollback_exc:  # noqa: BLE001
+                write_log(f"Failed to restore backup during rollback for {target}: {rollback_exc}", "Warning", log_widget)
+
         write_log(f"Failed to install BO3 Enhanced: {exc}", "Error", log_widget)
         return False
 
@@ -696,8 +737,10 @@ def uninstall_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str
     restored = 0
     removed = 0
     attempted = bool(installed_files)
+    unresolved_files = []
 
     for rel_path in installed_files:
+        resolved = False
         target = os.path.join(game_dir, rel_path)
         backup_path = existing_backup_path(target)
         if backup_path and os.path.exists(backup_path):
@@ -707,13 +750,16 @@ def uninstall_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str
                     os.remove(target)
                 os.rename(backup_path, target)
                 restored += 1
+                resolved = True
                 continue
             except Exception as exc:  # noqa: BLE001
                 write_log(f"Failed to restore backup for {rel_path}: {exc}", "Warning", log_widget)
         
         # Backup missing. Remove tracked files, but protect the executable.
         # A normal first-time install has no backups for newly added dump files.
-        if os.path.exists(target):
+        if not backup_path and not os.path.exists(target):
+            resolved = True
+        elif os.path.exists(target):
             filename = os.path.basename(rel_path)
             is_protected_executable = filename.lower() == "blackops3.exe"
 
@@ -721,10 +767,13 @@ def uninstall_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str
                 try:
                     os.remove(target)
                     removed += 1
+                    resolved = True
                 except Exception as exc:  # noqa: BLE001
                     write_log(f"Failed to remove {rel_path}: {exc}", "Warning", log_widget)
             else:
                 write_log(f"Backup missing for {rel_path}; skipping deletion to preserve game file.", "Warning", None)
+        if not resolved:
+            unresolved_files.append(rel_path)
 
     # Fallback: if nothing was tracked, attempt a best-effort cleanup
     if not attempted and not restored and not removed:
@@ -748,9 +797,21 @@ def uninstall_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str
                 except Exception as exc:  # noqa: BLE001
                     write_log(f"Failed to remove {filename}: {exc}", "Warning", log_widget)
 
-    state["installed"] = False
-    state["installed_files"] = []
+    if unresolved_files:
+        state["installed"] = True
+        state["installed_files"] = sorted(set(unresolved_files))
+    else:
+        state["installed"] = False
+        state["installed_files"] = []
     save_state(storage_dir, state)
+
+    if unresolved_files:
+        write_log(
+            "Enhanced uninstall was incomplete; keeping tracked files so cleanup can be retried.",
+            "Warning",
+            log_widget,
+        )
+        return False
 
     if restored or removed:
         write_log(
