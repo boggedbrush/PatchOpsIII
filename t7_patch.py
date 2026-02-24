@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import os, sys, ctypes, subprocess, zipfile, shutil, requests, json
+import os, sys, ctypes, subprocess, zipfile, shutil, requests, json, hashlib, re
 from PySide6.QtWidgets import (
     QMessageBox, QWidget, QGroupBox, QGridLayout, QLineEdit, QPushButton,
     QLabel, QHBoxLayout, QVBoxLayout, QRadioButton, QButtonGroup, QCheckBox, QSizePolicy, QFrame
@@ -19,6 +19,20 @@ from utils import (
 )
 
 DEFAULT_STEAM_EXE_SHA256 = "9ba98dba41e18ef47de6c63937340f8eae7cb251f8fbc2e78d70047b64aa15b5"
+T7PATCH_RELEASE_TAG_API = "https://api.github.com/repos/shiversoftdev/t7patch/releases/tags/Current"
+
+# Trusted hashes for the pinned T7Patch "Current" assets.
+# If upstream starts publishing digests in release metadata, those are preferred automatically.
+TRUSTED_T7PATCH_ASSET_SHA256 = {
+    "Linux.Steamdeck.and.Manual.Windows.Install.zip": {
+        "388491c01643b0abd51f13290d0c36dec9737fcfbb0ed5e2f5ef6804e1b73dcb",
+    },
+    "LPC.1.zip": {
+        "c94855841a233c9dcdea2799c12693fed8554d0e59fe68257ae66ffbdf2fa58b",
+    },
+}
+
+_t7patch_release_digests_cache = None
 
 def _load_icon(name: str) -> QIcon:
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons", f"{name}.svg")
@@ -187,14 +201,70 @@ def restore_lpc_backups(game_dir, log_widget):
     except Exception as e:
         write_log(f"Error restoring LPC backups: {e}", "Error", log_widget)
 
-def download_file(url, filename, log_widget):
+
+def _fetch_t7patch_release_digests():
+    global _t7patch_release_digests_cache
+    if _t7patch_release_digests_cache is not None:
+        return _t7patch_release_digests_cache
+
+    digests = {}
+    try:
+        response = requests.get(T7PATCH_RELEASE_TAG_API, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        for asset in data.get("assets") or []:
+            name = str(asset.get("name") or "").strip()
+            digest_value = str(asset.get("digest") or "").strip()
+            if not name or not digest_value.lower().startswith("sha256:"):
+                continue
+            candidate = digest_value.split(":", 1)[1].strip().lower()
+            if re.fullmatch(r"[a-f0-9]{64}", candidate):
+                digests[name] = candidate
+    except Exception:
+        # Network/API failures should not break installs if a trusted pinned hash exists.
+        digests = {}
+
+    _t7patch_release_digests_cache = digests
+    return digests
+
+
+def _expected_asset_sha256(asset_name, log_widget):
+    api_digest = _fetch_t7patch_release_digests().get(asset_name)
+    if api_digest:
+        return {api_digest.lower()}
+
+    trusted = {value.lower() for value in TRUSTED_T7PATCH_ASSET_SHA256.get(asset_name, set()) if value}
+    if trusted:
+        write_log(
+            f"Release metadata digest unavailable for {asset_name}; using pinned trusted hash.",
+            "Warning",
+            log_widget,
+        )
+    return trusted
+
+
+def download_file(url, filename, log_widget, expected_sha256=None):
     write_log(f"Downloading from {url}", "Info", log_widget)
-    with requests.get(url, stream=True) as r:
+    expected_set = {value.lower() for value in (expected_sha256 or set()) if value}
+    digest = hashlib.sha256()
+    with requests.get(url, stream=True, timeout=60) as r:
         r.raise_for_status()
         with open(filename, "wb") as f:
             for chunk in r.iter_content(chunk_size=8192):
                 if chunk:
                     f.write(chunk)
+                    digest.update(chunk)
+
+    if expected_set:
+        file_hash = digest.hexdigest().lower()
+        if file_hash not in expected_set:
+            try:
+                os.remove(filename)
+            except OSError:
+                pass
+            raise RuntimeError(
+                f"Downloaded file failed integrity verification (SHA-256 mismatch): {os.path.basename(filename)}"
+            )
     write_log(f"Downloaded file saved as: {filename}", "Success", log_widget)
 
 def install_lpc_files(game_dir, mod_files_dir, log_widget):
@@ -213,7 +283,15 @@ def install_lpc_files(game_dir, mod_files_dir, log_widget):
     
     try:
         # Download LPC.zip
-        download_file(zip_url, zip_dest, log_widget)
+        expected_hashes = _expected_asset_sha256("LPC.1.zip", log_widget)
+        if not expected_hashes:
+            write_log(
+                "No trusted SHA-256 available for LPC.1.zip; aborting download.",
+                "Error",
+                log_widget,
+            )
+            return False
+        download_file(zip_url, zip_dest, log_widget, expected_sha256=expected_hashes)
         
         # Create backups of existing LPC files
         if not backup_lpc_files(game_dir, log_widget):
@@ -401,7 +479,11 @@ class InstallT7PatchWorker(QThread):
             if os.path.exists(source_dir):
                 shutil.rmtree(source_dir)
 
-            download_file(zip_url, zip_dest, log_forwarder)
+            expected_hashes = _expected_asset_sha256("Linux.Steamdeck.and.Manual.Windows.Install.zip", log_forwarder)
+            if not expected_hashes:
+                raise Exception("No trusted SHA-256 available for T7 Patch archive.")
+
+            download_file(zip_url, zip_dest, log_forwarder, expected_sha256=expected_hashes)
             write_log("Downloaded T7 Patch successfully.", "Success", log_forwarder)
 
             with zipfile.ZipFile(zip_dest, "r") as zf:
@@ -956,4 +1038,3 @@ class T7PatchWidget(QWidget):
         for btn in self.color_buttons.buttons():
             btn.setChecked(False)
         self.patch_uninstalled.emit()  # Notify parent of uninstall
-
