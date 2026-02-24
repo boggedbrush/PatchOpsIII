@@ -1,10 +1,11 @@
 #!/usr/bin/env python
-import os, sys, ctypes, subprocess, zipfile, shutil, requests
+import os, sys, ctypes, subprocess, zipfile, shutil, requests, json
 from PySide6.QtWidgets import (
     QMessageBox, QWidget, QGroupBox, QGridLayout, QLineEdit, QPushButton,
     QLabel, QHBoxLayout, QVBoxLayout, QRadioButton, QButtonGroup, QCheckBox, QSizePolicy
 )
 from PySide6.QtCore import Signal, QEvent, QThread
+from bo3_enhanced import detect_enhanced_install
 from utils import (
     write_log,
     apply_launch_options,
@@ -12,6 +13,7 @@ from utils import (
     existing_backup_path,
     PATCHOPS_BACKUP_SUFFIX,
     LEGACY_BACKUP_SUFFIX,
+    read_exe_variant,
 )
 
 # Add module-level flag
@@ -302,6 +304,49 @@ def check_t7_patch_status(game_dir):
                     result["friends_only"] = line.strip().split("=", 1)[1] == "1"
     return result
 
+
+def _t7_json_path(game_dir):
+    return os.path.join(game_dir, "players", "T7.json")
+
+
+def read_reforged_t7_password(game_dir):
+    path = _t7_json_path(game_dir)
+    if not os.path.exists(path):
+        return ""
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return str(data.get("network_pass", ""))
+    except Exception:
+        return ""
+
+
+def update_reforged_t7_password(game_dir, password, log_widget=None):
+    path = _t7_json_path(game_dir)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    data = {}
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except Exception:
+            data = {}
+
+    if password:
+        data["network_pass"] = password
+    else:
+        data.pop("network_pass", None)
+
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=4)
+        if password:
+            write_log("Updated network password in players/T7.json.", "Success", log_widget)
+        else:
+            write_log("Cleared network password in players/T7.json.", "Success", log_widget)
+    except Exception as exc:
+        write_log(f"Failed to update players/T7.json: {exc}", "Error", log_widget)
+
 class _WorkerLogForwarder:
     def __init__(self, signal):
         self._signal = signal
@@ -560,6 +605,16 @@ class T7PatchWidget(QWidget):
 
         layout.addWidget(self.color_group_box, 3, 0, 1, 5)
 
+        self.reforged_support_label = QLabel(
+            "Reforged support: Network Password updates are also synced to players/T7.json."
+        )
+        self.reforged_support_label.setStyleSheet("color: " + LIGHT_FORE_COLOR + ";")
+        layout.addWidget(self.reforged_support_label, 4, 0, 1, 5)
+
+        self.t7_mode_label = QLabel("T7Patch Type: Unknown")
+        self.t7_mode_label.setStyleSheet("color: " + LIGHT_FORE_COLOR + ";")
+        layout.addWidget(self.t7_mode_label, 5, 0, 1, 5)
+
         main_layout = QVBoxLayout(self)
         main_layout.addWidget(self.group)
         
@@ -568,8 +623,10 @@ class T7PatchWidget(QWidget):
 
     def set_game_directory(self, game_dir, skip_status_check=False):
         self.game_dir = game_dir
+        self.refresh_t7_mode_indicator()
         if not skip_status_check and self.game_dir and os.path.exists(self.game_dir):
             status = check_t7_patch_status(self.game_dir)
+            reforged_password = read_reforged_t7_password(self.game_dir)
             if status["gamertag"]:
                 # Update display format to show plain name and color
                 if "plain_name" in status and "color_code" in status:
@@ -583,8 +640,9 @@ class T7PatchWidget(QWidget):
                     self.current_gt_label.setText(f"Current Gamertag: {status['gamertag']}")
                 
                 # Update password display and input field
-                self.current_pw_label.setText(f"Current Network Password: {status['password']}")
-                self.password_edit.setText(status['password'])  # Set current password in input field
+                current_password = status["password"] or reforged_password
+                self.current_pw_label.setText(f"Current Network Password: {current_password}")
+                self.password_edit.setText(current_password)  # Set current password in input field
                 
                 # Enable all controls
                 self.gamertag_edit.setEnabled(True)
@@ -615,13 +673,33 @@ class T7PatchWidget(QWidget):
                     self.gamertag_edit.setText(status["plain_name"])
             else:
                 self.current_gt_label.setText("Current Gamertag: None")
-                self.current_pw_label.setText("Current Network Password: None")
+                self.current_pw_label.setText(
+                    f"Current Network Password: {reforged_password if reforged_password else 'None'}"
+                )
                 self.gamertag_edit.setEnabled(False)
                 self.update_gamertag_btn.setEnabled(False)
-                self.password_edit.setEnabled(False)
-                self.update_password_btn.setEnabled(False)
+                # Reforged compatibility: allow password edits even when T7 Patch is not installed.
+                self.password_edit.setEnabled(True)
+                self.update_password_btn.setEnabled(True)
+                self.password_edit.setText(reforged_password)
                 self.friends_only_cb.setEnabled(False)
                 self.friends_only_cb.setChecked(False)
+
+    def refresh_t7_mode_indicator(self):
+        if not self.game_dir or not os.path.exists(self.game_dir):
+            self.t7_mode_label.setText("T7Patch Type: Unknown")
+            return
+
+        if detect_enhanced_install(self.game_dir):
+            self.t7_mode_label.setText("T7Patch Type: Enhanced")
+            return
+
+        variant = read_exe_variant(self.game_dir)
+        if variant == "reforged":
+            self.t7_mode_label.setText("T7Patch Type: Reforged")
+            return
+
+        self.t7_mode_label.setText("T7Patch Type: Default / Downgrade")
 
     def set_log_widget(self, log_widget):
         self.log_widget = log_widget
@@ -661,9 +739,15 @@ class T7PatchWidget(QWidget):
         if not self.game_dir:
             return
         new_password = self.password_edit.text().strip()
-        update_t7patch_conf(self.game_dir, new_password=new_password, log_widget=self.log_widget)
+        conf_path = os.path.join(self.game_dir, "t7patch.conf")
+        if os.path.exists(conf_path):
+            update_t7patch_conf(self.game_dir, new_password=new_password, log_widget=self.log_widget)
+        update_reforged_t7_password(self.game_dir, new_password, log_widget=self.log_widget)
         status = check_t7_patch_status(self.game_dir)  # Refresh status after update
-        self.current_pw_label.setText(f"Current Network Password: {status['password']}")
+        effective_password = status["password"] or read_reforged_t7_password(self.game_dir)
+        self.current_pw_label.setText(
+            f"Current Network Password: {effective_password if effective_password else 'None'}"
+        )
 
     def friends_only_changed(self):
         if not self.game_dir:
@@ -745,8 +829,9 @@ class T7PatchWidget(QWidget):
         for edit in [self.gamertag_edit, self.password_edit]:
             edit.setStyleSheet(f"background-color: {control_color}; color: {fore_color};")
 
-        for label in [self.current_gt_label, self.current_pw_label]:
+        for label in [self.current_gt_label, self.current_pw_label, self.reforged_support_label]:
             label.setStyleSheet(f"color: {fore_color};")
+        self.t7_mode_label.setStyleSheet(f"color: {fore_color};")
 
         self.friends_only_cb.setStyleSheet(f"color: {fore_color};")
         self.color_group_box.setStyleSheet(f"color: {fore_color};")

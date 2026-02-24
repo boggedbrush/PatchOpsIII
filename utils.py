@@ -1,4 +1,5 @@
 import datetime
+import json
 import os
 import re
 import shutil
@@ -10,6 +11,7 @@ import platform
 
 DEFAULT_LOG_FILENAME = "PatchOpsIII.log"
 LAUNCH_COUNTER_FILENAME = "launch_counter.txt"
+EXE_VARIANT_STATE_FILENAME = ".patchops_exe_variant.json"
 PATCHOPS_BACKUP_SUFFIX = ".patchops.bak"
 LEGACY_BACKUP_SUFFIX = ".bak"
 
@@ -27,6 +29,36 @@ def existing_backup_path(path):
         if os.path.exists(candidate):
             return candidate
     return None
+
+
+def _exe_variant_state_path(game_dir):
+    return os.path.join(game_dir, EXE_VARIANT_STATE_FILENAME)
+
+
+def write_exe_variant(game_dir, variant):
+    if not game_dir:
+        return
+    try:
+        os.makedirs(game_dir, exist_ok=True)
+        with open(_exe_variant_state_path(game_dir), "w", encoding="utf-8") as handle:
+            json.dump({"variant": variant}, handle, indent=2)
+    except Exception:
+        pass
+
+
+def read_exe_variant(game_dir):
+    if not game_dir:
+        return None
+    path = _exe_variant_state_path(game_dir)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        value = data.get("variant")
+        return value if isinstance(value, str) else None
+    except Exception:
+        return None
 
 def get_app_data_dir():
     system = platform.system()

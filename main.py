@@ -58,6 +58,7 @@ from utils import (
     existing_backup_path,
     PATCHOPS_BACKUP_SUFFIX,
     LEGACY_BACKUP_SUFFIX,
+    write_exe_variant,
 )
 from bo3_enhanced import (
     download_latest_enhanced,
@@ -1764,6 +1765,8 @@ class MainWindow(QMainWindow):
         self.reforged_install_btn.setEnabled(True)
         self.reforged_status_label.setText("Status: Reforged installed")
         write_log(f"Reforged installed to {target_path}", "Success", self.log_text)
+        write_exe_variant(self.game_dir_edit.text().strip(), "reforged")
+        self.t7_patch_widget.refresh_t7_mode_indicator()
         QDesktopServices.openUrl(QUrl(REFORGED_WORKSHOP_STEAM_URL))
         write_log("Opened Reforged Workshop page in Steam.", "Info", self.log_text)
 
@@ -1780,6 +1783,8 @@ class MainWindow(QMainWindow):
         self.downgrade_install_btn.setEnabled(True)
         self.downgrade_status_label.setText("Status: Downgrade installed")
         write_log(f"Downgrade installed to {target_path}", "Success", self.log_text)
+        write_exe_variant(self.game_dir_edit.text().strip(), "downgrade")
+        self.t7_patch_widget.refresh_t7_mode_indicator()
 
     def _on_downgrade_failed(self, reason: str):
         self.downgrade_install_btn.setEnabled(True)
@@ -1946,7 +1951,9 @@ class MainWindow(QMainWindow):
 
         if install_enhanced_files(game_dir, MOD_FILES_DIR, STORAGE_PATH, dump_source, log_widget=self.log_text):
             self.enhanced_status_label.setText("Status: Enhanced Installed Successfully")
+            write_exe_variant(game_dir, "enhanced")
             self.refresh_enhanced_status(show_warning=True)
+            self.t7_patch_widget.refresh_t7_mode_indicator()
         else:
             self.enhanced_status_label.setText("Status: Installation Failed")
             
@@ -1978,7 +1985,9 @@ class MainWindow(QMainWindow):
     def _perform_uninstall(self, game_dir):
         if uninstall_enhanced_files(game_dir, MOD_FILES_DIR, STORAGE_PATH, log_widget=self.log_text):
             self.enhanced_status_label.setText("Status: Enhanced Uninstalled")
+            write_exe_variant(game_dir, "default")
             self.refresh_enhanced_status(show_warning=False)
+            self.t7_patch_widget.refresh_t7_mode_indicator()
         else:
             self.enhanced_status_label.setText("Status: Uninstall execution failed")
             
