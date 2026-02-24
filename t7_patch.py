@@ -2,9 +2,10 @@
 import os, sys, ctypes, subprocess, zipfile, shutil, requests, json
 from PySide6.QtWidgets import (
     QMessageBox, QWidget, QGroupBox, QGridLayout, QLineEdit, QPushButton,
-    QLabel, QHBoxLayout, QVBoxLayout, QRadioButton, QButtonGroup, QCheckBox, QSizePolicy
+    QLabel, QHBoxLayout, QVBoxLayout, QRadioButton, QButtonGroup, QCheckBox, QSizePolicy, QFrame
 )
-from PySide6.QtCore import Signal, QEvent, QThread, Qt
+from PySide6.QtCore import Signal, QThread, Qt, QSize
+from PySide6.QtGui import QIcon
 from bo3_enhanced import detect_enhanced_install
 from utils import (
     write_log,
@@ -18,6 +19,10 @@ from utils import (
 )
 
 DEFAULT_STEAM_EXE_SHA256 = "9ba98dba41e18ef47de6c63937340f8eae7cb251f8fbc2e78d70047b64aa15b5"
+
+def _load_icon(name: str) -> QIcon:
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons", f"{name}.svg")
+    return QIcon(path) if os.path.exists(path) else QIcon()
 
 # Add module-level flag
 defender_warning_logged = False
@@ -504,85 +509,196 @@ class T7PatchWidget(QWidget):
         self.group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.selected_gamertag_prefix = ""
         self.selected_gamertag_color = ""
+        self._stored_password = ""
         self.init_ui()
-        self.update_theme()
 
     @property
     def groupbox(self):
         return self.group
 
+    _GAMERTAG_COLOR_MAP = {
+        "":   None,        # Default (inherit)
+        "^1": "#ff4d4d",   # Red
+        "^2": "#4dff4d",   # Green
+        "^3": "#ffff4d",   # Yellow
+        "^4": "#6666ff",   # Blue
+        "^5": "#4dffff",   # Cyan
+        "^6": "#ff4dff",   # Pink
+        "^7": "#ffffff",   # White
+        "^8": "#6699ff",   # Mid Blue
+        "^9": "#e34234",   # Cinnabar
+        "^0": "#888888",   # Black (lightened for dark bg)
+    }
+
+    @classmethod
+    def _gamertag_html(cls, plain_name: str, color_code: str) -> str:
+        hex_color = cls._GAMERTAG_COLOR_MAP.get(color_code)
+        if hex_color:
+            return f'<span style="color:{hex_color};">{plain_name}</span>'
+        return plain_name
+
+    @staticmethod
+    def _status_html(text: str, state: str = "neutral") -> str:
+        colors = {
+            "good": "#4ade80",
+            "bad": "#f87171",
+            "info": "#60a5fa",
+            "neutral": "#9ca3af",
+        }
+        color = colors.get(state, colors["neutral"])
+        return f'<span style="color:{color};">&#9679; {text}</span>'
+
+    def _add_separator(self, layout, row):
+        sep = QFrame()
+        sep.setObjectName("DashboardDivider")
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFixedHeight(1)
+        layout.addWidget(sep, row, 0, 1, 4)
+
+    def _set_current_password(self, password: str):
+        self._stored_password = password or ""
+        if self._stored_password:
+            text = self._stored_password if self._pw_display_eye.isChecked() else "••••••"
+        else:
+            text = "None"
+        self.current_pw_label.setText(text)
+
+    def _toggle_pw_display(self, checked: bool):
+        self._pw_display_eye.setIcon(_load_icon("eye" if checked else "eye-off"))
+        if self._stored_password:
+            self.current_pw_label.setText(self._stored_password if checked else "••••••")
+
+    def _toggle_pw_edit(self, checked: bool):
+        self._pw_edit_eye.setIcon(_load_icon("eye" if checked else "eye-off"))
+        self.password_edit.setEchoMode(QLineEdit.Normal if checked else QLineEdit.Password)
+
     def init_ui(self):
-        DARK_CONTROL_COLOR = "#2D2D30"
-        LIGHT_FORE_COLOR = "#FFFFFF"
         self.group = QGroupBox("T7 Patch Management", self)
         layout = QGridLayout(self.group)
-        layout.setContentsMargins(5, 5, 5, 5)  # Add smaller margins
-        layout.setSpacing(5)  # Add consistent spacing
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(0)
 
-        # Row 0: Install button, Uninstall button, and Friends Only checkbox
-        install_widget = QWidget()
-        install_layout = QHBoxLayout(install_widget)
-        install_layout.setContentsMargins(0, 0, 0, 0)
-        install_layout.setSpacing(10)  # Add some spacing between elements
-        
-        # Remove min-width and let the buttons fill the space naturally
-        self.patch_btn = QPushButton("Install/Update T7 Patch")
-        self.patch_btn.setStyleSheet(f"background-color: {DARK_CONTROL_COLOR}; color: {LIGHT_FORE_COLOR};")
+        row = 0
+
+        # Action buttons + Friends Only
+        btn_row = QWidget()
+        btn_layout = QHBoxLayout(btn_row)
+        btn_layout.setContentsMargins(0, 0, 0, 12)
+        btn_layout.setSpacing(10)
+
+        self.patch_btn = QPushButton("Install / Update T7 Patch")
+        self.patch_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.patch_btn.clicked.connect(self.install_t7_patch)
-        install_layout.addWidget(self.patch_btn, 1)  # Add stretch factor of 1
+        btn_layout.addWidget(self.patch_btn, 1)
 
         self.uninstall_btn = QPushButton("Uninstall T7 Patch")
-        self.uninstall_btn.setStyleSheet(f"background-color: {DARK_CONTROL_COLOR}; color: {LIGHT_FORE_COLOR};")
+        self.uninstall_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.uninstall_btn.clicked.connect(self.uninstall_t7_patch)
-        install_layout.addWidget(self.uninstall_btn, 1)  # Add stretch factor of 1
-
-        install_layout.addStretch(0.5)  # Reduced stretch factor before checkbox
+        btn_layout.addWidget(self.uninstall_btn, 1)
 
         self.friends_only_cb = QCheckBox("Friends Only Mode")
         self.friends_only_cb.setEnabled(False)
-        self.friends_only_cb.setStyleSheet("color: " + LIGHT_FORE_COLOR + ";")
         self.friends_only_cb.stateChanged.connect(self.friends_only_changed)
-        install_layout.addWidget(self.friends_only_cb)
-        
-        layout.addWidget(install_widget, 0, 0, 1, 5)
+        btn_layout.addWidget(self.friends_only_cb)
 
-        # Row 1: Gamertag
-        self.current_gt_label = QLabel("Current Gamertag: None")
-        self.current_gt_label.setStyleSheet("color: " + LIGHT_FORE_COLOR + ";")
-        layout.addWidget(self.current_gt_label, 1, 0, 1, 2)
+        layout.addWidget(btn_row, row, 0, 1, 4)
+        row += 1
 
-        layout.addWidget(QLabel("Enter Gamertag:"), 1, 2)
+        # Gamertag row
+        self._add_separator(layout, row); row += 1
+
+        gt_name = QLabel("Gamertag")
+        gt_name.setObjectName("DashboardStatusName")
+        gt_name.setContentsMargins(0, 8, 0, 8)
+
+        self.current_gt_label = QLabel("None")
+        self.current_gt_label.setObjectName("DashboardStatusValue")
+        self.current_gt_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.current_gt_label.setTextFormat(Qt.RichText)
+        self.current_gt_label.setContentsMargins(0, 8, 0, 8)
+
         self.gamertag_edit = QLineEdit()
         self.gamertag_edit.setEnabled(False)
-        self.gamertag_edit.setStyleSheet(f"background-color: {DARK_CONTROL_COLOR}; color: {LIGHT_FORE_COLOR};")
-        layout.addWidget(self.gamertag_edit, 1, 3)
+        self.gamertag_edit.setPlaceholderText("Enter gamertag…")
 
-        self.update_gamertag_btn = QPushButton("Update Gamertag")
+        self.update_gamertag_btn = QPushButton("Update")
         self.update_gamertag_btn.setEnabled(False)
-        self.update_gamertag_btn.setStyleSheet(f"background-color: {DARK_CONTROL_COLOR}; color: {LIGHT_FORE_COLOR};")
         self.update_gamertag_btn.clicked.connect(self.update_gamertag)
-        layout.addWidget(self.update_gamertag_btn, 1, 4)
 
-        # Row 2: Network Password
-        self.current_pw_label = QLabel("Current Network Password: None")
-        self.current_pw_label.setStyleSheet("color: " + LIGHT_FORE_COLOR + ";")
-        layout.addWidget(self.current_pw_label, 2, 0, 1, 2)
+        layout.addWidget(gt_name, row, 0)
+        layout.addWidget(self.current_gt_label, row, 1)
+        layout.addWidget(self.gamertag_edit, row, 2)
+        layout.addWidget(self.update_gamertag_btn, row, 3)
+        row += 1
 
-        layout.addWidget(QLabel("Network Password:"), 2, 2)
+        # Password row
+        self._add_separator(layout, row); row += 1
+
+        pw_name = QLabel("Network Password")
+        pw_name.setObjectName("DashboardStatusName")
+        pw_name.setContentsMargins(0, 8, 0, 8)
+
+        # Display label + eye toggle
+        pw_display_container = QWidget()
+        pw_display_layout = QHBoxLayout(pw_display_container)
+        pw_display_layout.setContentsMargins(0, 0, 0, 0)
+        pw_display_layout.setSpacing(4)
+
+        self.current_pw_label = QLabel("None")
+        self.current_pw_label.setObjectName("DashboardStatusValue")
+        self.current_pw_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.current_pw_label.setContentsMargins(0, 8, 0, 8)
+        pw_display_layout.addWidget(self.current_pw_label, 1)
+
+        self._pw_display_eye = QPushButton()
+        self._pw_display_eye.setIcon(_load_icon("eye-off"))
+        self._pw_display_eye.setIconSize(QSize(14, 14))
+        self._pw_display_eye.setFixedSize(22, 22)
+        self._pw_display_eye.setFlat(True)
+        self._pw_display_eye.setCheckable(True)
+        self._pw_display_eye.setToolTip("Show / hide password")
+        self._pw_display_eye.toggled.connect(self._toggle_pw_display)
+        pw_display_layout.addWidget(self._pw_display_eye, 0)
+
+        # Edit field + eye toggle
+        pw_edit_container = QWidget()
+        pw_edit_layout = QHBoxLayout(pw_edit_container)
+        pw_edit_layout.setContentsMargins(0, 0, 0, 0)
+        pw_edit_layout.setSpacing(4)
+
         self.password_edit = QLineEdit()
         self.password_edit.setEnabled(False)
-        self.password_edit.setStyleSheet(f"background-color: {DARK_CONTROL_COLOR}; color: {LIGHT_FORE_COLOR};")
-        layout.addWidget(self.password_edit, 2, 3)
+        self.password_edit.setPlaceholderText("Enter network password…")
+        self.password_edit.setEchoMode(QLineEdit.Password)
+        pw_edit_layout.addWidget(self.password_edit, 1)
 
-        self.update_password_btn = QPushButton("Update Password")
+        self._pw_edit_eye = QPushButton()
+        self._pw_edit_eye.setIcon(_load_icon("eye-off"))
+        self._pw_edit_eye.setIconSize(QSize(14, 14))
+        self._pw_edit_eye.setFixedSize(22, 22)
+        self._pw_edit_eye.setFlat(True)
+        self._pw_edit_eye.setCheckable(True)
+        self._pw_edit_eye.setToolTip("Show / hide password")
+        self._pw_edit_eye.toggled.connect(self._toggle_pw_edit)
+        pw_edit_layout.addWidget(self._pw_edit_eye, 0)
+
+        self.update_password_btn = QPushButton("Update")
         self.update_password_btn.setEnabled(False)
-        self.update_password_btn.setStyleSheet(f"background-color: {DARK_CONTROL_COLOR}; color: {LIGHT_FORE_COLOR};")
         self.update_password_btn.clicked.connect(self.update_password)
-        layout.addWidget(self.update_password_btn, 2, 4)
 
-        # Row 3: Color Options (now moved up one row since we removed the separate Friends Only row)
+        layout.addWidget(pw_name, row, 0)
+        layout.addWidget(pw_display_container, row, 1)
+        layout.addWidget(pw_edit_container, row, 2)
+        layout.addWidget(self.update_password_btn, row, 3)
+        row += 1
+
+        # Gamertag Color
+        self._add_separator(layout, row); row += 1
+
         self.color_group_box = QGroupBox("Gamertag Color")
         color_layout = QHBoxLayout(self.color_group_box)
+        color_layout.setContentsMargins(8, 6, 8, 6)
         self.color_buttons = QButtonGroup(self)
         GAMERTAG_COLORS = [
             {"Code": "", "Label": "Default"},
@@ -593,50 +709,58 @@ class T7PatchWidget(QWidget):
             {"Code": "^5", "Label": "Cyan"},
             {"Code": "^6", "Label": "Pink"},
             {"Code": "^7", "Label": "White"},
-            {"Code": "^8", "Label": "Middle Blue"},
-            {"Code": "^9", "Label": "Cinnabar Red"},
-            {"Code": "^0", "Label": "Black"}
+            {"Code": "^8", "Label": "Mid Blue"},
+            {"Code": "^9", "Label": "Cinnabar"},
+            {"Code": "^0", "Label": "Black"},
         ]
         first_button = None
         for color in GAMERTAG_COLORS:
             rb = QRadioButton(color["Label"])
-            rb.setStyleSheet("color: " + LIGHT_FORE_COLOR + ";")
             rb.setProperty("code", color["Code"])
             rb.toggled.connect(self.on_color_selected)
             self.color_buttons.addButton(rb)
             color_layout.addWidget(rb)
-            if color["Code"] == "":  # Default color
+            if color["Code"] == "":
                 first_button = rb
-        
-        # Set default color button as checked
         if first_button:
             first_button.setChecked(True)
             self.selected_gamertag_prefix = ""
             self.selected_gamertag_color = "Default"
 
-        layout.addWidget(self.color_group_box, 3, 0, 1, 5)
+        layout.addWidget(self.color_group_box, row, 0, 1, 4)
+        row += 1
+
+        # Bottom: reforged note + T7 mode indicator
+        self._add_separator(layout, row); row += 1
 
         indicators_row = QWidget()
         indicators_layout = QHBoxLayout(indicators_row)
-        indicators_layout.setContentsMargins(0, 0, 0, 0)
+        indicators_layout.setContentsMargins(0, 8, 0, 0)
         indicators_layout.setSpacing(12)
 
         self.reforged_support_label = QLabel(
-            "Reforged support: Network Password updates are also synced to players/T7.json."
+            "Reforged: Network Password updates are synced to players/T7.json."
         )
-        self.reforged_support_label.setStyleSheet("color: " + LIGHT_FORE_COLOR + ";")
+        self.reforged_support_label.setObjectName("DashboardStatusName")
         indicators_layout.addWidget(self.reforged_support_label, 1)
 
-        self.t7_mode_label = QLabel("T7Patch Type: Unknown")
-        self.t7_mode_label.setStyleSheet("color: " + LIGHT_FORE_COLOR + ";")
+        self.t7_mode_label = QLabel(self._status_html("Unknown"))
+        self.t7_mode_label.setObjectName("DashboardStatusValue")
+        self.t7_mode_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.t7_mode_label.setTextFormat(Qt.RichText)
         indicators_layout.addWidget(self.t7_mode_label, 0, Qt.AlignRight)
 
-        layout.addWidget(indicators_row, 4, 0, 1, 5)
+        layout.addWidget(indicators_row, row, 0, 1, 4)
+        row += 1
+
+        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(2, 2)
+        layout.setColumnStretch(3, 0)
+        layout.setRowStretch(row, 1)
 
         main_layout = QVBoxLayout(self)
         main_layout.addWidget(self.group)
-        
-        # Set size policy to allow widget to expand horizontally but maintain vertical size
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
     def set_game_directory(self, game_dir, skip_status_check=False):
@@ -648,18 +772,15 @@ class T7PatchWidget(QWidget):
             if status["gamertag"]:
                 # Update display format to show plain name and color
                 if "plain_name" in status and "color_code" in status:
-                    color_name = "Default"
-                    for btn in self.color_buttons.buttons():
-                        if btn.property("code") == status["color_code"]:
-                            color_name = btn.text()
-                            break
-                    self.current_gt_label.setText(f"Current Gamertag: {status['plain_name']} (Color: {color_name})")
+                    self.current_gt_label.setText(
+                        self._gamertag_html(status["plain_name"], status["color_code"])
+                    )
                 else:
-                    self.current_gt_label.setText(f"Current Gamertag: {status['gamertag']}")
-                
+                    self.current_gt_label.setText(status["gamertag"])
+
                 # Update password display and input field
                 current_password = status["password"] or reforged_password
-                self.current_pw_label.setText(f"Current Network Password: {current_password}")
+                self._set_current_password(current_password)
                 self.password_edit.setText(current_password)  # Set current password in input field
                 
                 # Enable all controls
@@ -690,10 +811,8 @@ class T7PatchWidget(QWidget):
                 if "plain_name" in status:
                     self.gamertag_edit.setText(status["plain_name"])
             else:
-                self.current_gt_label.setText("Current Gamertag: None")
-                self.current_pw_label.setText(
-                    f"Current Network Password: {reforged_password if reforged_password else 'None'}"
-                )
+                self.current_gt_label.setText("None")
+                self._set_current_password(reforged_password)
                 self.gamertag_edit.setEnabled(False)
                 self.update_gamertag_btn.setEnabled(False)
                 # Reforged compatibility: allow password edits even when T7 Patch is not installed.
@@ -705,29 +824,29 @@ class T7PatchWidget(QWidget):
 
     def refresh_t7_mode_indicator(self):
         if not self.game_dir or not os.path.exists(self.game_dir):
-            self.t7_mode_label.setText("T7Patch Type: Unknown")
+            self.t7_mode_label.setText(self._status_html("Unknown"))
             return
 
         if detect_enhanced_install(self.game_dir):
-            self.t7_mode_label.setText("T7Patch Type: Enhanced")
+            self.t7_mode_label.setText(self._status_html("Enhanced", "good"))
             return
 
         variant = read_exe_variant(self.game_dir)
         if variant == "reforged":
-            self.t7_mode_label.setText("T7Patch Type: Reforged")
+            self.t7_mode_label.setText(self._status_html("Reforged", "info"))
             return
         exe_path = _find_bo3_executable(self.game_dir)
         exe_hash = file_sha256(exe_path) if exe_path else None
 
         if exe_hash and exe_hash == DEFAULT_STEAM_EXE_SHA256:
-            self.t7_mode_label.setText("T7Patch Type: Default")
+            self.t7_mode_label.setText(self._status_html("Default", "neutral"))
             return
 
         if variant == "default":
-            self.t7_mode_label.setText("T7Patch Type: Default")
+            self.t7_mode_label.setText(self._status_html("Default", "neutral"))
             return
 
-        self.t7_mode_label.setText("T7Patch Type: Custom")
+        self.t7_mode_label.setText(self._status_html("Custom", "info"))
 
     def set_log_widget(self, log_widget):
         self.log_widget = log_widget
@@ -760,7 +879,7 @@ class T7PatchWidget(QWidget):
                 
         new_name = selected_prefix + plain_name
         update_t7patch_conf(self.game_dir, new_name=new_name, log_widget=self.log_widget)
-        self.current_gt_label.setText(f"Current Gamertag: {new_name}")
+        self.current_gt_label.setText(self._gamertag_html(plain_name, selected_prefix))
         write_log(f"Updated gamertag to: {plain_name} (Color: {selected_color_name})", "Success", self.log_widget)
 
     def update_password(self):
@@ -773,9 +892,7 @@ class T7PatchWidget(QWidget):
         update_reforged_t7_password(self.game_dir, new_password, log_widget=self.log_widget)
         status = check_t7_patch_status(self.game_dir)  # Refresh status after update
         effective_password = status["password"] or read_reforged_t7_password(self.game_dir)
-        self.current_pw_label.setText(
-            f"Current Network Password: {effective_password if effective_password else 'None'}"
-        )
+        self._set_current_password(effective_password)
 
     def friends_only_changed(self):
         if not self.game_dir:
@@ -828,8 +945,8 @@ class T7PatchWidget(QWidget):
             return
         uninstall_t7_patch(self.game_dir, self.mod_files_dir, self.log_widget)
         # Reset UI state without checking status
-        self.current_gt_label.setText("Current Gamertag: None")
-        self.current_pw_label.setText("Current Network Password: None")
+        self.current_gt_label.setText("None")
+        self._set_current_password("")
         self.gamertag_edit.setEnabled(False)
         self.update_gamertag_btn.setEnabled(False)
         self.password_edit.setEnabled(False)
@@ -840,35 +957,3 @@ class T7PatchWidget(QWidget):
             btn.setChecked(False)
         self.patch_uninstalled.emit()  # Notify parent of uninstall
 
-    def update_theme(self):
-        is_dark = self.palette().window().color().lightness() < 128
-        if is_dark:
-            control_color = "#2D2D30"
-            fore_color = "#FFFFFF"
-        else:
-            control_color = "#F0F0F0"
-            fore_color = "#000000"
-
-        # Update all controls with the new theme
-        for btn in [self.patch_btn, self.uninstall_btn, self.update_gamertag_btn, 
-                   self.update_password_btn]:
-            btn.setStyleSheet(f"background-color: {control_color}; color: {fore_color};")
-
-        for edit in [self.gamertag_edit, self.password_edit]:
-            edit.setStyleSheet(f"background-color: {control_color}; color: {fore_color};")
-
-        for label in [self.current_gt_label, self.current_pw_label, self.reforged_support_label]:
-            label.setStyleSheet(f"color: {fore_color};")
-        self.t7_mode_label.setStyleSheet(f"color: {fore_color};")
-
-        self.friends_only_cb.setStyleSheet(f"color: {fore_color};")
-        self.color_group_box.setStyleSheet(f"color: {fore_color};")
-
-        # Update all radio buttons in the color group
-        for btn in self.color_buttons.buttons():
-            btn.setStyleSheet(f"color: {fore_color};")
-
-    def changeEvent(self, event):
-        if event.type() == QEvent.Type.PaletteChange:
-            self.update_theme()
-        super().changeEvent(event)
