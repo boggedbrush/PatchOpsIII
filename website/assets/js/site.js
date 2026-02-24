@@ -163,6 +163,63 @@ function safeText(value) {
   return value;
 }
 
+function isSafeHref(href) {
+  const value = safeText(href).trim();
+  if (!value) return false;
+  if (value.startsWith("/")) return true;
+  return /^(https?:\/\/|mailto:)/i.test(value);
+}
+
+function appendInlineMarkdown(container, sourceText) {
+  const text = safeText(sourceText);
+  if (!text) return;
+
+  const tokenRe = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = tokenRe.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      container.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+    }
+
+    const token = match[0];
+
+    if (token.startsWith("`") && token.endsWith("`")) {
+      const code = document.createElement("code");
+      code.textContent = token.slice(1, -1);
+      container.appendChild(code);
+    } else if (token.startsWith("**") && token.endsWith("**")) {
+      const strong = document.createElement("strong");
+      strong.textContent = token.slice(2, -2);
+      container.appendChild(strong);
+    } else if (token.startsWith("*") && token.endsWith("*")) {
+      const em = document.createElement("em");
+      em.textContent = token.slice(1, -1);
+      container.appendChild(em);
+    } else if (token.startsWith("[")) {
+      const linkMatch = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      if (linkMatch && isSafeHref(linkMatch[2])) {
+        const a = document.createElement("a");
+        a.textContent = linkMatch[1];
+        a.href = linkMatch[2].trim();
+        a.rel = "noreferrer";
+        container.appendChild(a);
+      } else {
+        container.appendChild(document.createTextNode(token));
+      }
+    } else {
+      container.appendChild(document.createTextNode(token));
+    }
+
+    lastIndex = tokenRe.lastIndex;
+  }
+
+  if (lastIndex < text.length) {
+    container.appendChild(document.createTextNode(text.slice(lastIndex)));
+  }
+}
+
 function setText(selector, text) {
   document.querySelectorAll(selector).forEach((el) => {
     el.textContent = text;
@@ -336,7 +393,7 @@ function renderChangelog(releases, currentStableTag) {
     if (overview) {
       const p = document.createElement("p");
       p.className = "muted";
-      p.textContent = overview;
+      appendInlineMarkdown(p, overview);
       card.appendChild(p);
     }
 
@@ -345,7 +402,7 @@ function renderChangelog(releases, currentStableTag) {
       ul.className = "checklist";
       highlights.forEach((text) => {
         const li = document.createElement("li");
-        li.textContent = text;
+        appendInlineMarkdown(li, text);
         ul.appendChild(li);
       });
       card.appendChild(ul);
