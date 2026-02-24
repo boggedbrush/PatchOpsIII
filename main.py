@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QPushButton, QLabel, QFileDialog, QTextEdit, QSizePolicy,
     QGroupBox, QRadioButton, QButtonGroup, QCheckBox, QGridLayout,
     QMessageBox, QDialog, QStyle, QMenu, QListWidget, QListWidgetItem,
-    QStackedWidget, QAbstractItemView
+    QStackedWidget, QAbstractItemView, QFrame
 )
 from PySide6.QtGui import QIcon, QDesktopServices, QAction, QFont
 from PySide6.QtCore import Qt, QUrl, QThread, Signal, QTimer, QSize
@@ -127,6 +127,17 @@ def apply_modern_theme(app: QApplication) -> None:
         }
         QListWidget#SidebarTabs::item:selected {
             background: rgba(255, 255, 255, 0.12);
+        }
+        QLabel#DashboardStatusName {
+            color: rgb(170, 175, 185);
+            font-size: 12px;
+        }
+        QLabel#DashboardStatusValue {
+            font-size: 12px;
+            font-weight: 600;
+        }
+        QFrame#DashboardDivider {
+            color: rgba(255, 255, 255, 0.08);
         }
         """
     )
@@ -1386,24 +1397,21 @@ class MainWindow(QMainWindow):
         dashboard_tab = QWidget()
         dashboard_grid = QGridLayout(dashboard_tab)
         dashboard_grid.setContentsMargins(5, 5, 5, 5)
-        dashboard_grid.setSpacing(10)
-
-        # Configure grid spacing
-        dashboard_grid.setHorizontalSpacing(20)
+        dashboard_grid.setHorizontalSpacing(14)
         dashboard_grid.setVerticalSpacing(10)
 
-        # Row 0: status and launch options
-        dashboard_grid.addWidget(self.dashboard_status_group, 0, 0)
-        dashboard_grid.addWidget(self.qol_widget.launch_group, 0, 1)
+        # Row 0: full-width status overview
+        dashboard_grid.addWidget(self.dashboard_status_group, 0, 0, 1, 2)
 
-        # Row 1: quality-of-life options
-        dashboard_grid.addWidget(self.qol_widget.checkbox_group, 1, 0, 1, 2)
+        # Row 1: quality-of-life (left) and launch options (right)
+        dashboard_grid.addWidget(self.qol_widget.checkbox_group, 1, 0)
+        dashboard_grid.addWidget(self.qol_widget.launch_group, 1, 1)
 
         # Set column and row stretches
         dashboard_grid.setColumnStretch(0, 1)
         dashboard_grid.setColumnStretch(1, 1)
-        dashboard_grid.setRowStretch(0, 3)
-        dashboard_grid.setRowStretch(1, 1)
+        dashboard_grid.setRowStretch(0, 1)
+        dashboard_grid.setRowStretch(1, 2)
 
         self.tabs.addTab(dashboard_tab, load_ui_icon("mods"), "Dashboard")
 
@@ -1520,30 +1528,67 @@ class MainWindow(QMainWindow):
         return group
 
     def _build_dashboard_status_group(self):
-        group = QGroupBox("Dashboard Status")
+        group = QGroupBox("Status Overview")
         layout = QGridLayout(group)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setHorizontalSpacing(10)
-        layout.setVerticalSpacing(8)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setHorizontalSpacing(0)
+        layout.setVerticalSpacing(0)
 
-        self.dashboard_t7_status = QLabel("T7 Patch: Unknown")
-        self.dashboard_dxvk_status = QLabel("DXVK-GPLAsync: Unknown")
-        self.dashboard_enhanced_status = QLabel("BO3 Enhanced: Unknown")
-        self.dashboard_reforged_status = QLabel("BO3 Reforged: Unknown")
-        self.dashboard_launch_status = QLabel("Launch Option: Unknown")
-        self.dashboard_qol_status = QLabel("QoL: Unknown")
+        status_rows = [
+            ("T7 Patch", "dashboard_t7_status"),
+            ("DXVK-GPLAsync", "dashboard_dxvk_status"),
+            ("BO3 Enhanced", "dashboard_enhanced_status"),
+            ("BO3 Reforged", "dashboard_reforged_status"),
+            ("Launch Option", "dashboard_launch_status"),
+            ("Quality of Life", "dashboard_qol_status"),
+        ]
 
-        layout.addWidget(self.dashboard_t7_status, 0, 0)
-        layout.addWidget(self.dashboard_dxvk_status, 1, 0)
-        layout.addWidget(self.dashboard_enhanced_status, 2, 0)
-        layout.addWidget(self.dashboard_reforged_status, 3, 0)
-        layout.addWidget(self.dashboard_launch_status, 4, 0)
-        layout.addWidget(self.dashboard_qol_status, 5, 0)
-        layout.setRowStretch(6, 1)
+        for i, (name_text, attr) in enumerate(status_rows):
+            # Thin separator line between rows (except first)
+            if i > 0:
+                sep = QFrame()
+                sep.setObjectName("DashboardDivider")
+                sep.setFrameShape(QFrame.HLine)
+                sep.setFixedHeight(1)
+                layout.addWidget(sep, i * 2 - 1, 0, 1, 2)
+
+            name_lbl = QLabel(name_text)
+            name_lbl.setObjectName("DashboardStatusName")
+            name_lbl.setContentsMargins(0, 8, 0, 8)
+
+            val_lbl = QLabel(self._status_html("—"))
+            val_lbl.setObjectName("DashboardStatusValue")
+            val_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            val_lbl.setTextFormat(Qt.RichText)
+            val_lbl.setContentsMargins(0, 8, 0, 8)
+
+            setattr(self, attr, val_lbl)
+
+            layout.addWidget(name_lbl, i * 2, 0)
+            layout.addWidget(val_lbl, i * 2, 1)
+
+        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(1, 2)
+        layout.setRowStretch(len(status_rows) * 2, 1)
         return group
 
     def _on_dashboard_state_changed(self, *_):
         self.refresh_dashboard_status()
+
+    @staticmethod
+    def _status_html(text: str, state: str = "neutral") -> str:
+        """Return an HTML-colored status string for dashboard labels.
+
+        state values: 'good' (green), 'bad' (muted red), 'info' (blue), 'neutral' (gray)
+        """
+        colors = {
+            "good": "#4ade80",
+            "bad": "#f87171",
+            "info": "#60a5fa",
+            "neutral": "#9ca3af",
+        }
+        color = colors.get(state, colors["neutral"])
+        return f'<span style="color:{color};">&#9679; {text}</span>'
 
     def _current_launch_option_name(self):
         if self.qol_widget.radio_all_around.isChecked():
@@ -1557,12 +1602,13 @@ class MainWindow(QMainWindow):
     def refresh_dashboard_status(self):
         game_dir = self.game_dir_edit.text().strip()
         if not os.path.isdir(game_dir):
-            self.dashboard_t7_status.setText("T7 Patch: Game directory not set")
-            self.dashboard_dxvk_status.setText("DXVK-GPLAsync: Game directory not set")
-            self.dashboard_enhanced_status.setText("BO3 Enhanced: Game directory not set")
-            self.dashboard_reforged_status.setText("BO3 Reforged: Game directory not set")
-            self.dashboard_launch_status.setText("Launch Option: Unknown")
-            self.dashboard_qol_status.setText("QoL: Unknown")
+            _na = self._status_html("Not configured", "neutral")
+            self.dashboard_t7_status.setText(_na)
+            self.dashboard_dxvk_status.setText(_na)
+            self.dashboard_enhanced_status.setText(_na)
+            self.dashboard_reforged_status.setText(_na)
+            self.dashboard_launch_status.setText(_na)
+            self.dashboard_qol_status.setText(_na)
             return
 
         t7_status = check_t7_patch_status(game_dir)
@@ -1570,24 +1616,33 @@ class MainWindow(QMainWindow):
         t7_label = "Installed" if t7_installed else "Not Installed"
         if t7_installed and t7_status.get("gamertag"):
             t7_label = f"Installed ({t7_status.get('plain_name', t7_status['gamertag'])})"
-        self.dashboard_t7_status.setText(f"T7 Patch: {t7_label}")
+        self.dashboard_t7_status.setText(
+            self._status_html(t7_label, "good" if t7_installed else "bad")
+        )
 
         dxvk_installed = is_dxvk_async_installed(game_dir)
         self.dashboard_dxvk_status.setText(
-            f"DXVK-GPLAsync: {'Installed' if dxvk_installed else 'Not Installed'}"
+            self._status_html("Installed" if dxvk_installed else "Not Installed",
+                              "good" if dxvk_installed else "bad")
         )
 
         enhanced_summary = status_summary(game_dir, STORAGE_PATH)
+        enhanced_active = bool(enhanced_summary.get("installed"))
         self.dashboard_enhanced_status.setText(
-            f"BO3 Enhanced: {'Active' if enhanced_summary.get('installed') else 'Not Installed'}"
+            self._status_html("Active" if enhanced_active else "Not Installed",
+                              "good" if enhanced_active else "bad")
         )
 
         exe_variant = read_exe_variant(game_dir)
+        reforged_active = exe_variant == "reforged"
         self.dashboard_reforged_status.setText(
-            f"BO3 Reforged: {'Active' if exe_variant == 'reforged' else 'Not Active'}"
+            self._status_html("Active" if reforged_active else "Not Installed",
+                              "good" if reforged_active else "bad")
         )
 
-        self.dashboard_launch_status.setText(f"Launch Option: {self._current_launch_option_name()}")
+        launch_name = self._current_launch_option_name()
+        launch_state = "neutral" if launch_name == "Default (None)" else "info"
+        self.dashboard_launch_status.setText(self._status_html(launch_name, launch_state))
 
         active_qol = []
         if self.qol_widget.reduce_stutter_cb.isChecked():
@@ -1596,8 +1651,9 @@ class MainWindow(QMainWindow):
             active_qol.append("Skip Intro")
         if self.qol_widget.skip_all_intro_cb.isChecked():
             active_qol.append("Skip All Intros")
+        qol_text = ", ".join(active_qol) if active_qol else "None enabled"
         self.dashboard_qol_status.setText(
-            f"QoL: {', '.join(active_qol) if active_qol else 'None enabled'}"
+            self._status_html(qol_text, "good" if active_qol else "neutral")
         )
 
     def _build_reforged_group(self):
