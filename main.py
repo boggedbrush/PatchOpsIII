@@ -10,6 +10,7 @@ import vdf
 import platform
 import argparse
 import json
+import requests
 from functools import lru_cache
 from typing import Optional
 
@@ -302,6 +303,14 @@ def get_application_path():
     return base_dir
 
 GAME_EXECUTABLE_NAMES = ("BlackOpsIII.exe", "BlackOps3.exe")
+REFORGED_EXE_URL = "https://downloads.bo3reforged.com/BlackOps3.exe"
+STEAM_DEPOT_FALLBACK_INSTRUCTIONS = (
+    "Open steam's terminal via steam://open/console and run:\n"
+    "download_depot 311210 311211 9084453472036406216\n\n"
+    "Locate the depot folder (example):\n"
+    "C:\\Program Files (x86)\\Steam\\steamapps\\content\\app_311210\\depot_311211\n\n"
+    "Copy the downloaded BlackOps3.exe into your Black Ops 3 root folder."
+)
 
 
 def _settings_file_path():
@@ -934,6 +943,10 @@ class MainWindow(QMainWindow):
         launch_game_btn.clicked.connect(self.launch_game)
         buttons_layout.addWidget(launch_game_btn)
 
+        self.downgrade_exe_btn = QPushButton("Downgrade EXE")
+        self.downgrade_exe_btn.clicked.connect(self.downgrade_game_exe)
+        buttons_layout.addWidget(self.downgrade_exe_btn)
+
         directory_row.addWidget(buttons_container)
         gd_layout.addLayout(directory_row)
 
@@ -947,7 +960,8 @@ class MainWindow(QMainWindow):
                 total_width = (
                     browse_btn.sizeHint().width()
                     + launch_game_btn.sizeHint().width()
-                    + buttons_layout.spacing()
+                    + self.downgrade_exe_btn.sizeHint().width()
+                    + (buttons_layout.spacing() * 2)
                 )
                 self.update_button.setFixedWidth(total_width)
 
@@ -1189,6 +1203,48 @@ class MainWindow(QMainWindow):
 
         self._apply_game_directory(directory, save=True)
         write_log(f"Game directory set to {directory}", "Success", self.log_text)
+
+    def downgrade_game_exe(self):
+        game_dir = self.game_dir_edit.text().strip()
+        game_exe_path = find_game_executable(game_dir)
+
+        if not game_exe_path:
+            message = (
+                "BlackOpsIII.exe not found. Please point the program to the folder containing BlackOpsIII.exe."
+            )
+            QMessageBox.warning(self, "Game EXE Not Found", message)
+            write_log(message, "Error", self.log_text)
+            return
+
+        backup_path = f"{game_exe_path}.patchops_backup"
+        try:
+            shutil.copy2(game_exe_path, backup_path)
+            write_log(f"Backed up current executable to {backup_path}", "Info", self.log_text)
+        except Exception as exc:
+            write_log(f"Could not create executable backup: {exc}", "Warning", self.log_text)
+
+        try:
+            with requests.get(REFORGED_EXE_URL, stream=True, timeout=30) as response:
+                response.raise_for_status()
+                with open(game_exe_path, "wb") as exe_file:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            exe_file.write(chunk)
+        except Exception as exc:
+            write_log(f"Failed to install Reforged executable: {exc}", "Error", self.log_text)
+            fallback_message = (
+                "Automatic install failed. Use the Steam depot fallback instructions below:\n\n"
+                f"{STEAM_DEPOT_FALLBACK_INSTRUCTIONS}"
+            )
+            QMessageBox.warning(self, "Downgrade Failed", fallback_message)
+            return
+
+        write_log("Installed Reforged BlackOps3.exe successfully.", "Success", self.log_text)
+        QMessageBox.information(
+            self,
+            "Downgrade Complete",
+            "Installed Reforged BlackOps3.exe successfully."
+        )
 
     def on_t7_patch_uninstalled(self):
         self._t7_just_uninstalled = True
