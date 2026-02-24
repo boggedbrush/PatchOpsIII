@@ -4,8 +4,10 @@ import os
 import re
 import errno
 import shutil
+import subprocess
 import time
 import tempfile
+import urllib.request
 import vdf
 import platform
 import argparse
@@ -67,6 +69,13 @@ from bo3_enhanced import (
     validate_dump_source,
 )
 from version import APP_VERSION
+
+REFORGED_DOWNLOAD_URL = "https://downloads.bo3reforged.com/BlackOps3.exe"
+REFORGED_WORKSHOP_URL = "https://steamcommunity.com/sharedfiles/filedetails/?id=3667377161"
+DOWNGRADE_DEPOT_COMMAND = "download_depot 311210 311211 9084453472036406216"
+DOWNGRADE_APP_ID = "311210"
+DOWNGRADE_DEPOT_ID = "311211"
+DOWNGRADE_MANIFEST_ID = "9084453472036406216"
 
 
 NUITKA_ENVIRONMENT_KEYS = (
@@ -859,6 +868,173 @@ class EnhancedDownloadWorker(QThread):
         except Exception as exc:  # noqa: BLE001
             self.failed.emit(str(exc))
 
+
+class ReforgedInstallWorker(QThread):
+    progress = Signal(str)
+    installed = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, game_dir: str):
+        super().__init__()
+        self.game_dir = game_dir
+
+    def run(self):
+        temp_path = None
+        try:
+            if not self.game_dir or not os.path.isdir(self.game_dir):
+                raise RuntimeError("Invalid game directory.")
+
+            target_exe = find_game_executable(self.game_dir) or os.path.join(self.game_dir, "BlackOps3.exe")
+            os.makedirs(self.game_dir, exist_ok=True)
+
+            self.progress.emit("Downloading Reforged executable...")
+            fd, temp_path = tempfile.mkstemp(prefix="patchops_reforged_", suffix=".exe")
+            os.close(fd)
+
+            with urllib.request.urlopen(REFORGED_DOWNLOAD_URL, timeout=120) as response, open(temp_path, "wb") as handle:
+                while True:
+                    chunk = response.read(1024 * 256)
+                    if not chunk:
+                        break
+                    handle.write(chunk)
+
+            if os.path.getsize(temp_path) <= 0:
+                raise RuntimeError("Downloaded file is empty.")
+
+            with open(temp_path, "rb") as handle:
+                if handle.read(2) != b"MZ":
+                    raise RuntimeError("Downloaded file is not a valid Windows executable.")
+
+            if os.path.exists(target_exe):
+                backup_path = f"{target_exe}.patchops.bak"
+                self.progress.emit("Backing up current executable...")
+                shutil.copy2(target_exe, backup_path)
+
+            shutil.move(temp_path, target_exe)
+            temp_path = None
+            self.installed.emit(target_exe)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
+
+
+class DowngradeInstallWorker(QThread):
+    progress = Signal(str)
+    installed = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, game_dir: str):
+        super().__init__()
+        self.game_dir = game_dir
+
+    def run(self):
+        try:
+            if not self.game_dir or not os.path.isdir(self.game_dir):
+                raise RuntimeError("Invalid game directory.")
+
+            self.progress.emit("Finding steamcmd...")
+            steamcmd_path = self._find_steamcmd()
+            if not steamcmd_path:
+                raise RuntimeError("steamcmd was not found. Install steamcmd and try again.")
+
+            self.progress.emit("Downloading depot via steamcmd...")
+            command = [
+                steamcmd_path,
+                "+@sSteamCmdForcePlatformType",
+                "windows",
+                "+login",
+                "anonymous",
+                "+download_depot",
+                DOWNGRADE_APP_ID,
+                DOWNGRADE_DEPOT_ID,
+                DOWNGRADE_MANIFEST_ID,
+                "+quit",
+            ]
+            result = subprocess.run(command, capture_output=True, text=True)
+            if result.returncode != 0:
+                error_output = (result.stderr or result.stdout or "").strip()
+                raise RuntimeError(f"steamcmd failed: {error_output or 'unknown error'}")
+
+            depot_exe = self._find_downloaded_depot_exe(steamcmd_path)
+            if not depot_exe:
+                raise RuntimeError("Depot download completed but BlackOps3.exe was not found in depot_311211.")
+
+            target_exe = find_game_executable(self.game_dir) or os.path.join(self.game_dir, "BlackOps3.exe")
+            if os.path.exists(target_exe):
+                backup_path = f"{target_exe}.patchops.bak"
+                self.progress.emit("Backing up current executable...")
+                shutil.copy2(target_exe, backup_path)
+
+            shutil.copy2(depot_exe, target_exe)
+            self.installed.emit(target_exe)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+    def _find_steamcmd(self):
+        candidates = []
+
+        on_path = shutil.which("steamcmd") or shutil.which("steamcmd.exe")
+        if on_path:
+            candidates.append(on_path)
+
+        home = os.path.expanduser("~")
+        if platform.system() == "Windows":
+            candidates.extend(
+                [
+                    r"C:\steamcmd\steamcmd.exe",
+                    r"C:\Program Files (x86)\SteamCMD\steamcmd.exe",
+                    os.path.join(home, "steamcmd", "steamcmd.exe"),
+                ]
+            )
+        else:
+            candidates.extend(
+                [
+                    "/usr/games/steamcmd",
+                    "/usr/bin/steamcmd",
+                    os.path.join(home, ".steam", "steamcmd", "steamcmd.sh"),
+                    os.path.join(home, ".steam", "steamcmd", "steamcmd"),
+                    os.path.join(home, "steamcmd", "steamcmd.sh"),
+                    os.path.join(home, "steamcmd", "steamcmd"),
+                ]
+            )
+
+        for candidate in candidates:
+            if candidate and os.path.exists(candidate):
+                return candidate
+        return None
+
+    def _find_downloaded_depot_exe(self, steamcmd_path: str):
+        depot_rel = os.path.join(
+            "steamapps",
+            "content",
+            f"app_{DOWNGRADE_APP_ID}",
+            f"depot_{DOWNGRADE_DEPOT_ID}",
+            "BlackOps3.exe",
+        )
+        steamcmd_dir = os.path.dirname(os.path.abspath(steamcmd_path))
+
+        search_roots = [
+            steamcmd_dir,
+            os.path.join(steamcmd_dir, "linux32"),
+            os.path.expanduser("~/.steam/steamcmd"),
+            os.path.expanduser("~/.local/share/Steam"),
+            r"C:\Program Files (x86)\Steam",
+        ]
+
+        for root in search_roots:
+            if not root:
+                continue
+            candidate = os.path.join(root, depot_rel)
+            if os.path.exists(candidate):
+                return candidate
+        return None
+
+
 class QualityOfLifeWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1137,6 +1313,8 @@ class MainWindow(QMainWindow):
         self._enhanced_warning_session_shown = False
         self._enhanced_active = False
         self._enhanced_worker: Optional[EnhancedDownloadWorker] = None
+        self._reforged_worker: Optional[ReforgedInstallWorker] = None
+        self._downgrade_worker: Optional[DowngradeInstallWorker] = None
         self._enhanced_last_failed = False
 
         icon, icon_source = load_application_icon()
@@ -1326,6 +1504,20 @@ class MainWindow(QMainWindow):
         enhanced_layout.addStretch(1)
         self.enhanced_tab_index = self.tabs.addTab(enhanced_tab, load_ui_icon("enhanced"), "Enhanced")
 
+        # Reforged Tab
+        reforged_tab = QWidget()
+        reforged_layout = QVBoxLayout(reforged_tab)
+        reforged_layout.addWidget(self._build_reforged_group())
+        reforged_layout.addStretch(1)
+        self.tabs.addTab(reforged_tab, load_ui_icon("reforged"), "Reforged")
+
+        # Downgrade Tab
+        downgrade_tab = QWidget()
+        downgrade_layout = QVBoxLayout(downgrade_tab)
+        downgrade_layout.addWidget(self._build_downgrade_group())
+        downgrade_layout.addStretch(1)
+        self.tabs.addTab(downgrade_tab, load_ui_icon("downgrade"), "Downgrade")
+
         # Graphics Tab
         graphics_tab = QWidget()
         graphics_layout = QVBoxLayout(graphics_tab)
@@ -1402,6 +1594,232 @@ class MainWindow(QMainWindow):
         layout.setRowStretch(3, 1)
         
         return group
+
+    def _build_reforged_group(self):
+        group = QGroupBox("BO3 Reforged")
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        info = QLabel(
+            "One-click installer: downloads and installs the Reforged executable into your game directory."
+        )
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        self.reforged_install_btn = QPushButton("Install Reforged")
+        self.reforged_install_btn.clicked.connect(self.install_reforged)
+        layout.addWidget(self.reforged_install_btn)
+
+        self.reforged_status_label = QLabel("Status: Reforged Not installed")
+        layout.addWidget(self.reforged_status_label)
+
+        workshop_info = QLabel(
+            f'<a href="{REFORGED_WORKSHOP_URL}">Open BO3 Reforged Workshop page</a>'
+        )
+        workshop_info.setOpenExternalLinks(True)
+        workshop_info.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        layout.addWidget(workshop_info)
+
+        compat_note = QLabel(
+            "T7Patch compatibility: Reforged can be used with or without T7Patch. "
+            "If both players use Reforged, matching passwords across T7Patch/T7.json are compatible."
+        )
+        compat_note.setWordWrap(True)
+        layout.addWidget(compat_note)
+
+        t7_group = QGroupBox("Reforged T7 Management (players/T7.json)")
+        t7_layout = QGridLayout(t7_group)
+        t7_layout.setContentsMargins(8, 8, 8, 8)
+        t7_layout.setHorizontalSpacing(10)
+        t7_layout.setVerticalSpacing(8)
+
+        self.reforged_current_pw_label = QLabel("Current Network Password: None")
+        t7_layout.addWidget(self.reforged_current_pw_label, 0, 0, 1, 2)
+
+        password_label = QLabel("Network Password:")
+        self.reforged_password_edit = QLineEdit()
+        self.reforged_password_edit.setPlaceholderText("Enter Network Password")
+        t7_layout.addWidget(password_label, 1, 0)
+        t7_layout.addWidget(self.reforged_password_edit, 1, 1)
+
+        self.reforged_force_ranked_cb = QCheckBox("Force Ranked Mode")
+        self.reforged_steam_achievements_cb = QCheckBox("Steam Achievements")
+        t7_layout.addWidget(self.reforged_force_ranked_cb, 2, 0, 1, 2)
+        t7_layout.addWidget(self.reforged_steam_achievements_cb, 3, 0, 1, 2)
+
+        t7_btn_row = QHBoxLayout()
+        self.reforged_t7_load_btn = QPushButton("Refresh Reforged T7")
+        self.reforged_t7_apply_btn = QPushButton("Update Reforged T7")
+        self.reforged_t7_load_btn.clicked.connect(self.load_reforged_t7_options)
+        self.reforged_t7_apply_btn.clicked.connect(self.apply_reforged_t7_options)
+        t7_btn_row.addWidget(self.reforged_t7_load_btn)
+        t7_btn_row.addWidget(self.reforged_t7_apply_btn)
+        t7_layout.addLayout(t7_btn_row, 4, 0, 1, 2)
+
+        layout.addWidget(t7_group)
+
+        return group
+
+    def _build_downgrade_group(self):
+        group = QGroupBox("BO3 Downgrade Management")
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        info = QLabel(
+            "Downgrades Black Ops III to a mod-compatible executable build."
+        )
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
+        compatibility_note = QLabel(
+            "Compatibility note: This downgrade helps restore compatibility with mods like "
+            "T7Patch, UEM (Ultimate Experience Mod), and AAE (All-around Enhancement Lite)."
+        )
+        compatibility_note.setWordWrap(True)
+        layout.addWidget(compatibility_note)
+
+        self.downgrade_install_btn = QPushButton("Install / Update Downgrade")
+        self.downgrade_install_btn.clicked.connect(self.install_downgrade)
+        layout.addWidget(self.downgrade_install_btn)
+
+        self.downgrade_status_label = QLabel("Status: Downgrade not installed")
+        layout.addWidget(self.downgrade_status_label)
+
+        return group
+
+    def install_reforged(self):
+        game_dir = self.game_dir_edit.text().strip()
+        if not os.path.isdir(game_dir):
+            write_log("Set a valid game directory before installing Reforged.", "Error", self.log_text)
+            return
+        if self._reforged_worker and self._reforged_worker.isRunning():
+            return
+
+        self.reforged_install_btn.setEnabled(False)
+        self.reforged_status_label.setText("Status: Installing Reforged...")
+
+        self._reforged_worker = ReforgedInstallWorker(game_dir)
+        self._reforged_worker.progress.connect(self._on_reforged_progress)
+        self._reforged_worker.installed.connect(self._on_reforged_installed)
+        self._reforged_worker.failed.connect(self._on_reforged_failed)
+        self._reforged_worker.start()
+
+    def install_downgrade(self):
+        game_dir = self.game_dir_edit.text().strip()
+        if not os.path.isdir(game_dir):
+            write_log("Set a valid game directory before installing Downgrade.", "Error", self.log_text)
+            return
+        if self._downgrade_worker and self._downgrade_worker.isRunning():
+            return
+
+        self.downgrade_install_btn.setEnabled(False)
+        self.downgrade_status_label.setText("Status: Installing Downgrade...")
+
+        self._downgrade_worker = DowngradeInstallWorker(game_dir)
+        self._downgrade_worker.progress.connect(self._on_downgrade_progress)
+        self._downgrade_worker.installed.connect(self._on_downgrade_installed)
+        self._downgrade_worker.failed.connect(self._on_downgrade_failed)
+        self._downgrade_worker.start()
+
+    def _on_reforged_progress(self, message: str):
+        self.reforged_status_label.setText(f"Status: {message}")
+        write_log(message, "Info", self.log_text)
+
+    def _on_reforged_installed(self, target_path: str):
+        self.reforged_install_btn.setEnabled(True)
+        self.reforged_status_label.setText("Status: Reforged installed")
+        write_log(f"Reforged installed to {target_path}", "Success", self.log_text)
+        QDesktopServices.openUrl(QUrl(f"steam://openurl/{REFORGED_WORKSHOP_URL}"))
+        write_log("Opened Reforged Workshop page in Steam.", "Info", self.log_text)
+
+    def _on_reforged_failed(self, reason: str):
+        self.reforged_install_btn.setEnabled(True)
+        self.reforged_status_label.setText("Status: Reforged install failed")
+        write_log(f"Reforged install failed: {reason}", "Error", self.log_text)
+
+    def _on_downgrade_progress(self, message: str):
+        self.downgrade_status_label.setText(f"Status: {message}")
+        write_log(message, "Info", self.log_text)
+
+    def _on_downgrade_installed(self, target_path: str):
+        self.downgrade_install_btn.setEnabled(True)
+        self.downgrade_status_label.setText("Status: Downgrade installed")
+        write_log(f"Downgrade installed to {target_path}", "Success", self.log_text)
+
+    def _on_downgrade_failed(self, reason: str):
+        self.downgrade_install_btn.setEnabled(True)
+        self.downgrade_status_label.setText("Status: Downgrade install failed")
+        write_log(f"Downgrade install failed: {reason}", "Error", self.log_text)
+
+    def _t7_json_path(self):
+        game_dir = self.game_dir_edit.text().strip()
+        if not game_dir:
+            return None
+        return os.path.join(game_dir, "players", "T7.json")
+
+    def load_reforged_t7_options(self):
+        path = self._t7_json_path()
+        if not path:
+            return
+
+        if not os.path.exists(path):
+            self.reforged_password_edit.setText("")
+            self.reforged_force_ranked_cb.setChecked(False)
+            self.reforged_steam_achievements_cb.setChecked(False)
+            self.reforged_current_pw_label.setText("Current Network Password: None")
+            write_log("T7.json not found. Default values loaded.", "Info", self.log_text)
+            return
+
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            network_pass = str(data.get("network_pass", ""))
+            self.reforged_password_edit.setText(network_pass)
+            self.reforged_force_ranked_cb.setChecked(bool(data.get("force_ranked", False)))
+            self.reforged_steam_achievements_cb.setChecked(bool(data.get("steam_achievements", False)))
+            self.reforged_current_pw_label.setText(
+                f"Current Network Password: {network_pass if network_pass else 'None'}"
+            )
+            write_log(f"Loaded T7 options from {path}", "Success", self.log_text)
+        except Exception as exc:
+            write_log(f"Failed to read T7.json: {exc}", "Error", self.log_text)
+
+    def apply_reforged_t7_options(self):
+        path = self._t7_json_path()
+        if not path:
+            return
+
+        data = {}
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as handle:
+                    data = json.load(handle)
+            except Exception as exc:
+                write_log(f"Failed to parse existing T7.json, creating a fresh file: {exc}", "Warning", self.log_text)
+                data = {}
+
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+
+        password = self.reforged_password_edit.text().strip()
+        if password:
+            data["network_pass"] = password
+        elif "network_pass" in data:
+            data.pop("network_pass", None)
+
+        data["force_ranked"] = self.reforged_force_ranked_cb.isChecked()
+        data["steam_achievements"] = self.reforged_steam_achievements_cb.isChecked()
+
+        try:
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(data, handle, indent=4)
+            write_log(f"Updated T7 settings at {path}", "Success", self.log_text)
+            self.reforged_current_pw_label.setText(
+                f"Current Network Password: {password if password else 'None'}"
+            )
+        except Exception as exc:
+            write_log(f"Failed to write T7.json: {exc}", "Error", self.log_text)
 
     def on_tab_changed(self, index):
         tab_widget = self.tabs.widget(index)
@@ -1725,6 +2143,7 @@ class MainWindow(QMainWindow):
         self.advanced_widget.set_game_directory(directory)
         self.qol_widget.set_game_directory(directory)
         self.refresh_enhanced_status(show_warning=False)
+        self.load_reforged_t7_options()
 
 
 def main() -> int:
