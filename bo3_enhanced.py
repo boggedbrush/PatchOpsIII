@@ -415,7 +415,10 @@ def _backup_with_bak(target_path: str) -> Optional[str]:
     return bak_path
 
 
-def _backup_with_bak_for_install(target_path: str, created_backups: list[Tuple[str, str]]) -> bool:
+def _backup_with_bak_for_install(
+    target_path: str,
+    created_backups: list[Tuple[str, str, bool]],
+) -> bool:
     """Create a backup if needed and track newly created backups for rollback."""
     if not os.path.exists(target_path):
         return False
@@ -426,10 +429,13 @@ def _backup_with_bak_for_install(target_path: str, created_backups: list[Tuple[s
             "Info",
             None,
         )
+        # Track pre-existing backups so rollback can restore the target by copying
+        # without consuming the original backup file.
+        created_backups.append((target_path, existing_backup, False))
         return True
     bak_path = patchops_backup_path(target_path)
     os.rename(target_path, bak_path)
-    created_backups.append((target_path, bak_path))
+    created_backups.append((target_path, bak_path, True))
     return True
 
 
@@ -477,7 +483,7 @@ def install_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str, 
 
     try:
         installed_rel_paths = []
-        created_backups: list[Tuple[str, str]] = []
+        created_backups: list[Tuple[str, str, bool]] = []
         created_files: list[str] = []
 
         # 1) Install all dump contents
@@ -568,12 +574,15 @@ def install_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str, 
             except Exception as rollback_exc:  # noqa: BLE001
                 write_log(f"Failed to remove partial file during rollback: {rollback_exc}", "Warning", log_widget)
 
-        for target, backup in reversed(created_backups):
+        for target, backup, backup_created_this_run in reversed(created_backups):
             try:
                 if os.path.exists(target):
                     os.remove(target)
                 if os.path.exists(backup):
-                    os.rename(backup, target)
+                    if backup_created_this_run:
+                        os.rename(backup, target)
+                    else:
+                        shutil.copy2(backup, target)
             except Exception as rollback_exc:  # noqa: BLE001
                 write_log(f"Failed to restore backup during rollback for {target}: {rollback_exc}", "Warning", log_widget)
 

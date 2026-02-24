@@ -1026,13 +1026,15 @@ class T7PatchWidget(QWidget):
             write_log("Game directory does not exist.", "Error", self.log_widget)
             return
         uninstall_t7_patch(self.game_dir, self.mod_files_dir, self.log_widget)
+        reforged_password = read_reforged_t7_password(self.game_dir)
         # Reset UI state without checking status
         self.current_gt_label.setText("None")
-        self._set_current_password("")
+        self._set_current_password(reforged_password)
         self.gamertag_edit.setEnabled(False)
         self.update_gamertag_btn.setEnabled(False)
-        self.password_edit.setEnabled(False)
-        self.update_password_btn.setEnabled(False)
+        self.password_edit.setEnabled(True)
+        self.update_password_btn.setEnabled(True)
+        self.password_edit.setText(reforged_password)
         self.friends_only_cb.setEnabled(False)
         self.friends_only_cb.setChecked(False)
         for btn in self.color_buttons.buttons():
