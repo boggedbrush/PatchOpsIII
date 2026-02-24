@@ -850,19 +850,21 @@ class QualityOfLifeWidget(QWidget):
         self.launch_group = QGroupBox("Launch Options")
         self.launch_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         launch_grid = QGridLayout(self.launch_group)
-        launch_grid.setContentsMargins(5, 5, 5, 5)
-        launch_grid.setSpacing(5)
+        launch_grid.setContentsMargins(4, 4, 4, 4)
+        launch_grid.setHorizontalSpacing(4)
+        launch_grid.setVerticalSpacing(2)
         launch_grid.setAlignment(Qt.AlignTop)
 
         self.radio_group = QButtonGroup(self)
         self.radio_none = QRadioButton("Default (None)")
         self.radio_all_around = QRadioButton("All-around Enhancement Lite")
         self.radio_ultimate = QRadioButton("Ultimate Experience Mod")
+        self.radio_forged = QRadioButton("Reforged")
         self.radio_offline = QRadioButton("Play Offline")
         self.radio_none.setChecked(True)
 
         # Block signals during initialization
-        for rb in [self.radio_none, self.radio_all_around, self.radio_ultimate, self.radio_offline]:
+        for rb in [self.radio_none, self.radio_all_around, self.radio_ultimate, self.radio_forged, self.radio_offline]:
             rb.blockSignals(True)
             self.radio_group.addButton(rb)
             rb.blockSignals(False)
@@ -870,8 +872,10 @@ class QualityOfLifeWidget(QWidget):
         # Create help buttons with links
         all_around_help = QPushButton("?")
         ultimate_help = QPushButton("?")
+        forged_help = QPushButton("?")
         all_around_help.setFixedSize(20, 20)
         ultimate_help.setFixedSize(20, 20)
+        forged_help.setFixedSize(20, 20)
         
         # Connect buttons to open URLs
         all_around_help.clicked.connect(
@@ -879,6 +883,9 @@ class QualityOfLifeWidget(QWidget):
         )
         ultimate_help.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl("steam://openurl/https://steamcommunity.com/sharedfiles/filedetails/?id=2942053577"))
+        )
+        forged_help.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl("https://bo3reforged.com/"))
         )
 
         # Put the radio buttons and help buttons in rows
@@ -901,10 +908,15 @@ class QualityOfLifeWidget(QWidget):
         ultimate_layout.addStretch()
         launch_grid.addWidget(ultimate_widget, 3, 0)
 
-        for rb in [self.radio_none, self.radio_all_around, self.radio_ultimate, self.radio_offline]:
-            self.radio_group.addButton(rb)
+        forged_widget = QWidget()
+        forged_layout = QHBoxLayout(forged_widget)
+        forged_layout.setContentsMargins(0, 0, 0, 0)
+        forged_layout.addWidget(self.radio_forged)
+        forged_layout.addWidget(forged_help)
+        forged_layout.addStretch()
+        launch_grid.addWidget(forged_widget, 4, 0)
 
-        # Center the Apply button in row 4
+        # Center the Apply button in row 5
         self.apply_button = QPushButton("Apply")
         self.apply_button.clicked.connect(self.on_apply_launch_options)
         apply_hbox = QHBoxLayout()
@@ -913,7 +925,7 @@ class QualityOfLifeWidget(QWidget):
         apply_hbox.addStretch()
         apply_container = QWidget()
         apply_container.setLayout(apply_hbox)
-        launch_grid.addWidget(apply_container, 4, 0, 1, 1)
+        launch_grid.addWidget(apply_container, 5, 0, 1, 1)
 
         # --- Quality of Life group box ---
         self.checkbox_group = QGroupBox("Quality of Life")
@@ -1081,6 +1093,8 @@ class QualityOfLifeWidget(QWidget):
             option = "+set fs_game 2994481309"
         elif self.radio_ultimate.isChecked():
             option = "+set fs_game 2942053577"
+        elif self.radio_forged.isChecked():
+            option = "+set fs_game 3667377161"
         elif self.radio_offline.isChecked():
             option = "+set fs_game offlinemp"
 
@@ -1185,6 +1199,8 @@ class MainWindow(QMainWindow):
                 self.qol_widget.radio_all_around.setChecked(True)
             elif "+set fs_game 2942053577" in current_options:
                 self.qol_widget.radio_ultimate.setChecked(True)
+            elif "+set fs_game 3667377161" in current_options:
+                self.qol_widget.radio_forged.setChecked(True)
             elif "+set fs_game offlinemp" in current_options:
                 self.qol_widget.radio_offline.setChecked(True)
             else:
@@ -1383,6 +1399,7 @@ class MainWindow(QMainWindow):
             self.qol_widget.radio_none,
             self.qol_widget.radio_all_around,
             self.qol_widget.radio_ultimate,
+            self.qol_widget.radio_forged,
             self.qol_widget.radio_offline,
             self.qol_widget.reduce_stutter_cb,
             self.qol_widget.skip_intro_cb,
@@ -1559,6 +1576,8 @@ class MainWindow(QMainWindow):
             return "All-around Enhancement Lite"
         if self.qol_widget.radio_ultimate.isChecked():
             return "Ultimate Experience Mod"
+        if self.qol_widget.radio_forged.isChecked():
+            return "Forged"
         if self.qol_widget.radio_offline.isChecked():
             return "Play Offline"
         return "Default (None)"
