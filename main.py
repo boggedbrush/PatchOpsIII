@@ -59,6 +59,7 @@ from utils import (
     LEGACY_BACKUP_SUFFIX,
     read_exe_variant,
     write_exe_variant,
+    file_sha256,
 )
 from bo3_enhanced import (
     download_latest_enhanced,
@@ -85,6 +86,12 @@ REFORGED_DOWNLOAD_HEADERS = {
     ),
     "Accept": "application/octet-stream,*/*;q=0.8",
     "Referer": "https://bo3reforged.com/",
+}
+
+# Trusted SHA-256 hashes for known-good Reforged executables.
+# Update when upstream publishes a new verified build.
+REFORGED_TRUSTED_SHA256 = {
+    "66b95eb4667bd5b3b3d230e7bed1d29ccd261d48ca2699f01216c863be24ff44",
 }
 
 
@@ -804,6 +811,13 @@ class ReforgedInstallWorker(QThread):
             with open(temp_path, "rb") as handle:
                 if handle.read(2) != b"MZ":
                     raise RuntimeError("Downloaded file is not a valid Windows executable.")
+            downloaded_hash = file_sha256(temp_path)
+            if not downloaded_hash:
+                raise RuntimeError("Failed to compute SHA-256 for downloaded Reforged executable.")
+            if downloaded_hash.lower() not in REFORGED_TRUSTED_SHA256:
+                raise RuntimeError(
+                    "Downloaded Reforged executable failed integrity verification (unknown SHA-256)."
+                )
 
             if os.path.exists(target_exe):
                 backup_path = patchops_backup_path(target_exe)
@@ -1984,7 +1998,11 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Invalid Path", "The selected path does not exist.")
             return
         if not validate_dump_source(path):
-            QMessageBox.critical(self, "Invalid Dump", "The selected source is missing required files (appxmanifest.xml, BlackOps3.exe, MicrosoftGame.config).")
+            QMessageBox.critical(
+                self,
+                "Invalid Dump",
+                "The selected source is missing required files (BlackOps3.exe, MicrosoftGame.config).",
+            )
             return
 
         self._pending_dump_source = path

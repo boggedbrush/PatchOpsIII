@@ -76,6 +76,16 @@ _SESSION = requests.Session()
 
 
 
+def _is_within_root(root_path: str, candidate_path: str) -> bool:
+    """Return True if candidate_path is inside root_path."""
+    try:
+        root_abs = os.path.abspath(root_path)
+        candidate_abs = os.path.abspath(candidate_path)
+        return os.path.commonpath([root_abs, candidate_abs]) == root_abs
+    except (ValueError, OSError):
+        return False
+
+
 def _state_path(storage_dir: str) -> str:
     return os.path.join(storage_dir, STATE_FILENAME)
 
@@ -137,6 +147,7 @@ class EnhancedRelease:
     asset_url: str
     asset_name: str
     page_url: str
+    asset_sha256: Optional[str] = None
 
 
 def fetch_latest_release() -> Optional[EnhancedRelease]:
@@ -162,6 +173,13 @@ def fetch_latest_release() -> Optional[EnhancedRelease]:
         write_log("No downloadable asset found for BO3 Enhanced latest release", "Warning", None)
         return None
 
+    digest_value = str(selected.get("digest") or "").strip()
+    asset_sha256 = None
+    if digest_value.lower().startswith("sha256:"):
+        candidate = digest_value.split(":", 1)[1].strip().lower()
+        if re.fullmatch(r"[a-f0-9]{64}", candidate):
+            asset_sha256 = candidate
+
     return EnhancedRelease(
         version=data.get("tag_name") or data.get("name") or "0.0.0",
         name=data.get("name") or "BO3 Enhanced",
@@ -169,6 +187,7 @@ def fetch_latest_release() -> Optional[EnhancedRelease]:
         asset_url=selected.get("browser_download_url") or "",
         asset_name=selected.get("name") or ENHANCED_ARCHIVE_NAME,
         page_url=data.get("html_url") or GITHUB_LATEST_ENHANCED_PAGE,
+        asset_sha256=asset_sha256,
     )
 
 
@@ -319,13 +338,31 @@ def download_latest_enhanced(mod_files_dir: str, storage_dir: str, progress: Opt
     release = fetch_latest_release()
     if not release or not release.asset_url:
         return None
+    if not release.asset_sha256:
+        write_log(
+            "Latest BO3 Enhanced release metadata did not include a SHA-256 digest; refusing unverified download.",
+            "Error",
+            None,
+        )
+        return None
     dest = os.path.join(mod_files_dir, ENHANCED_ARCHIVE_NAME)
     path = _download_file(release.asset_url, dest, progress=progress)
     if not path:
         return None
+    checksum = _compute_sha256(path)
+    if checksum.lower() != release.asset_sha256.lower():
+        write_log(
+            "BO3 Enhanced download failed integrity verification (SHA-256 mismatch).",
+            "Error",
+            None,
+        )
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+        return None
     if not validate_enhanced_archive(path):
         return None
-    checksum = _compute_sha256(path)
     checksums = _load_checksums(storage_dir)
     checksums[os.path.basename(path)] = checksum
     _save_checksums(storage_dir, checksums)
@@ -444,7 +481,7 @@ def install_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str, 
                         continue
                         
                     target = os.path.normpath(os.path.join(game_dir, final_rel_path))
-                    if not target.startswith(os.path.normpath(game_dir)):
+                    if not _is_within_root(game_dir, target):
                         continue
                         
                     _backup_with_bak(target)
@@ -469,7 +506,7 @@ def install_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str, 
                         continue
                     
                     target = os.path.normpath(os.path.join(game_dir, final_rel_path))
-                    if not target.startswith(os.path.normpath(game_dir)):
+                    if not _is_within_root(game_dir, target):
                         raise ValueError(f"Unsafe path detected in dump archive: {info.filename}")
 
                     _backup_with_bak(target)
@@ -531,6 +568,8 @@ def install_dump_only(game_dir: str, mod_files_dir: str, storage_dir: str, dump_
                     if not _should_copy_dump_member(final_rel_path): continue
                     
                     target = os.path.normpath(os.path.join(game_dir, final_rel_path))
+                    if not _is_within_root(game_dir, target):
+                        continue
                     _backup_with_bak(target)
                     os.makedirs(os.path.dirname(target), exist_ok=True)
                     shutil.copy2(src_path, target)
@@ -547,6 +586,8 @@ def install_dump_only(game_dir: str, mod_files_dir: str, storage_dir: str, dump_
                     if not final_rel_path or final_rel_path.endswith("/"): continue
                     if not _should_copy_dump_member(final_rel_path): continue
                     target = os.path.normpath(os.path.join(game_dir, final_rel_path))
+                    if not _is_within_root(game_dir, target):
+                        raise ValueError(f"Unsafe path detected in dump archive: {info.filename}")
                     _backup_with_bak(target)
                     os.makedirs(os.path.dirname(target), exist_ok=True)
                     with archive.open(info, "r") as src, open(target, "wb") as dst:
@@ -594,7 +635,7 @@ def uninstall_dump_only(game_dir: str, mod_files_dir: str, storage_dir: str, log
 
         for rel_path in tracked:
             target = os.path.normpath(os.path.join(game_dir, rel_path))
-            if not target.startswith(os.path.normpath(game_dir)):
+            if not _is_within_root(game_dir, target):
                 continue
             bak_path = existing_backup_path(target)
             if bak_path and os.path.exists(bak_path):
