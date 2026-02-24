@@ -1,60 +1,86 @@
 # PatchOpsIII v1.2.0 Release Notes
 
 ## Overview
-PatchOpsIII v1.2.0 introduces a preview BO3 Enhanced workflow with guided dump handling and safety rails, along with a modernized UI (sidebar navigation + new icons) and new maintenance actions in Advanced. This release is recommended for users who want to try BO3 Enhanced while keeping launch options safely gated.
+PatchOpsIII v1.2.0 is a large feature release since v1.1.0, centered on BO3 Enhanced support, Reforged-first mod compatibility flows, and a major dashboard/UI overhaul. It also adds stronger integrity checks, safer uninstall behavior, and a one-click reset path back to stock.
 
 ---
 
 ## 🚀 Major Highlights
-- New **BO3 Enhanced (Preview)** tab with Install/Update and Uninstall.
-- Downloads the latest BO3 Enhanced release from GitHub and validates the archive before install.
-- Manual UWP dump import (zip or folder) with validation and a strict copy whitelist (PatchOpsIII does not download game dumps).
-- Enhanced Mode safety rails: persistent status, warning prompt, and automatic launch-option disabling while Enhanced is active.
-- Modern UI refresh with QtModernRedux styling, sidebar navigation, and new tab/action icons.
+- New **BO3 Enhanced** tab with guided install/update/uninstall.
+- New **BO3 Reforged** workflow with executable install/uninstall, integrity checks, and T7 settings support.
+- Launch-option management updated for current BO3 compatibility constraints:
+  - Workshop mod options are gated when unsupported.
+  - `Default` and `Play Offline` remain available.
+- New **Status Overview** dashboard and improved mod/QoL visibility.
+- New **Reset to Stock** in Advanced to restore config, launch options, and managed files.
+
+## 🖼 UI Preview
+![PatchOpsIII v1.2.0 UI overview](assets/v1.2.0-ui-overview.png)
 
 ---
 
 ## 📝 Detailed Changes
 
-### BO3 Enhanced (Preview)
-- Added `bo3_enhanced.py` utilities for:
-  - Latest-release discovery via the GitHub API and download of the Enhanced archive.
-  - Checksum caching (`bo3_enhanced_checksums.json`) and basic archive validation.
-  - Install flow that applies whitelisted dump files first, then overlays Enhanced DLLs, creating `.bak` backups for safe rollback.
-  - Uninstall flow that restores backups when present and avoids deleting core game files (protects `BlackOps3.exe` if a backup is missing).
-- Added an in-app guided dump selection dialog that supports selecting `DUMP.zip`, a dump folder, or `BlackOps3.exe` from within the dump directory, with validation before install.
-- Added “Enhanced Mode Active” status and a compatibility warning; launch options are disabled while Enhanced is active.
+### BO3 Enhanced
+- Added `bo3_enhanced.py` service flow for:
+  - latest release discovery from GitHub,
+  - archive checksum caching (`bo3_enhanced_checksums.json`),
+  - validated install (dump-first, enhanced-last),
+  - backup-aware uninstall with protected executable fallback.
+- Added guided dump source selection for `DUMP.zip`, dump folder, or `BlackOps3.exe` parent.
+- Added strict dump/install safety constraints and rollback-friendly backup handling.
+- Added Enhanced state tracking with warning and compatibility gating.
 
-### UI/UX
-- Added QtModernRedux-based styling with a lightweight theme overlay.
-- Replaced the standard tab bar with a sidebar navigation layout and added new SVG icons for tabs and common actions.
+### Reforged + Launch Options
+- Added Reforged executable install with SHA-256 trust validation and backup preservation.
+- Added Reforged uninstall restore flow and launch-option cleanup safeguards.
+- Added Reforged T7 settings editing (`players/T7.json`) including password visibility controls.
+- Added workshop profile install/status integration in Launch Options:
+  - one-click workshop open + apply,
+  - per-profile install/subscription status indicators,
+  - improved row layout (`?` help near mod name, right-aligned status).
+- Added compatibility gating so workshop mod launch options are disabled when unsupported, while `Default` and `Play Offline` remain usable.
 
-### Advanced Tools
-- Added **Clear Logs** and **Clear Mod Files** actions to simplify troubleshooting and reset downloaded assets.
+### Dashboard and UX
+- Introduced a full **Status Overview** panel for T7, DXVK, Enhanced, Reforged, Launch Option, and QoL.
+- Updated status semantics:
+  - optional/not-installed components now show neutral gray instead of error red,
+  - Reforged status tracks executable install and launch-option activation as separate states.
+- Refined QoL summary logic to avoid duplicate implied items (e.g., `Skip All Intros` implies `Skip Intro`).
+- Modernized main UI with sidebar navigation, updated spacing/layouts, and icon refresh.
 
-### Packaging & Dependencies
-- Added `QtModernRedux6` dependency for the updated UI styling.
-- Updated Linux AppImage build script to bundle the `icons/` directory.
+### Graphics / DXVK / Advanced
+- Reorganized Graphics and DXVK into nested tabs with aligned container sizing.
+- Removed redundant internal tab titles to reduce visual duplication.
+- Expanded Advanced tools:
+  - Clear Logs
+  - Copy Logs
+  - Clear Mod Files
+  - **Reset to Stock**
+- Reset-to-Stock now runs asynchronously to avoid UI stalls and reduces log spam during bulk state updates.
 
 ---
 
 ## 🛠 Fixes
 
 ### Cross-Platform
-- Improved Advanced tab refresh behavior by storing the Advanced tab index for more reliable state management.
-- Improved uninstall resilience for BO3 Enhanced workflows by preventing accidental deletion of protected game files when backups are missing.
+- Improved uninstall resilience for Enhanced and Reforged workflows, including protected-file handling when backups are missing.
+- Fixed state synchronization bugs where launch-option status could remain active after Reforged uninstall.
+- Fixed launch-option gating edge cases to ensure unsupported mod profiles are blocked while safe defaults remain available.
+- Fixed reset workflow responsiveness and excessive activity-log output during bulk reset operations.
 
 ### Windows
-- No Windows-only fixes called out in this release.
+- Added stronger download and executable integrity checks for managed binaries.
+- Improved Reforged download request compatibility and error handling.
 
 ### Linux and Steam Deck
-- No Linux/Steam Deck-only fixes called out in this release.
+- Preserved Linux launch-option compatibility handling while integrating new gating and workshop profile logic.
 
 ---
 
 ## ⚠️ Known Issues
 
-- **BO3 Enhanced (Preview) requires a manual game dump**
+- **BO3 Enhanced requires a manual game dump**
   - Impact: PatchOpsIII cannot download game dumps automatically; you must provide a valid UWP dump source.
   - Workaround: Use the in-app dump dialog and follow the linked guide to obtain a dump, then select `DUMP.zip` or the dump folder.
   - Status: Expected behavior (legal/safety constraint).
@@ -90,13 +116,15 @@ PatchOpsIII builds on the work of the following projects:
 - **t7patch:** [t7patch on GitHub](https://github.com/shiversoftdev/t7patch)
 - **dxvk-gplasync:** [dxvk-gplasync on GitLab](https://gitlab.com/Ph42oN/dxvk-gplasync)
 - **ValvePython/vdf:** [ValvePython/vdf on GitHub](https://github.com/ValvePython/vdf)
+- **BO3 Enhanced:** [BO3 Enhanced on GitHub](https://github.com/shiversoftdev/BO3Enhanced)
+- **BO3 Reforged:** [BO3 Reforged](https://bo3reforged.com/)
 
 ---
 
 ## 🔮 Upcoming Work
-- Documentation updates for BO3 Enhanced workflows and rollback guidance.
-- Additional validation and preflight checks around dump sources and install paths.
-- Bug fixes and performance optimizations based on user reports.
+- Additional validation and preflight checks around dump/game-directory edge cases.
+- Expanded compatibility smoke tests for future release cadence.
+- Continued bug fixes and performance optimizations based on user feedback.
 
 ---
 
