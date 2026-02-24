@@ -624,67 +624,151 @@ class AdvancedSettingsWidget(QWidget):
         if self.game_dir:
             self.load_settings()
 
+    def _add_separator(self, layout, row):
+        sep = QFrame()
+        sep.setObjectName("DashboardDivider")
+        sep.setFrameShape(QFrame.HLine)
+        sep.setFixedHeight(1)
+        layout.addWidget(sep, row, 0, 1, 4)
+
     def init_ui(self):
-        layout = QVBoxLayout(self)
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
         adv_box = QGroupBox("Advanced Settings")
-        adv_form = QFormLayout(adv_box)
+        layout = QGridLayout(adv_box)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(0)
+        row = 0
 
-        self.smooth_cb = QCheckBox("Smooth Framerate (Enables the smoothframe rate option)")
+        # Action buttons
+        btn_row = QWidget()
+        btn_layout = QHBoxLayout(btn_row)
+        btn_layout.setContentsMargins(0, 0, 0, 12)
+        btn_layout.setSpacing(10)
+
+        clear_logs_btn = QPushButton("Clear Logs")
+        clear_logs_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        clear_logs_btn.clicked.connect(self.clear_logs)
+        btn_layout.addWidget(clear_logs_btn, 1)
+
+        copy_logs_btn = QPushButton("Copy Logs")
+        copy_logs_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        copy_logs_btn.clicked.connect(self.copy_logs_to_clipboard)
+        btn_layout.addWidget(copy_logs_btn, 1)
+
+        clear_mod_files_btn = QPushButton("Clear Mod Files")
+        clear_mod_files_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        clear_mod_files_btn.clicked.connect(self.clear_mod_files_action)
+        btn_layout.addWidget(clear_mod_files_btn, 1)
+
+        layout.addWidget(btn_row, row, 0, 1, 4)
+        row += 1
+
+        # Smooth Framerate
+        self._add_separator(layout, row); row += 1
+
+        smooth_lbl = QLabel("Smooth Framerate")
+        smooth_lbl.setObjectName("DashboardStatusName")
+        smooth_lbl.setContentsMargins(0, 8, 0, 8)
+        self.smooth_cb = QCheckBox("Enable")
         self.smooth_cb.stateChanged.connect(self.smooth_changed)
-        adv_form.addRow(self.smooth_cb)
+        layout.addWidget(smooth_lbl, row, 0)
+        layout.addWidget(self.smooth_cb, row, 1, 1, 3)
+        row += 1
 
-        # VRAM settings
-        self.vram_cb = QCheckBox("Set VRAM Usage (Enables the VideoMemory and StreamMinResident options)")
+        # VRAM Target
+        self._add_separator(layout, row); row += 1
+
+        vram_lbl = QLabel("VRAM Target")
+        vram_lbl.setObjectName("DashboardStatusName")
+        vram_lbl.setContentsMargins(0, 8, 0, 8)
+
+        self.vram_cb = QCheckBox("Limit")
         self.vram_cb.stateChanged.connect(self.vram_changed)
-        adv_form.addRow(self.vram_cb)
 
-        # New spin box for limited VRAM percentage
+        vram_val_widget = QWidget()
+        vram_val_layout = QHBoxLayout(vram_val_widget)
+        vram_val_layout.setContentsMargins(0, 0, 0, 0)
+        vram_val_layout.setSpacing(4)
         self.vram_limit_spin = QSpinBox()
         self.vram_limit_spin.setRange(75, 100)
         self.vram_limit_spin.setValue(75)
         self.vram_limit_spin.setEnabled(False)
         self.vram_limit_spin.valueChanged.connect(self.vram_limit_changed)
-        adv_form.addRow("Set VRAM target to (%):", self.vram_limit_spin)
+        vram_val_layout.addWidget(self.vram_limit_spin)
+        vram_val_layout.addWidget(QLabel("%"))
+        vram_val_layout.addStretch()
 
+        layout.addWidget(vram_lbl, row, 0)
+        layout.addWidget(self.vram_cb, row, 1)
+        layout.addWidget(vram_val_widget, row, 2, 1, 2)
+        row += 1
+
+        # Lower Latency
+        self._add_separator(layout, row); row += 1
+
+        latency_lbl = QLabel("Lower Latency")
+        latency_lbl.setObjectName("DashboardStatusName")
+        latency_lbl.setContentsMargins(0, 8, 0, 8)
         self.latency_spin = QSpinBox()
         self.latency_spin.setRange(0, 4)
         self.latency_spin.setValue(1)
         self.latency_spin.valueChanged.connect(self.latency_changed)
-        adv_form.addRow("Lower Latency (0-4, determines the number of frames to queue before rendering):", self.latency_spin)
+        layout.addWidget(latency_lbl, row, 0)
+        layout.addWidget(self.latency_spin, row, 1, 1, 2)
+        row += 1
 
-        self.reduce_cpu_cb = QCheckBox("Reduce CPU Usage (Changes the SerializeRender option, only recommended for weak CPUs)")
+        # Reduce CPU Usage
+        self._add_separator(layout, row); row += 1
+
+        reduce_cpu_lbl = QLabel("Reduce CPU Usage")
+        reduce_cpu_lbl.setObjectName("DashboardStatusName")
+        reduce_cpu_lbl.setContentsMargins(0, 8, 0, 8)
+        self.reduce_cpu_cb = QCheckBox("Enable")
         self.reduce_cpu_cb.stateChanged.connect(self.reduce_cpu_changed)
-        adv_form.addRow(self.reduce_cpu_cb)
+        layout.addWidget(reduce_cpu_lbl, row, 0)
+        layout.addWidget(self.reduce_cpu_cb, row, 1, 1, 3)
+        row += 1
 
-        self.all_settings_cb = QCheckBox("Unlock All Graphics Options (Allows all graphics options to be changed)")
+        # Unlock All Graphics Options
+        self._add_separator(layout, row); row += 1
+
+        all_settings_lbl = QLabel("Unlock All Graphics Options")
+        all_settings_lbl.setObjectName("DashboardStatusName")
+        all_settings_lbl.setContentsMargins(0, 8, 0, 8)
+        self.all_settings_cb = QCheckBox("Enable")
         self.all_settings_cb.stateChanged.connect(self.all_settings_changed)
-        adv_form.addRow(self.all_settings_cb)
+        layout.addWidget(all_settings_lbl, row, 0)
+        layout.addWidget(self.all_settings_cb, row, 1, 1, 3)
+        row += 1
 
-        self.lock_config_cb = QCheckBox("Lock config.ini (read-only mode, prevents changes to the config file)")
+        # Lock config.ini
+        self._add_separator(layout, row); row += 1
+
+        lock_config_lbl = QLabel("Lock config.ini")
+        lock_config_lbl.setObjectName("DashboardStatusName")
+        lock_config_lbl.setContentsMargins(0, 8, 0, 8)
+        self.lock_config_cb = QCheckBox("Read-only")
         self.lock_config_cb.stateChanged.connect(self.lock_config_changed)
-        adv_form.addRow(self.lock_config_cb)
+        layout.addWidget(lock_config_lbl, row, 0)
+        layout.addWidget(self.lock_config_cb, row, 1, 1, 3)
+        row += 1
 
-        layout.addWidget(adv_box)
-        layout.addStretch(1)
+        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(2, 2)
+        layout.setColumnStretch(3, 0)
+        layout.setRowStretch(row, 1)
 
-        footer_layout = QHBoxLayout()
+        outer_layout.addWidget(adv_box)
+
         self.version_label = QLabel(f"PatchOpsIII v{APP_VERSION}")
-        footer_layout.addWidget(self.version_label)
-        footer_layout.addStretch(1)
-
-        clear_logs_btn = QPushButton("Clear Logs")
-        clear_logs_btn.clicked.connect(self.clear_logs)
-        footer_layout.addWidget(clear_logs_btn)
-
-        copy_logs_btn = QPushButton("Copy Logs")
-        copy_logs_btn.clicked.connect(self.copy_logs_to_clipboard)
-        footer_layout.addWidget(copy_logs_btn)
-
-        clear_mod_files_btn = QPushButton("Clear Mod Files")
-        clear_mod_files_btn.clicked.connect(self.clear_mod_files_action)
-        footer_layout.addWidget(clear_mod_files_btn)
-
-        layout.addLayout(footer_layout)
+        self.version_label.setObjectName("DashboardStatusName")
+        self.version_label.setContentsMargins(4, 6, 0, 4)
+        outer_layout.addWidget(self.version_label)
 
     def set_game_directory(self, game_dir):
         self.game_dir = game_dir
