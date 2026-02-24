@@ -1204,22 +1204,22 @@ class QualityOfLifeWidget(QWidget):
     def _selected_launch_option(self):
         if self.radio_none.isChecked():
             return ""
-        if self.radio_all_around.isChecked():
+        if self.radio_all_around.isChecked() and self.radio_all_around.isEnabled():
             return WORKSHOP_PROFILES["all_around"]["launch_option"]
-        if self.radio_ultimate.isChecked():
+        if self.radio_ultimate.isChecked() and self.radio_ultimate.isEnabled():
             return WORKSHOP_PROFILES["ultimate"]["launch_option"]
-        if self.radio_forged.isChecked():
+        if self.radio_forged.isChecked() and self.radio_forged.isEnabled():
             return WORKSHOP_PROFILES["forged"]["launch_option"]
         if self.radio_offline.isChecked():
             return "+set fs_game offlinemp"
         return ""
 
     def _selected_workshop_profile(self):
-        if self.radio_all_around.isChecked():
+        if self.radio_all_around.isChecked() and self.radio_all_around.isEnabled():
             return WORKSHOP_PROFILES["all_around"]
-        if self.radio_ultimate.isChecked():
+        if self.radio_ultimate.isChecked() and self.radio_ultimate.isEnabled():
             return WORKSHOP_PROFILES["ultimate"]
-        if self.radio_forged.isChecked():
+        if self.radio_forged.isChecked() and self.radio_forged.isEnabled():
             return WORKSHOP_PROFILES["forged"]
         return None
 
@@ -1987,6 +1987,17 @@ class MainWindow(QMainWindow):
             return "Play Offline"
         return "Default (None)"
 
+    def _is_reforged_active(self, game_dir: str) -> bool:
+        if not game_dir or not os.path.isdir(game_dir):
+            return False
+
+        if read_exe_variant(game_dir) == "reforged":
+            return True
+
+        exe_path = find_game_executable(game_dir)
+        exe_hash = file_sha256(exe_path) if exe_path else None
+        return bool(exe_hash and exe_hash.lower() in REFORGED_TRUSTED_SHA256)
+
     def _set_reforged_composite_status(self, *, exe_installed: bool, launch_active: bool):
         exe_text = "Installed" if exe_installed else "Not Installed"
         launch_text = "Active" if launch_active else "Inactive"
@@ -2046,8 +2057,7 @@ class MainWindow(QMainWindow):
         applied_launch_options = self._get_applied_launch_options() or ""
         launch_name = self._launch_option_name_from_string(applied_launch_options)
 
-        exe_variant = read_exe_variant(game_dir)
-        reforged_exe_installed = exe_variant == "reforged"
+        reforged_exe_installed = self._is_reforged_active(game_dir)
         reforged_launch_active = "+set fs_game 3667377161" in applied_launch_options
         self._set_reforged_composite_status(
             exe_installed=reforged_exe_installed,
@@ -2411,8 +2421,7 @@ class MainWindow(QMainWindow):
             else self._status_html("Not installed", "neutral")
         )
 
-        exe_variant = read_exe_variant(game_dir)
-        reforged_active = exe_variant == "reforged"
+        reforged_active = self._is_reforged_active(game_dir)
 
         if active:
             self._toggle_mod_launch_options_enabled(
