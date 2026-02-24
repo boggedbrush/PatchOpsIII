@@ -1297,6 +1297,7 @@ class MainWindow(QMainWindow):
         self._default_update_button_text = "Check for Updates"
         self._linux_update_worker = None
         self._enhanced_warning_session_shown = False
+        self._steam_default_warning_session_shown = False
         self._enhanced_active = False
         self._enhanced_worker: Optional[EnhancedDownloadWorker] = None
         self._reforged_worker: Optional[ReforgedInstallWorker] = None
@@ -1729,6 +1730,26 @@ class MainWindow(QMainWindow):
         except Exception:
             return None
 
+    def _clear_reforged_launch_option_if_active(self):
+        applied_options = self._get_applied_launch_options() or ""
+        if "+set fs_game 3667377161" not in applied_options:
+            return
+        try:
+            write_log(
+                "Reforged launch option is active. Clearing it because Reforged was uninstalled.",
+                "Info",
+                self.log_text,
+            )
+            apply_launch_options("", None)
+            self.load_launch_options_state()
+            write_log("Reforged launch option cleared.", "Success", self.log_text)
+        except Exception as exc:
+            write_log(
+                f"Failed to clear Reforged launch option after uninstall: {exc}",
+                "Error",
+                self.log_text,
+            )
+
     @staticmethod
     def _launch_option_name_from_string(launch_options: str):
         options = launch_options or ""
@@ -2029,6 +2050,7 @@ class MainWindow(QMainWindow):
         self.reforged_status_label.setText(self._status_html("Installed", "good"))
         write_log(f"Reforged installed to {target_path}", "Success", self.log_text)
         write_exe_variant(self.game_dir_edit.text().strip(), "reforged")
+        self.refresh_enhanced_status(show_warning=False)
         self.refresh_dashboard_status()
         self.t7_patch_widget.refresh_t7_mode_indicator()
         QDesktopServices.openUrl(QUrl(REFORGED_WORKSHOP_STEAM_URL))
@@ -2063,8 +2085,10 @@ class MainWindow(QMainWindow):
                 os.remove(target_exe)
             os.rename(backup_path, target_exe)
             write_exe_variant(game_dir, "default")
+            self._clear_reforged_launch_option_if_active()
             write_log("Reforged uninstalled. Original executable restored.", "Success", self.log_text)
             self.reforged_status_label.setText(self._status_html("Uninstalled", "neutral"))
+            self.refresh_enhanced_status(show_warning=False)
             self.refresh_dashboard_status()
             self.t7_patch_widget.refresh_t7_mode_indicator()
         except Exception as exc:
@@ -2154,26 +2178,58 @@ class MainWindow(QMainWindow):
         self.refresh_dashboard_status()
 
     def refresh_enhanced_status(self, *, show_warning: bool):
-        summary = status_summary(self.game_dir_edit.text().strip(), STORAGE_PATH)
+        game_dir = self.game_dir_edit.text().strip()
+        summary = status_summary(game_dir, STORAGE_PATH)
         active = bool(summary.get("installed"))
         self._enhanced_active = active
         self.enhanced_status_label.setText(
             self._status_html("Enhanced Mode Active", "good") if active
             else self._status_html("Not installed", "neutral")
         )
-        self._toggle_launch_options_enabled(not active)
+
+        exe_variant = read_exe_variant(game_dir)
+        reforged_active = exe_variant == "reforged"
+
+        if active:
+            self._toggle_mod_launch_options_enabled(
+                False,
+                reason=(
+                    "Workshop mod launch options are disabled while BO3 Enhanced is active. "
+                    "Default and Play Offline remain available."
+                ),
+            )
+        elif not reforged_active:
+            self._toggle_mod_launch_options_enabled(
+                False,
+                reason=(
+                    "Workshop mod launch options are disabled on default Steam BO3 after the recent update. "
+                    "Install Reforged to restore mod launch functionality. "
+                    "Default and Play Offline remain available."
+                ),
+            )
+        else:
+            self._toggle_mod_launch_options_enabled(True)
+
         self.refresh_dashboard_status()
         if active and show_warning and not self._enhanced_warning_session_shown and not summary.get("acknowledged_at"):
             self._show_enhanced_warning()
+        elif (not active) and (not reforged_active) and show_warning and not self._steam_default_warning_session_shown:
+            self._show_default_steam_warning()
 
-    def _toggle_launch_options_enabled(self, enabled: bool):
-        self.qol_widget.launch_group.setEnabled(enabled)
-        if enabled:
-            self.qol_widget.launch_group.setToolTip("")
-        else:
-            self.qol_widget.launch_group.setToolTip(
-                "Launch options are disabled while BO3 Enhanced is active."
-            )
+    def _toggle_mod_launch_options_enabled(self, enabled: bool, reason: str = ""):
+        # Keep Default / Play Offline available; only gate workshop mod options.
+        self.qol_widget.radio_all_around.setEnabled(enabled)
+        self.qol_widget.radio_ultimate.setEnabled(enabled)
+        self.qol_widget.radio_forged.setEnabled(enabled)
+        self.qol_widget.install_workshop_button.setEnabled(enabled)
+        self.qol_widget.refresh_workshop_status_button.setEnabled(enabled)
+
+        tooltip = "" if enabled else (reason or "Workshop mod launch options are disabled.")
+        self.qol_widget.radio_all_around.setToolTip(tooltip)
+        self.qol_widget.radio_ultimate.setToolTip(tooltip)
+        self.qol_widget.radio_forged.setToolTip(tooltip)
+        self.qol_widget.install_workshop_button.setToolTip(tooltip)
+        self.qol_widget.refresh_workshop_status_button.setToolTip(tooltip)
 
     def _show_enhanced_warning(self):
         message = (
@@ -2183,6 +2239,14 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(self, "BO3 Enhanced Warning", message)
         set_acknowledged(STORAGE_PATH)
         self._enhanced_warning_session_shown = True
+
+    def _show_default_steam_warning(self):
+        message = (
+            "Launch options are disabled on the default Steam BO3 installation after the recent game update. "
+            "Install Reforged to restore mod launch functionality."
+        )
+        QMessageBox.warning(self, "Reforged Required", message)
+        self._steam_default_warning_session_shown = True
 
     def _enhanced_smart_browse(self):
         filter_str = "Dump Sources (DUMP.zip BlackOps3.exe *.zip);;All Files (*)"
