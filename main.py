@@ -78,6 +78,14 @@ from version import APP_VERSION
 REFORGED_DOWNLOAD_URL = "https://downloads.bo3reforged.com/BlackOps3.exe"
 REFORGED_WORKSHOP_URL = "https://steamcommunity.com/sharedfiles/filedetails/?id=3667377161"
 REFORGED_WORKSHOP_STEAM_URL = f"steam://openurl/{REFORGED_WORKSHOP_URL}"
+REFORGED_DOWNLOAD_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/octet-stream,*/*;q=0.8",
+    "Referer": "https://bo3reforged.com/",
+}
 
 
 NUITKA_ENVIRONMENT_KEYS = (
@@ -782,7 +790,8 @@ class ReforgedInstallWorker(QThread):
             fd, temp_path = tempfile.mkstemp(prefix="patchops_reforged_", suffix=".exe")
             os.close(fd)
 
-            with urllib.request.urlopen(REFORGED_DOWNLOAD_URL, timeout=120) as response, open(temp_path, "wb") as handle:
+            request = urllib.request.Request(REFORGED_DOWNLOAD_URL, headers=REFORGED_DOWNLOAD_HEADERS)
+            with urllib.request.urlopen(request, timeout=120) as response, open(temp_path, "wb") as handle:
                 while True:
                     chunk = response.read(1024 * 256)
                     if not chunk:
