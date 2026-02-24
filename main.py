@@ -861,7 +861,7 @@ class ReforgedInstallWorker(QThread):
                     self.progress.emit("Backing up current executable...")
                     shutil.copy2(target_exe, backup_path)
 
-            shutil.move(temp_path, target_exe)
+            os.replace(temp_path, target_exe)
             temp_path = None
             self.installed.emit(target_exe)
         except Exception as exc:
@@ -1891,12 +1891,13 @@ class MainWindow(QMainWindow):
         if "+set fs_game 3667377161" not in applied_options:
             return
         try:
+            cleaned_options = self._without_reforged_launch_option(applied_options)
             write_log(
                 "Reforged launch option is active. Clearing it because Reforged was uninstalled.",
                 "Info",
                 self.log_text,
             )
-            apply_launch_options("", None)
+            apply_launch_options(cleaned_options, None)
             self.load_launch_options_state()
             write_log("Reforged launch option cleared.", "Success", self.log_text)
         except Exception as exc:
@@ -1905,6 +1906,15 @@ class MainWindow(QMainWindow):
                 "Error",
                 self.log_text,
             )
+
+    @staticmethod
+    def _without_reforged_launch_option(launch_options: str) -> str:
+        cleaned = re.sub(
+            r"(?:^|\s)\+set\s+fs_game\s+3667377161(?=\s|$)",
+            " ",
+            launch_options or "",
+        )
+        return re.sub(r"\s{2,}", " ", cleaned).strip()
 
     def _apply_post_reset_ui_defaults(self):
         # Keep UI updates quiet after worker has already applied file-level changes.
