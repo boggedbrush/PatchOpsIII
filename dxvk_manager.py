@@ -228,7 +228,7 @@ class DXVKWidget(QWidget):
         self.game_dir = None
         self.log_widget = None
         self.group = QGroupBox("DXVK-GPLAsync Management")
-        self.group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.init_ui()
         self.update_theme()
 
@@ -252,6 +252,8 @@ class DXVKWidget(QWidget):
         layout.addWidget(self.status_label)
         main_layout = QVBoxLayout(self)
         main_layout.addWidget(self.group)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.group.setMaximumHeight(88)
 
     def update_theme(self):
         is_dark = self.palette().window().color().lightness() < 128
@@ -296,4 +298,3 @@ class DXVKWidget(QWidget):
             return
         manage_dxvk_async(self.game_dir, action, self.log_widget, self.mod_files_dir)
         self.update_status()
-

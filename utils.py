@@ -1,4 +1,5 @@
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -57,6 +58,19 @@ def read_exe_variant(game_dir):
             data = json.load(handle)
         value = data.get("variant")
         return value if isinstance(value, str) else None
+    except Exception:
+        return None
+
+
+def file_sha256(path):
+    if not path or not os.path.exists(path):
+        return None
+    digest = hashlib.sha256()
+    try:
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
     except Exception:
         return None
 

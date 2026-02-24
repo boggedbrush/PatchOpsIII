@@ -4,7 +4,6 @@ import os
 import re
 import errno
 import shutil
-import subprocess
 import time
 import tempfile
 import urllib.request
@@ -78,10 +77,6 @@ from version import APP_VERSION
 REFORGED_DOWNLOAD_URL = "https://downloads.bo3reforged.com/BlackOps3.exe"
 REFORGED_WORKSHOP_URL = "https://steamcommunity.com/sharedfiles/filedetails/?id=3667377161"
 REFORGED_WORKSHOP_STEAM_URL = f"steam://openurl/{REFORGED_WORKSHOP_URL}"
-DOWNGRADE_DEPOT_COMMAND = "download_depot 311210 311211 9084453472036406216"
-DOWNGRADE_APP_ID = "311210"
-DOWNGRADE_DEPOT_ID = "311211"
-DOWNGRADE_MANIFEST_ID = "9084453472036406216"
 
 
 NUITKA_ENVIRONMENT_KEYS = (
@@ -932,121 +927,6 @@ class ReforgedInstallWorker(QThread):
                     pass
 
 
-class DowngradeInstallWorker(QThread):
-    progress = Signal(str)
-    installed = Signal(str)
-    failed = Signal(str)
-
-    def __init__(self, game_dir: str):
-        super().__init__()
-        self.game_dir = game_dir
-
-    def run(self):
-        try:
-            if not self.game_dir or not os.path.isdir(self.game_dir):
-                raise RuntimeError("Invalid game directory.")
-
-            self.progress.emit("Finding steamcmd...")
-            steamcmd_path = self._find_steamcmd()
-            if not steamcmd_path:
-                raise RuntimeError("steamcmd was not found. Install steamcmd and try again.")
-
-            self.progress.emit("Downloading depot via steamcmd...")
-            command = [
-                steamcmd_path,
-                "+@sSteamCmdForcePlatformType",
-                "windows",
-                "+login",
-                "anonymous",
-                "+download_depot",
-                DOWNGRADE_APP_ID,
-                DOWNGRADE_DEPOT_ID,
-                DOWNGRADE_MANIFEST_ID,
-                "+quit",
-            ]
-            result = subprocess.run(command, capture_output=True, text=True)
-            if result.returncode != 0:
-                error_output = (result.stderr or result.stdout or "").strip()
-                raise RuntimeError(f"steamcmd failed: {error_output or 'unknown error'}")
-
-            depot_exe = self._find_downloaded_depot_exe(steamcmd_path)
-            if not depot_exe:
-                raise RuntimeError("Depot download completed but BlackOps3.exe was not found in depot_311211.")
-
-            target_exe = find_game_executable(self.game_dir) or os.path.join(self.game_dir, "BlackOps3.exe")
-            if os.path.exists(target_exe):
-                backup_path = patchops_backup_path(target_exe)
-                if existing_backup_path(target_exe):
-                    self.progress.emit("Existing executable backup found. Preserving original backup...")
-                else:
-                    self.progress.emit("Backing up current executable...")
-                    shutil.copy2(target_exe, backup_path)
-
-            shutil.copy2(depot_exe, target_exe)
-            self.installed.emit(target_exe)
-        except Exception as exc:
-            self.failed.emit(str(exc))
-
-    def _find_steamcmd(self):
-        candidates = []
-
-        on_path = shutil.which("steamcmd") or shutil.which("steamcmd.exe")
-        if on_path:
-            candidates.append(on_path)
-
-        home = os.path.expanduser("~")
-        if platform.system() == "Windows":
-            candidates.extend(
-                [
-                    r"C:\steamcmd\steamcmd.exe",
-                    r"C:\Program Files (x86)\SteamCMD\steamcmd.exe",
-                    os.path.join(home, "steamcmd", "steamcmd.exe"),
-                ]
-            )
-        else:
-            candidates.extend(
-                [
-                    "/usr/games/steamcmd",
-                    "/usr/bin/steamcmd",
-                    os.path.join(home, ".steam", "steamcmd", "steamcmd.sh"),
-                    os.path.join(home, ".steam", "steamcmd", "steamcmd"),
-                    os.path.join(home, "steamcmd", "steamcmd.sh"),
-                    os.path.join(home, "steamcmd", "steamcmd"),
-                ]
-            )
-
-        for candidate in candidates:
-            if candidate and os.path.exists(candidate):
-                return candidate
-        return None
-
-    def _find_downloaded_depot_exe(self, steamcmd_path: str):
-        depot_rel = os.path.join(
-            "steamapps",
-            "content",
-            f"app_{DOWNGRADE_APP_ID}",
-            f"depot_{DOWNGRADE_DEPOT_ID}",
-            "BlackOps3.exe",
-        )
-        steamcmd_dir = os.path.dirname(os.path.abspath(steamcmd_path))
-
-        search_roots = [
-            steamcmd_dir,
-            os.path.join(steamcmd_dir, "linux32"),
-            os.path.expanduser("~/.steam/steamcmd"),
-            os.path.expanduser("~/.local/share/Steam"),
-            r"C:\Program Files (x86)\Steam",
-        ]
-
-        for root in search_roots:
-            if not root:
-                continue
-            candidate = os.path.join(root, depot_rel)
-            if os.path.exists(candidate):
-                return candidate
-        return None
-
-
 class QualityOfLifeWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1340,7 +1220,6 @@ class MainWindow(QMainWindow):
         self._enhanced_active = False
         self._enhanced_worker: Optional[EnhancedDownloadWorker] = None
         self._reforged_worker: Optional[ReforgedInstallWorker] = None
-        self._downgrade_worker: Optional[DowngradeInstallWorker] = None
         self._enhanced_last_failed = False
 
         icon, icon_source = load_application_icon()
@@ -1518,7 +1397,7 @@ class MainWindow(QMainWindow):
         # Set equal column and row stretches
         mods_grid.setColumnStretch(0, 1)
         mods_grid.setColumnStretch(1, 1)
-        mods_grid.setRowStretch(0, 1)
+        mods_grid.setRowStretch(0, 3)
         mods_grid.setRowStretch(1, 1)
 
         self.tabs.addTab(mods_tab, load_ui_icon("mods"), "Mods")
@@ -1536,13 +1415,6 @@ class MainWindow(QMainWindow):
         reforged_layout.addWidget(self._build_reforged_group())
         reforged_layout.addStretch(1)
         self.tabs.addTab(reforged_tab, load_ui_icon("reforged"), "Reforged")
-
-        # Downgrade Tab
-        downgrade_tab = QWidget()
-        downgrade_layout = QVBoxLayout(downgrade_tab)
-        downgrade_layout.addWidget(self._build_downgrade_group())
-        downgrade_layout.addStretch(1)
-        self.tabs.addTab(downgrade_tab, load_ui_icon("downgrade"), "Downgrade")
 
         # Graphics Tab
         graphics_tab = QWidget()
@@ -1695,34 +1567,6 @@ class MainWindow(QMainWindow):
 
         return group
 
-    def _build_downgrade_group(self):
-        group = QGroupBox("BO3 Downgrade Management")
-        layout = QVBoxLayout(group)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
-
-        info = QLabel(
-            "Downgrades Black Ops III to a mod-compatible executable build."
-        )
-        info.setWordWrap(True)
-        layout.addWidget(info)
-
-        compatibility_note = QLabel(
-            "Compatibility note: This downgrade helps restore compatibility with mods like "
-            "T7Patch, UEM (Ultimate Experience Mod), and AAE (All-around Enhancement Lite)."
-        )
-        compatibility_note.setWordWrap(True)
-        layout.addWidget(compatibility_note)
-
-        self.downgrade_install_btn = QPushButton("Install / Update Downgrade")
-        self.downgrade_install_btn.clicked.connect(self.install_downgrade)
-        layout.addWidget(self.downgrade_install_btn)
-
-        self.downgrade_status_label = QLabel("Status: Downgrade not installed")
-        layout.addWidget(self.downgrade_status_label)
-
-        return group
-
     def install_reforged(self):
         game_dir = self.game_dir_edit.text().strip()
         if not os.path.isdir(game_dir):
@@ -1739,23 +1583,6 @@ class MainWindow(QMainWindow):
         self._reforged_worker.installed.connect(self._on_reforged_installed)
         self._reforged_worker.failed.connect(self._on_reforged_failed)
         self._reforged_worker.start()
-
-    def install_downgrade(self):
-        game_dir = self.game_dir_edit.text().strip()
-        if not os.path.isdir(game_dir):
-            write_log("Set a valid game directory before installing Downgrade.", "Error", self.log_text)
-            return
-        if self._downgrade_worker and self._downgrade_worker.isRunning():
-            return
-
-        self.downgrade_install_btn.setEnabled(False)
-        self.downgrade_status_label.setText("Status: Installing Downgrade...")
-
-        self._downgrade_worker = DowngradeInstallWorker(game_dir)
-        self._downgrade_worker.progress.connect(self._on_downgrade_progress)
-        self._downgrade_worker.installed.connect(self._on_downgrade_installed)
-        self._downgrade_worker.failed.connect(self._on_downgrade_failed)
-        self._downgrade_worker.start()
 
     def _on_reforged_progress(self, message: str):
         self.reforged_status_label.setText(f"Status: {message}")
@@ -1774,22 +1601,6 @@ class MainWindow(QMainWindow):
         self.reforged_install_btn.setEnabled(True)
         self.reforged_status_label.setText("Status: Reforged install failed")
         write_log(f"Reforged install failed: {reason}", "Error", self.log_text)
-
-    def _on_downgrade_progress(self, message: str):
-        self.downgrade_status_label.setText(f"Status: {message}")
-        write_log(message, "Info", self.log_text)
-
-    def _on_downgrade_installed(self, target_path: str):
-        self.downgrade_install_btn.setEnabled(True)
-        self.downgrade_status_label.setText("Status: Downgrade installed")
-        write_log(f"Downgrade installed to {target_path}", "Success", self.log_text)
-        write_exe_variant(self.game_dir_edit.text().strip(), "downgrade")
-        self.t7_patch_widget.refresh_t7_mode_indicator()
-
-    def _on_downgrade_failed(self, reason: str):
-        self.downgrade_install_btn.setEnabled(True)
-        self.downgrade_status_label.setText("Status: Downgrade install failed")
-        write_log(f"Downgrade install failed: {reason}", "Error", self.log_text)
 
     def _t7_json_path(self):
         game_dir = self.game_dir_edit.text().strip()

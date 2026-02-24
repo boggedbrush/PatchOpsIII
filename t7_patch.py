@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QWidget, QGroupBox, QGridLayout, QLineEdit, QPushButton,
     QLabel, QHBoxLayout, QVBoxLayout, QRadioButton, QButtonGroup, QCheckBox, QSizePolicy
 )
-from PySide6.QtCore import Signal, QEvent, QThread
+from PySide6.QtCore import Signal, QEvent, QThread, Qt
 from bo3_enhanced import detect_enhanced_install
 from utils import (
     write_log,
@@ -14,7 +14,10 @@ from utils import (
     PATCHOPS_BACKUP_SUFFIX,
     LEGACY_BACKUP_SUFFIX,
     read_exe_variant,
+    file_sha256,
 )
+
+DEFAULT_STEAM_EXE_SHA256 = "9ba98dba41e18ef47de6c63937340f8eae7cb251f8fbc2e78d70047b64aa15b5"
 
 # Add module-level flag
 defender_warning_logged = False
@@ -307,6 +310,14 @@ def check_t7_patch_status(game_dir):
 
 def _t7_json_path(game_dir):
     return os.path.join(game_dir, "players", "T7.json")
+
+
+def _find_bo3_executable(game_dir):
+    for name in ("BlackOps3.exe", "BlackOpsIII.exe"):
+        candidate = os.path.join(game_dir, name)
+        if os.path.exists(candidate):
+            return candidate
+    return None
 
 
 def read_reforged_t7_password(game_dir):
@@ -605,15 +616,22 @@ class T7PatchWidget(QWidget):
 
         layout.addWidget(self.color_group_box, 3, 0, 1, 5)
 
+        indicators_row = QWidget()
+        indicators_layout = QHBoxLayout(indicators_row)
+        indicators_layout.setContentsMargins(0, 0, 0, 0)
+        indicators_layout.setSpacing(12)
+
         self.reforged_support_label = QLabel(
             "Reforged support: Network Password updates are also synced to players/T7.json."
         )
         self.reforged_support_label.setStyleSheet("color: " + LIGHT_FORE_COLOR + ";")
-        layout.addWidget(self.reforged_support_label, 4, 0, 1, 5)
+        indicators_layout.addWidget(self.reforged_support_label, 1)
 
         self.t7_mode_label = QLabel("T7Patch Type: Unknown")
         self.t7_mode_label.setStyleSheet("color: " + LIGHT_FORE_COLOR + ";")
-        layout.addWidget(self.t7_mode_label, 5, 0, 1, 5)
+        indicators_layout.addWidget(self.t7_mode_label, 0, Qt.AlignRight)
+
+        layout.addWidget(indicators_row, 4, 0, 1, 5)
 
         main_layout = QVBoxLayout(self)
         main_layout.addWidget(self.group)
@@ -698,8 +716,18 @@ class T7PatchWidget(QWidget):
         if variant == "reforged":
             self.t7_mode_label.setText("T7Patch Type: Reforged")
             return
+        exe_path = _find_bo3_executable(self.game_dir)
+        exe_hash = file_sha256(exe_path) if exe_path else None
 
-        self.t7_mode_label.setText("T7Patch Type: Default / Downgrade")
+        if exe_hash and exe_hash == DEFAULT_STEAM_EXE_SHA256:
+            self.t7_mode_label.setText("T7Patch Type: Default")
+            return
+
+        if variant == "default":
+            self.t7_mode_label.setText("T7Patch Type: Default")
+            return
+
+        self.t7_mode_label.setText("T7Patch Type: Custom")
 
     def set_log_widget(self, log_widget):
         self.log_widget = log_widget
