@@ -41,8 +41,8 @@ except ModuleNotFoundError:
     except ModuleNotFoundError:
         QT_MODERN_AVAILABLE = False
 
-from t7_patch import T7PatchWidget, is_admin
-from dxvk_manager import DXVKWidget
+from t7_patch import T7PatchWidget, is_admin, check_t7_patch_status
+from dxvk_manager import DXVKWidget, is_dxvk_async_installed
 from config import GraphicsSettingsWidget, AdvancedSettingsWidget
 from updater import ReleaseInfo, WindowsUpdater, prompt_linux_update
 from utils import (
@@ -57,6 +57,7 @@ from utils import (
     existing_backup_path,
     PATCHOPS_BACKUP_SUFFIX,
     LEGACY_BACKUP_SUFFIX,
+    read_exe_variant,
     write_exe_variant,
 )
 from bo3_enhanced import (
@@ -1252,10 +1253,12 @@ class MainWindow(QMainWindow):
         # Get the Steam user ID and read current launch options
         user_id = find_steam_user_id()
         if not user_id:
+            self.refresh_dashboard_status()
             return
 
         config_path = os.path.join(steam_userdata_path, user_id, "config", "localconfig.vdf")
         if not os.path.exists(config_path):
+            self.refresh_dashboard_status()
             return
 
         try:
@@ -1276,6 +1279,8 @@ class MainWindow(QMainWindow):
             
         except Exception as e:
             write_log(f"Error loading launch options state: {e}", "Error", self.log_text)
+        finally:
+            self.refresh_dashboard_status()
 
     def init_ui(self):
         central = QWidget()
@@ -1370,37 +1375,51 @@ class MainWindow(QMainWindow):
         self.graphics_widget = GraphicsSettingsWidget(dxvk_widget=self.dxvk_widget)
         self.advanced_widget = AdvancedSettingsWidget()
         self.enhanced_group = self._build_enhanced_group()
+        self.dashboard_status_group = self._build_dashboard_status_group()
 
         # Tabs
         self.tabs = SidebarTabWidget()
         self.tabs.currentChanged.connect(self.on_tab_changed)
         self.tabs.setDocumentMode(True)
 
-        # Mods Tab with Grid Layout
-        mods_tab = QWidget()
-        mods_grid = QGridLayout(mods_tab)
-        mods_grid.setContentsMargins(5, 5, 5, 5)
-        mods_grid.setSpacing(10)
+        # Dashboard Tab with Grid Layout
+        dashboard_tab = QWidget()
+        dashboard_grid = QGridLayout(dashboard_tab)
+        dashboard_grid.setContentsMargins(5, 5, 5, 5)
+        dashboard_grid.setSpacing(10)
 
         # Configure grid spacing
-        mods_grid.setHorizontalSpacing(20)
-        mods_grid.setVerticalSpacing(10)
+        dashboard_grid.setHorizontalSpacing(20)
+        dashboard_grid.setVerticalSpacing(10)
 
-        # Row 0: T7 Patch and Launch Options - without alignment to fill cells
-        mods_grid.addWidget(self.t7_patch_widget.groupbox, 0, 0)
-        mods_grid.addWidget(self.qol_widget.launch_group, 0, 1)
+        # Row 0: status and launch options
+        dashboard_grid.addWidget(self.dashboard_status_group, 0, 0)
+        dashboard_grid.addWidget(self.qol_widget.launch_group, 0, 1)
 
-        # Row 1: DXVK and Options
-        mods_grid.addWidget(self.dxvk_widget.groupbox, 1, 0)
-        mods_grid.addWidget(self.qol_widget.checkbox_group, 1, 1)
+        # Row 1: quality-of-life options
+        dashboard_grid.addWidget(self.qol_widget.checkbox_group, 1, 0, 1, 2)
 
-        # Set equal column and row stretches
-        mods_grid.setColumnStretch(0, 1)
-        mods_grid.setColumnStretch(1, 1)
-        mods_grid.setRowStretch(0, 3)
-        mods_grid.setRowStretch(1, 1)
+        # Set column and row stretches
+        dashboard_grid.setColumnStretch(0, 1)
+        dashboard_grid.setColumnStretch(1, 1)
+        dashboard_grid.setRowStretch(0, 3)
+        dashboard_grid.setRowStretch(1, 1)
 
-        self.tabs.addTab(mods_tab, load_ui_icon("mods"), "Mods")
+        self.tabs.addTab(dashboard_tab, load_ui_icon("mods"), "Dashboard")
+
+        # T7 Patch Tab
+        t7_tab = QWidget()
+        t7_layout = QVBoxLayout(t7_tab)
+        t7_layout.addWidget(self.t7_patch_widget.groupbox)
+        t7_layout.addStretch(1)
+        self.tabs.addTab(t7_tab, load_ui_icon("t7patch"), "T7 Patch")
+
+        # DXVK Tab
+        dxvk_tab = QWidget()
+        dxvk_layout = QVBoxLayout(dxvk_tab)
+        dxvk_layout.addWidget(self.dxvk_widget.groupbox)
+        dxvk_layout.addStretch(1)
+        self.tabs.addTab(dxvk_tab, load_ui_icon("dxvk"), "DXVK")
 
         # Enhanced Tab
         enhanced_tab = QWidget()
@@ -1453,6 +1472,20 @@ class MainWindow(QMainWindow):
         self.advanced_widget.set_mod_files_dir(MOD_FILES_DIR)
         self.qol_widget.set_log_widget(self.log_text)
         self.refresh_enhanced_status(show_warning=True)
+        self.refresh_dashboard_status()
+
+        for control in (
+            self.qol_widget.radio_none,
+            self.qol_widget.radio_all_around,
+            self.qol_widget.radio_ultimate,
+            self.qol_widget.radio_offline,
+            self.qol_widget.reduce_stutter_cb,
+            self.qol_widget.skip_intro_cb,
+            self.qol_widget.skip_all_intro_cb,
+        ):
+            signal = getattr(control, "toggled", None)
+            if signal is not None:
+                signal.connect(self._on_dashboard_state_changed)
 
     def _build_enhanced_group(self):
         group = QGroupBox("BO3 Enhanced (Preview)")
@@ -1492,6 +1525,87 @@ class MainWindow(QMainWindow):
         layout.setRowStretch(3, 1)
         
         return group
+
+    def _build_dashboard_status_group(self):
+        group = QGroupBox("Dashboard Status")
+        layout = QGridLayout(group)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(8)
+
+        self.dashboard_t7_status = QLabel("T7 Patch: Unknown")
+        self.dashboard_dxvk_status = QLabel("DXVK-GPLAsync: Unknown")
+        self.dashboard_enhanced_status = QLabel("BO3 Enhanced: Unknown")
+        self.dashboard_reforged_status = QLabel("BO3 Reforged: Unknown")
+        self.dashboard_launch_status = QLabel("Launch Option: Unknown")
+        self.dashboard_qol_status = QLabel("QoL: Unknown")
+
+        layout.addWidget(self.dashboard_t7_status, 0, 0)
+        layout.addWidget(self.dashboard_dxvk_status, 1, 0)
+        layout.addWidget(self.dashboard_enhanced_status, 2, 0)
+        layout.addWidget(self.dashboard_reforged_status, 3, 0)
+        layout.addWidget(self.dashboard_launch_status, 4, 0)
+        layout.addWidget(self.dashboard_qol_status, 5, 0)
+        layout.setRowStretch(6, 1)
+        return group
+
+    def _on_dashboard_state_changed(self, *_):
+        self.refresh_dashboard_status()
+
+    def _current_launch_option_name(self):
+        if self.qol_widget.radio_all_around.isChecked():
+            return "All-around Enhancement Lite"
+        if self.qol_widget.radio_ultimate.isChecked():
+            return "Ultimate Experience Mod"
+        if self.qol_widget.radio_offline.isChecked():
+            return "Play Offline"
+        return "Default (None)"
+
+    def refresh_dashboard_status(self):
+        game_dir = self.game_dir_edit.text().strip()
+        if not os.path.isdir(game_dir):
+            self.dashboard_t7_status.setText("T7 Patch: Game directory not set")
+            self.dashboard_dxvk_status.setText("DXVK-GPLAsync: Game directory not set")
+            self.dashboard_enhanced_status.setText("BO3 Enhanced: Game directory not set")
+            self.dashboard_reforged_status.setText("BO3 Reforged: Game directory not set")
+            self.dashboard_launch_status.setText("Launch Option: Unknown")
+            self.dashboard_qol_status.setText("QoL: Unknown")
+            return
+
+        t7_status = check_t7_patch_status(game_dir)
+        t7_installed = os.path.exists(os.path.join(game_dir, "t7patch.conf"))
+        t7_label = "Installed" if t7_installed else "Not Installed"
+        if t7_installed and t7_status.get("gamertag"):
+            t7_label = f"Installed ({t7_status.get('plain_name', t7_status['gamertag'])})"
+        self.dashboard_t7_status.setText(f"T7 Patch: {t7_label}")
+
+        dxvk_installed = is_dxvk_async_installed(game_dir)
+        self.dashboard_dxvk_status.setText(
+            f"DXVK-GPLAsync: {'Installed' if dxvk_installed else 'Not Installed'}"
+        )
+
+        enhanced_summary = status_summary(game_dir, STORAGE_PATH)
+        self.dashboard_enhanced_status.setText(
+            f"BO3 Enhanced: {'Active' if enhanced_summary.get('installed') else 'Not Installed'}"
+        )
+
+        exe_variant = read_exe_variant(game_dir)
+        self.dashboard_reforged_status.setText(
+            f"BO3 Reforged: {'Active' if exe_variant == 'reforged' else 'Not Active'}"
+        )
+
+        self.dashboard_launch_status.setText(f"Launch Option: {self._current_launch_option_name()}")
+
+        active_qol = []
+        if self.qol_widget.reduce_stutter_cb.isChecked():
+            active_qol.append("Latest d3dcompiler")
+        if self.qol_widget.skip_intro_cb.isChecked():
+            active_qol.append("Skip Intro")
+        if self.qol_widget.skip_all_intro_cb.isChecked():
+            active_qol.append("Skip All Intros")
+        self.dashboard_qol_status.setText(
+            f"QoL: {', '.join(active_qol) if active_qol else 'None enabled'}"
+        )
 
     def _build_reforged_group(self):
         group = QGroupBox("BO3 Reforged")
@@ -1593,6 +1707,7 @@ class MainWindow(QMainWindow):
         self.reforged_status_label.setText("Status: Reforged installed")
         write_log(f"Reforged installed to {target_path}", "Success", self.log_text)
         write_exe_variant(self.game_dir_edit.text().strip(), "reforged")
+        self.refresh_dashboard_status()
         self.t7_patch_widget.refresh_t7_mode_indicator()
         QDesktopServices.openUrl(QUrl(REFORGED_WORKSHOP_STEAM_URL))
         write_log("Opened Reforged Workshop page in Steam.", "Info", self.log_text)
@@ -1679,6 +1794,7 @@ class MainWindow(QMainWindow):
             tab_widget.layout().update()
         if index == 0 or index == getattr(self, "enhanced_tab_index", -1):
             self.refresh_enhanced_status(show_warning=False)
+        self.refresh_dashboard_status()
 
     def refresh_enhanced_status(self, *, show_warning: bool):
         summary = status_summary(self.game_dir_edit.text().strip(), STORAGE_PATH)
@@ -1688,6 +1804,7 @@ class MainWindow(QMainWindow):
             "Status: Enhanced Mode Active" if active else "Status: Enhanced not installed"
         )
         self._toggle_launch_options_enabled(not active)
+        self.refresh_dashboard_status()
         if active and show_warning and not self._enhanced_warning_session_shown and not summary.get("acknowledged_at"):
             self._show_enhanced_warning()
 
@@ -1959,6 +2076,7 @@ class MainWindow(QMainWindow):
 
     def on_t7_patch_uninstalled(self):
         self._t7_just_uninstalled = True
+        self.refresh_dashboard_status()
 
     def launch_game(self):
         game_dir = self.game_dir_edit.text().strip()
@@ -1996,6 +2114,7 @@ class MainWindow(QMainWindow):
         self.advanced_widget.set_game_directory(directory)
         self.qol_widget.set_game_directory(directory)
         self.refresh_enhanced_status(show_warning=False)
+        self.refresh_dashboard_status()
         self.load_reforged_t7_options()
 
 
