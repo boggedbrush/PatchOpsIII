@@ -2582,7 +2582,12 @@ class MainWindow(QMainWindow):
     def _perform_uninstall(self, game_dir):
         if uninstall_enhanced_files(game_dir, MOD_FILES_DIR, STORAGE_PATH, log_widget=self.log_text):
             self.enhanced_status_label.setText(self._status_html("Uninstalled", "neutral"))
-            write_exe_variant(game_dir, "default")
+            restored_exe = find_game_executable(game_dir)
+            restored_hash = file_sha256(restored_exe) if restored_exe else None
+            if restored_hash and restored_hash.lower() in REFORGED_TRUSTED_SHA256:
+                write_exe_variant(game_dir, "reforged")
+            else:
+                write_exe_variant(game_dir, "default")
             self.refresh_enhanced_status(show_warning=False)
             self.t7_patch_widget.refresh_t7_mode_indicator()
         else:

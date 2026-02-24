@@ -682,17 +682,15 @@ def uninstall_enhanced_files(game_dir: str, mod_files_dir: str, storage_dir: str
     if not game_dir or not os.path.isdir(game_dir):
         write_log("Invalid game directory for Enhanced uninstall.", "Error", log_widget)
         return False
-        
-    state = load_state(storage_dir)
-    
+
     try:
-        # Pass storage_dir twice? No, signature is game_dir, mod_files_dir, storage_dir, log_widget
-        from bo3_enhanced import uninstall_dump_only # ensure available if not in scope, but it is in same file
         if uninstall_dump_only(game_dir, mod_files_dir, storage_dir, log_widget):
             write_log("Dump files uninstalled.", "Success", log_widget)
     except Exception as exc:  # noqa: BLE001
         write_log(f"Failed to uninstall dump files: {exc}", "Warning", log_widget)
 
+    # Reload state after dump uninstall, since uninstall_dump_only may mutate persisted keys.
+    state = load_state(storage_dir)
     installed_files = state.get("installed_files", [])
 
     restored = 0
