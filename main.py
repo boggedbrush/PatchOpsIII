@@ -1991,12 +1991,16 @@ class MainWindow(QMainWindow):
         if not game_dir or not os.path.isdir(game_dir):
             return False
 
-        if read_exe_variant(game_dir) == "reforged":
-            return True
-
         exe_path = find_game_executable(game_dir)
         exe_hash = file_sha256(exe_path) if exe_path else None
-        return bool(exe_hash and exe_hash.lower() in REFORGED_TRUSTED_SHA256)
+        if exe_hash and exe_hash.lower() in REFORGED_TRUSTED_SHA256:
+            return True
+
+        # Do not trust persisted variant state on its own; executable content is source of truth.
+        if read_exe_variant(game_dir) == "reforged" and exe_hash is None and exe_path and os.path.exists(exe_path):
+            return True
+
+        return False
 
     def _set_reforged_composite_status(self, *, exe_installed: bool, launch_active: bool):
         exe_text = "Installed" if exe_installed else "Not Installed"
@@ -2413,6 +2417,13 @@ class MainWindow(QMainWindow):
 
     def refresh_enhanced_status(self, *, show_warning: bool):
         game_dir = self.game_dir_edit.text().strip()
+        if not game_dir or not os.path.isdir(game_dir) or not find_game_executable(game_dir):
+            self._enhanced_active = False
+            self.enhanced_status_label.setText(self._status_html("Not installed", "neutral"))
+            self._toggle_mod_launch_options_enabled(True)
+            self.refresh_dashboard_status()
+            return
+
         summary = status_summary(game_dir, STORAGE_PATH)
         active = bool(summary.get("installed"))
         self._enhanced_active = active
