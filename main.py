@@ -41,8 +41,8 @@ except ModuleNotFoundError:
     except ModuleNotFoundError:
         QT_MODERN_AVAILABLE = False
 
-from t7_patch import T7PatchWidget, is_admin, check_t7_patch_status
-from dxvk_manager import DXVKWidget, is_dxvk_async_installed
+from t7_patch import T7PatchWidget, is_admin, check_t7_patch_status, restore_lpc_backups
+from dxvk_manager import DXVKWidget, is_dxvk_async_installed, manage_dxvk_async
 from config import GraphicsSettingsWidget, AdvancedSettingsWidget
 from updater import ReleaseInfo, WindowsUpdater, prompt_linux_update
 from utils import (
@@ -874,6 +874,160 @@ class ReforgedInstallWorker(QThread):
                     pass
 
 
+class ResetToStockWorker(QThread):
+    progress = Signal(str, str)
+    finished = Signal(bool, str)
+
+    def __init__(self, game_dir: str, mod_files_dir: str, storage_dir: str):
+        super().__init__()
+        self.game_dir = game_dir
+        self.mod_files_dir = mod_files_dir
+        self.storage_dir = storage_dir
+
+    def _emit(self, message: str, category: str = "Info"):
+        self.progress.emit(message, category)
+
+    def _uninstall_t7_patch_silent(self):
+        game_files = [
+            "t7patch.dll",
+            "t7patch.conf",
+            "discord_game_sdk.dll",
+            "dsound.dll",
+            "t7patchloader.dll",
+            "zbr2.dll",
+        ]
+        removed = 0
+        for filename in game_files:
+            path = os.path.join(self.game_dir, filename)
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                    removed += 1
+                except Exception as exc:
+                    self._emit(f"Failed removing {filename}: {exc}", "Warning")
+        if removed:
+            self._emit(f"Removed {removed} T7 Patch files from game directory.", "Success")
+        restore_lpc_backups(self.game_dir, None)
+
+    @staticmethod
+    def _restore_qol_files_to_stock(game_dir: str):
+        dll_file = os.path.join(game_dir, "d3dcompiler_46.dll")
+        dll_backup = existing_backup_path(dll_file)
+        if dll_backup and not os.path.exists(dll_file):
+            os.rename(dll_backup, dll_file)
+
+        video_dir = os.path.join(game_dir, "video")
+        if not os.path.isdir(video_dir):
+            return
+        for filename in os.listdir(video_dir):
+            src = os.path.join(video_dir, filename)
+            if filename.endswith(PATCHOPS_BACKUP_SUFFIX):
+                restored_name = filename[:-len(PATCHOPS_BACKUP_SUFFIX)]
+            elif filename.endswith(LEGACY_BACKUP_SUFFIX):
+                restored_name = filename[:-len(LEGACY_BACKUP_SUFFIX)]
+            else:
+                continue
+            dst = os.path.join(video_dir, restored_name)
+            if not os.path.exists(dst):
+                os.rename(src, dst)
+
+    @staticmethod
+    def _set_config_defaults(game_dir: str):
+        config_path = os.path.join(game_dir, "players", "config.ini")
+        if not os.path.exists(config_path):
+            return
+        try:
+            os.chmod(config_path, 0o644)
+        except Exception:
+            pass
+
+        replacements = {
+            "SmoothFramerate": "0",
+            "VideoMemory": "1",
+            "StreamMinResident": "0",
+            "MaxFrameLatency": "1",
+            "SerializeRender": "0",
+            "RestrictGraphicsOptions": "1",
+        }
+
+        with open(config_path, "r", encoding="utf-8") as handle:
+            lines = handle.readlines()
+
+        updated = []
+        seen = set()
+        for line in lines:
+            replaced = False
+            for key, value in replacements.items():
+                pattern = rf'^\s*{re.escape(key)}\s*='
+                if re.search(pattern, line):
+                    updated.append(f'{key} = "{value}"\n')
+                    seen.add(key)
+                    replaced = True
+                    break
+            if not replaced:
+                updated.append(line)
+
+        for key, value in replacements.items():
+            if key not in seen:
+                updated.append(f'{key} = "{value}"\n')
+
+        with open(config_path, "w", encoding="utf-8") as handle:
+            handle.writelines(updated)
+
+    def run(self):
+        try:
+            self._emit("Starting full reset to stock configuration...", "Info")
+
+            try:
+                enhanced_summary = status_summary(self.game_dir, self.storage_dir)
+                if enhanced_summary.get("installed") or detect_enhanced_install(self.game_dir):
+                    uninstall_enhanced_files(self.game_dir, self.mod_files_dir, self.storage_dir, log_widget=None)
+            except Exception as exc:
+                self._emit(f"Enhanced reset step failed: {exc}", "Warning")
+
+            try:
+                target_exe = find_game_executable(self.game_dir) or os.path.join(self.game_dir, "BlackOps3.exe")
+                backup_path = existing_backup_path(target_exe)
+                if backup_path and os.path.exists(backup_path):
+                    if os.path.exists(target_exe):
+                        os.remove(target_exe)
+                    os.rename(backup_path, target_exe)
+                    self._emit("Restored original executable from backup.", "Success")
+                write_exe_variant(self.game_dir, "default")
+            except Exception as exc:
+                self._emit(f"Reforged reset step failed: {exc}", "Warning")
+
+            try:
+                apply_launch_options("", None)
+                self._emit("Cleared Steam launch options.", "Success")
+            except Exception as exc:
+                self._emit(f"Launch options reset failed: {exc}", "Warning")
+
+            try:
+                self._uninstall_t7_patch_silent()
+            except Exception as exc:
+                self._emit(f"T7 reset step failed: {exc}", "Warning")
+
+            try:
+                manage_dxvk_async(self.game_dir, "Uninstall", None, self.mod_files_dir)
+                dxvk_conf_path = os.path.join(self.game_dir, "dxvk.conf")
+                if os.path.exists(dxvk_conf_path):
+                    os.remove(dxvk_conf_path)
+                    self._emit("Removed dxvk.conf.", "Success")
+            except Exception as exc:
+                self._emit(f"DXVK reset step failed: {exc}", "Warning")
+
+            try:
+                self._restore_qol_files_to_stock(self.game_dir)
+                self._set_config_defaults(self.game_dir)
+            except Exception as exc:
+                self._emit(f"Settings reset step failed: {exc}", "Warning")
+
+            self.finished.emit(True, "Stock reset complete.")
+        except Exception as exc:
+            self.finished.emit(False, f"Stock reset failed: {exc}")
+
+
 class QualityOfLifeWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1301,6 +1455,7 @@ class MainWindow(QMainWindow):
         self._enhanced_active = False
         self._enhanced_worker: Optional[EnhancedDownloadWorker] = None
         self._reforged_worker: Optional[ReforgedInstallWorker] = None
+        self._reset_stock_worker: Optional[ResetToStockWorker] = None
         self._reforged_stored_password = ""
         self._enhanced_last_failed = False
 
@@ -1447,6 +1602,7 @@ class MainWindow(QMainWindow):
         self.qol_widget = QualityOfLifeWidget()
         self.graphics_widget = GraphicsSettingsWidget(dxvk_widget=self.dxvk_widget)
         self.advanced_widget = AdvancedSettingsWidget()
+        self.advanced_widget.reset_to_stock_requested.connect(self.reset_to_stock)
         self.enhanced_group = self._build_enhanced_group()
         self.dashboard_status_group = self._build_dashboard_status_group()
 
@@ -1749,6 +1905,74 @@ class MainWindow(QMainWindow):
                 "Error",
                 self.log_text,
             )
+
+    def _apply_post_reset_ui_defaults(self):
+        # Keep UI updates quiet after worker has already applied file-level changes.
+        qol_controls = [
+            self.qol_widget.skip_all_intro_cb,
+            self.qol_widget.skip_intro_cb,
+            self.qol_widget.reduce_stutter_cb,
+        ]
+        adv_controls = [
+            self.advanced_widget.lock_config_cb,
+            self.advanced_widget.smooth_cb,
+            self.advanced_widget.vram_cb,
+            self.advanced_widget.vram_limit_spin,
+            self.advanced_widget.latency_spin,
+            self.advanced_widget.reduce_cpu_cb,
+            self.advanced_widget.all_settings_cb,
+        ]
+
+        for control in qol_controls + adv_controls:
+            control.blockSignals(True)
+        try:
+            self.qol_widget.skip_all_intro_cb.setChecked(False)
+            self.qol_widget.skip_intro_cb.setChecked(False)
+            self.qol_widget.reduce_stutter_cb.setChecked(False)
+
+            self.advanced_widget.lock_config_cb.setChecked(False)
+            self.advanced_widget.smooth_cb.setChecked(False)
+            self.advanced_widget.vram_cb.setChecked(False)
+            self.advanced_widget.vram_limit_spin.setValue(75)
+            self.advanced_widget.latency_spin.setValue(1)
+            self.advanced_widget.reduce_cpu_cb.setChecked(False)
+            self.advanced_widget.all_settings_cb.setChecked(False)
+        finally:
+            for control in qol_controls + adv_controls:
+                control.blockSignals(False)
+
+    def _on_reset_stock_progress(self, message: str, category: str):
+        write_log(message, category, self.log_text)
+
+    def _on_reset_stock_finished(self, success: bool, message: str):
+        if getattr(self.advanced_widget, "reset_stock_btn", None):
+            self.advanced_widget.reset_stock_btn.setEnabled(True)
+
+        game_dir = self.game_dir_edit.text().strip()
+        self.load_launch_options_state()
+        self._apply_post_reset_ui_defaults()
+        self._apply_game_directory(game_dir, save=False)
+        self.refresh_enhanced_status(show_warning=False)
+        self.refresh_dashboard_status()
+        self.t7_patch_widget.refresh_t7_mode_indicator()
+
+        write_log(message, "Success" if success else "Error", self.log_text)
+        self._reset_stock_worker = None
+
+    def reset_to_stock(self):
+        game_dir = self.game_dir_edit.text().strip()
+        if not os.path.isdir(game_dir):
+            write_log("Set a valid game directory before resetting to stock.", "Error", self.log_text)
+            return
+        if self._reset_stock_worker and self._reset_stock_worker.isRunning():
+            return
+
+        if getattr(self.advanced_widget, "reset_stock_btn", None):
+            self.advanced_widget.reset_stock_btn.setEnabled(False)
+        self._reset_stock_worker = ResetToStockWorker(game_dir, MOD_FILES_DIR, STORAGE_PATH)
+        self._reset_stock_worker.progress.connect(self._on_reset_stock_progress)
+        self._reset_stock_worker.finished.connect(self._on_reset_stock_finished)
+        self._reset_stock_worker.start()
 
     @staticmethod
     def _launch_option_name_from_string(launch_options: str):

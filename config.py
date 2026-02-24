@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QSizePolicy, QTabWidget, QGridLayout, QFrame
 )
 from PySide6.QtGui import QIntValidator, QGuiApplication
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from version import APP_VERSION
 from utils import (
     write_log,
@@ -586,6 +586,8 @@ class GraphicsSettingsWidget(QWidget):
 
 # ================= Advanced Settings Widget =================
 class AdvancedSettingsWidget(QWidget):
+    reset_to_stock_requested = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.game_dir = None
@@ -663,6 +665,11 @@ class AdvancedSettingsWidget(QWidget):
         clear_mod_files_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         clear_mod_files_btn.clicked.connect(self.clear_mod_files_action)
         btn_layout.addWidget(clear_mod_files_btn, 1)
+
+        self.reset_stock_btn = QPushButton("Reset to Stock")
+        self.reset_stock_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.reset_stock_btn.clicked.connect(self.request_reset_to_stock)
+        btn_layout.addWidget(self.reset_stock_btn, 1)
 
         layout.addWidget(btn_row, row, 0, 1, 4)
         row += 1
@@ -939,3 +946,18 @@ class AdvancedSettingsWidget(QWidget):
                     write_log(f"Mod files directory does not exist: {self.mod_files_dir}", "Warning", self.log_widget)
             except Exception as e:
                 write_log(f"Failed to clear mod files: {e}", "Error", self.log_widget)
+
+    def request_reset_to_stock(self):
+        reply = QMessageBox.warning(
+            self,
+            "Reset to Stock",
+            (
+                "This will remove modded installs and reset PatchOpsIII-managed settings to stock defaults.\n\n"
+                "This includes Enhanced/Reforged/T7/DXVK files, launch options, and QoL/Advanced settings.\n\n"
+                "Continue?"
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            self.reset_to_stock_requested.emit()
