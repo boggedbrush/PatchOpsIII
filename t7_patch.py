@@ -19,6 +19,9 @@ from utils import (
 )
 
 DEFAULT_STEAM_EXE_SHA256 = "9ba98dba41e18ef47de6c63937340f8eae7cb251f8fbc2e78d70047b64aa15b5"
+REFORGED_TRUSTED_SHA256 = {
+    "66b95eb4667bd5b3b3d230e7bed1d29ccd261d48ca2699f01216c863be24ff44",
+}
 T7PATCH_RELEASE_TAG_API = "https://api.github.com/repos/shiversoftdev/t7patch/releases/tags/Current"
 
 # Trusted hashes for the pinned T7Patch "Current" assets.
@@ -403,19 +406,38 @@ def _find_bo3_executable(game_dir):
     return None
 
 
-def read_reforged_t7_password(game_dir):
+def read_reforged_t7_options(game_dir):
+    result = {
+        "network_pass": "",
+        "force_ranked": False,
+        "steam_achievements": False,
+    }
     path = _t7_json_path(game_dir)
     if not os.path.exists(path):
-        return ""
+        return result
     try:
         with open(path, "r", encoding="utf-8") as handle:
             data = json.load(handle)
-        return str(data.get("network_pass", ""))
+        result["network_pass"] = str(data.get("network_pass", ""))
+        result["force_ranked"] = bool(data.get("force_ranked", False))
+        result["steam_achievements"] = bool(data.get("steam_achievements", False))
     except Exception:
-        return ""
+        return result
+    return result
 
 
-def update_reforged_t7_password(game_dir, password, log_widget=None):
+def read_reforged_t7_password(game_dir):
+    return read_reforged_t7_options(game_dir).get("network_pass", "")
+
+
+def update_reforged_t7_options(
+    game_dir,
+    *,
+    password=None,
+    force_ranked=None,
+    steam_achievements=None,
+    log_widget=None,
+):
     path = _t7_json_path(game_dir)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     data = {}
@@ -426,20 +448,32 @@ def update_reforged_t7_password(game_dir, password, log_widget=None):
         except Exception:
             data = {}
 
-    if password:
-        data["network_pass"] = password
-    else:
-        data.pop("network_pass", None)
+    if password is not None:
+        if password:
+            data["network_pass"] = password
+        else:
+            data.pop("network_pass", None)
+    if force_ranked is not None:
+        data["force_ranked"] = bool(force_ranked)
+    if steam_achievements is not None:
+        data["steam_achievements"] = bool(steam_achievements)
 
     try:
         with open(path, "w", encoding="utf-8") as handle:
             json.dump(data, handle, indent=4)
-        if password:
-            write_log("Updated network password in players/T7.json.", "Success", log_widget)
-        else:
-            write_log("Cleared network password in players/T7.json.", "Success", log_widget)
+        if password is not None:
+            if password:
+                write_log("Updated network password in players/T7.json.", "Success", log_widget)
+            else:
+                write_log("Cleared network password in players/T7.json.", "Success", log_widget)
+        if force_ranked is not None or steam_achievements is not None:
+            write_log("Updated Reforged options in players/T7.json.", "Success", log_widget)
     except Exception as exc:
         write_log(f"Failed to update players/T7.json: {exc}", "Error", log_widget)
+
+
+def update_reforged_t7_password(game_dir, password, log_widget=None):
+    update_reforged_t7_options(game_dir, password=password, log_widget=log_widget)
 
 class _WorkerLogForwarder:
     def __init__(self, signal):
@@ -775,6 +809,35 @@ class T7PatchWidget(QWidget):
         layout.addWidget(self.update_password_btn, row, 3)
         row += 1
 
+        # Reforged-only options row
+        self._add_separator(layout, row); row += 1
+
+        reforged_options_name = QLabel("Reforged Options")
+        reforged_options_name.setObjectName("DashboardStatusName")
+        reforged_options_name.setContentsMargins(0, 8, 0, 8)
+
+        reforged_options_container = QWidget()
+        reforged_options_layout = QHBoxLayout(reforged_options_container)
+        reforged_options_layout.setContentsMargins(0, 0, 0, 0)
+        reforged_options_layout.setSpacing(16)
+
+        self.reforged_force_ranked_cb = QCheckBox("Force Ranked Mode")
+        self.reforged_force_ranked_cb.setEnabled(False)
+        self.reforged_steam_achievements_cb = QCheckBox("Steam Achievements")
+        self.reforged_steam_achievements_cb.setEnabled(False)
+        reforged_options_layout.addWidget(self.reforged_force_ranked_cb)
+        reforged_options_layout.addWidget(self.reforged_steam_achievements_cb)
+        reforged_options_layout.addStretch(1)
+
+        self.update_reforged_options_btn = QPushButton("Update")
+        self.update_reforged_options_btn.setEnabled(False)
+        self.update_reforged_options_btn.clicked.connect(self.update_reforged_options)
+
+        layout.addWidget(reforged_options_name, row, 0)
+        layout.addWidget(reforged_options_container, row, 1, 1, 2)
+        layout.addWidget(self.update_reforged_options_btn, row, 3)
+        row += 1
+
         # Gamertag Color
         self._add_separator(layout, row); row += 1
 
@@ -821,7 +884,7 @@ class T7PatchWidget(QWidget):
         indicators_layout.setSpacing(12)
 
         self.reforged_support_label = QLabel(
-            "Reforged: Network Password updates are synced to players/T7.json."
+            "Reforged: Network Password / Force Ranked / Steam Achievements sync to players/T7.json."
         )
         self.reforged_support_label.setObjectName("DashboardStatusName")
         indicators_layout.addWidget(self.reforged_support_label, 1)
@@ -850,7 +913,10 @@ class T7PatchWidget(QWidget):
         self.refresh_t7_mode_indicator()
         if not skip_status_check and self.game_dir and os.path.exists(self.game_dir):
             status = check_t7_patch_status(self.game_dir)
-            reforged_password = read_reforged_t7_password(self.game_dir)
+            reforged_options = read_reforged_t7_options(self.game_dir)
+            reforged_password = reforged_options.get("network_pass", "")
+            self.reforged_force_ranked_cb.setChecked(reforged_options.get("force_ranked", False))
+            self.reforged_steam_achievements_cb.setChecked(reforged_options.get("steam_achievements", False))
             if status["gamertag"]:
                 # Update display format to show plain name and color
                 if "plain_name" in status and "color_code" in status:
@@ -904,31 +970,56 @@ class T7PatchWidget(QWidget):
                 self.friends_only_cb.setEnabled(False)
                 self.friends_only_cb.setChecked(False)
 
-    def refresh_t7_mode_indicator(self):
-        if not self.game_dir or not os.path.exists(self.game_dir):
-            self.t7_mode_label.setText(self._status_html("Unknown"))
-            return
+    def _refresh_reforged_option_controls(self):
+        reforged_active = self._is_reforged_active()
+        self.reforged_force_ranked_cb.setEnabled(reforged_active)
+        self.reforged_steam_achievements_cb.setEnabled(reforged_active)
+        self.update_reforged_options_btn.setEnabled(reforged_active)
 
-        if detect_enhanced_install(self.game_dir):
-            self.t7_mode_label.setText(self._status_html("Enhanced", "good"))
-            return
+    def _is_reforged_active(self):
+        if not self.game_dir or not os.path.isdir(self.game_dir):
+            return False
 
-        variant = read_exe_variant(self.game_dir)
-        if variant == "reforged":
-            self.t7_mode_label.setText(self._status_html("Reforged", "info"))
-            return
         exe_path = _find_bo3_executable(self.game_dir)
         exe_hash = file_sha256(exe_path) if exe_path else None
+        if exe_hash and exe_hash.lower() in REFORGED_TRUSTED_SHA256:
+            return True
 
-        if exe_hash and exe_hash == DEFAULT_STEAM_EXE_SHA256:
-            self.t7_mode_label.setText(self._status_html("Default", "neutral"))
-            return
+        # Fall back to persisted variant only when hash could not be read.
+        if read_exe_variant(self.game_dir) == "reforged" and exe_hash is None and exe_path and os.path.exists(exe_path):
+            return True
 
-        if variant == "default":
-            self.t7_mode_label.setText(self._status_html("Default", "neutral"))
-            return
+        return False
 
-        self.t7_mode_label.setText(self._status_html("Custom", "info"))
+    def refresh_t7_mode_indicator(self):
+        try:
+            if not self.game_dir or not os.path.exists(self.game_dir):
+                self.t7_mode_label.setText(self._status_html("Unknown"))
+                return
+
+            if detect_enhanced_install(self.game_dir):
+                self.t7_mode_label.setText(self._status_html("Enhanced", "good"))
+                return
+
+            if self._is_reforged_active():
+                self.t7_mode_label.setText(self._status_html("Reforged", "info"))
+                return
+
+            variant = read_exe_variant(self.game_dir)
+            exe_path = _find_bo3_executable(self.game_dir)
+            exe_hash = file_sha256(exe_path) if exe_path else None
+
+            if exe_hash and exe_hash == DEFAULT_STEAM_EXE_SHA256:
+                self.t7_mode_label.setText(self._status_html("Default", "neutral"))
+                return
+
+            if variant == "default":
+                self.t7_mode_label.setText(self._status_html("Default", "neutral"))
+                return
+
+            self.t7_mode_label.setText(self._status_html("Custom", "info"))
+        finally:
+            self._refresh_reforged_option_controls()
 
     def set_log_widget(self, log_widget):
         self.log_widget = log_widget
@@ -975,6 +1066,16 @@ class T7PatchWidget(QWidget):
         status = check_t7_patch_status(self.game_dir)  # Refresh status after update
         effective_password = status["password"] or read_reforged_t7_password(self.game_dir)
         self._set_current_password(effective_password)
+
+    def update_reforged_options(self):
+        if not self.game_dir:
+            return
+        update_reforged_t7_options(
+            self.game_dir,
+            force_ranked=self.reforged_force_ranked_cb.isChecked(),
+            steam_achievements=self.reforged_steam_achievements_cb.isChecked(),
+            log_widget=self.log_widget,
+        )
 
     def friends_only_changed(self):
         if not self.game_dir:
@@ -1026,7 +1127,8 @@ class T7PatchWidget(QWidget):
             write_log("Game directory does not exist.", "Error", self.log_widget)
             return
         uninstall_t7_patch(self.game_dir, self.mod_files_dir, self.log_widget)
-        reforged_password = read_reforged_t7_password(self.game_dir)
+        reforged_options = read_reforged_t7_options(self.game_dir)
+        reforged_password = reforged_options.get("network_pass", "")
         # Reset UI state without checking status
         self.current_gt_label.setText("None")
         self._set_current_password(reforged_password)
@@ -1037,6 +1139,9 @@ class T7PatchWidget(QWidget):
         self.password_edit.setText(reforged_password)
         self.friends_only_cb.setEnabled(False)
         self.friends_only_cb.setChecked(False)
+        self.reforged_force_ranked_cb.setChecked(reforged_options.get("force_ranked", False))
+        self.reforged_steam_achievements_cb.setChecked(reforged_options.get("steam_achievements", False))
+        self._refresh_reforged_option_controls()
         for btn in self.color_buttons.buttons():
             btn.setChecked(False)
         self.patch_uninstalled.emit()  # Notify parent of uninstall

@@ -6,7 +6,7 @@ import errno
 import shutil
 import time
 import tempfile
-import urllib.request
+import requests
 import vdf
 import platform
 import argparse
@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QMenu, QListWidget, QListWidgetItem,
     QStackedWidget, QAbstractItemView, QFrame
 )
-from PySide6.QtGui import QIcon, QDesktopServices, QAction, QFont
+from PySide6.QtGui import QIcon, QDesktopServices, QAction, QFont, QPalette
 from PySide6.QtCore import Qt, QUrl, QThread, Signal, QTimer, QSize
 
 # QtModernRedux (Qt6 fork) imports are resolved dynamically to support both module names
@@ -117,6 +117,24 @@ REFORGED_TRUSTED_SHA256 = {
 }
 
 
+def _requests_verify_path() -> object:
+    """Return a CA bundle path for requests when available."""
+    ssl_cert_file = os.environ.get("SSL_CERT_FILE")
+    if ssl_cert_file and os.path.isfile(ssl_cert_file):
+        return ssl_cert_file
+
+    try:
+        import certifi  # Imported lazily to avoid hard dependency at module import time.
+
+        certifi_path = certifi.where()
+        if certifi_path and os.path.isfile(certifi_path):
+            return certifi_path
+    except Exception:
+        pass
+
+    return True
+
+
 NUITKA_ENVIRONMENT_KEYS = (
     "NUITKA_ONEFILE_PARENT",
     "NUITKA_EXE_PATH",
@@ -124,19 +142,157 @@ NUITKA_ENVIRONMENT_KEYS = (
 )
 
 _NUITKA_DETECTION_KEYS = NUITKA_ENVIRONMENT_KEYS + ("NUITKA_ONEFILE_TEMP",)
+VALID_THEME_PREFERENCES = {"system", "light", "dark"}
 
 
-def apply_modern_theme(app: QApplication) -> None:
+def _is_light_palette(palette: QPalette) -> bool:
+    """Infer if the current palette is light based on window vs text luminance."""
+    window_lightness = palette.color(QPalette.Window).lightness()
+    text_lightness = palette.color(QPalette.WindowText).lightness()
+    if abs(window_lightness - text_lightness) >= 20:
+        return window_lightness > text_lightness
+    return window_lightness >= 160
+
+
+def _system_theme_mode(app: QApplication) -> str:
+    """Resolve system theme using Qt style hints when available."""
+    try:
+        hints = app.styleHints()
+        color_scheme_getter = getattr(hints, "colorScheme", None)
+        if callable(color_scheme_getter):
+            scheme = color_scheme_getter()
+            if scheme == Qt.ColorScheme.Light:
+                return "light"
+            if scheme == Qt.ColorScheme.Dark:
+                return "dark"
+    except Exception:
+        pass
+
+    return "light" if _is_light_palette(app.palette()) else "dark"
+
+
+def _resolve_theme_mode(app: QApplication, preference: Optional[str]) -> str:
+    normalized = str(preference or "system").strip().lower()
+    if normalized not in VALID_THEME_PREFERENCES:
+        normalized = "system"
+    if normalized == "system":
+        return _system_theme_mode(app)
+    return normalized
+
+
+def _apply_theme_preference(app: QApplication, preference: Optional[str]) -> str:
+    """Apply base Qt theme + overlay styles and return resolved mode."""
+    resolved_mode = _resolve_theme_mode(app, preference)
+    if QT_MODERN_AVAILABLE:
+        try:
+            if resolved_mode == "dark":
+                qt_styles.dark(app)
+            elif resolved_mode == "light" and hasattr(qt_styles, "light"):
+                qt_styles.light(app)
+        except Exception:
+            pass
+
+    apply_modern_theme(app, theme_mode=resolved_mode)
+    return resolved_mode
+
+
+def apply_modern_theme(app: QApplication, theme_mode: Optional[str] = None) -> None:
     """Lightweight overlay styles to complement QtModernRedux."""
-    app.setStyleSheet(
-        """
+    def _qss_image_path(path: Optional[str]) -> str:
+        if not path:
+            return ""
+        # Use direct filesystem paths in QSS; file:// URLs can be resolved
+        # incorrectly on Linux for Qt SVG image rules.
+        return os.path.normpath(path).replace("\\", "/")
+
+    normalized_theme = (theme_mode or "").strip().lower()
+    if normalized_theme in {"light", "dark"}:
+        is_light_theme = normalized_theme == "light"
+    else:
+        is_light_theme = _is_light_palette(app.palette())
+    log_background = "rgb(0, 0, 0)"
+
+    # Derive accent color from the system palette highlight role
+    _hl = app.palette().color(QPalette.ColorRole.Highlight)
+    _ar, _ag, _ab = _hl.red(), _hl.green(), _hl.blue()
+    _acc = f"{_ar}, {_ag}, {_ab}"
+
+    if is_light_theme:
+        _arrow_up = resource_path(os.path.join("icons", "arrow-up.svg"))
+        _arrow_down = resource_path(os.path.join("icons", "arrow-down.svg"))
+    else:
+        _arrow_up = resource_path(os.path.join("icons", "arrow-up-dark.svg"))
+        _arrow_down = resource_path(os.path.join("icons", "arrow-down-dark.svg"))
+    arrow_up_path = _qss_image_path(_arrow_up)
+    arrow_down_path = _qss_image_path(_arrow_down)
+
+    if is_light_theme:
+        heading_version = "rgb(92, 101, 115)"
+        log_text = "rgb(232, 236, 242)"
+        log_border = "rgba(31, 41, 55, 0.22)"
+        sidebar_border = "rgba(15, 23, 42, 0.15)"
+        sidebar_background = "rgba(17, 24, 39, 0.08)"
+        sidebar_text = "rgb(30, 41, 59)"
+        sidebar_hover = f"rgba({_acc}, 0.12)"
+        sidebar_selected_bg = f"rgba({_acc}, 0.20)"
+        sidebar_selected_text = "rgb(15, 23, 42)"
+        dashboard_status_name = "rgb(71, 85, 105)"
+        dashboard_status_value = "rgb(15, 23, 42)"
+        dashboard_divider = "rgba(15, 23, 42, 0.20)"
+        input_background = "rgb(255, 255, 255)"
+        input_text = "rgb(17, 24, 39)"
+        input_border = "rgba(15, 23, 42, 0.25)"
+        input_disabled_background = "rgb(240, 243, 248)"
+        input_disabled_text = "rgb(120, 129, 144)"
+        selection_background = f"rgba({_acc}, 0.25)"
+        selection_text = "rgb(15, 23, 42)"
+        tab_background = "rgba(15, 23, 42, 0.08)"
+        tab_text = "rgb(51, 65, 85)"
+        tab_active_background = f"rgba({_acc}, 0.22)"
+        tab_active_text = "rgb(15, 23, 42)"
+        tab_border = "rgba(15, 23, 42, 0.20)"
+        slider_groove = "rgba(15, 23, 42, 0.18)"
+        slider_fill = f"rgba({_acc}, 0.55)"
+        slider_handle = "rgb(248, 250, 252)"
+        slider_handle_border = "rgba(15, 23, 42, 0.40)"
+    else:
+        heading_version = "rgb(150, 155, 165)"
+        log_text = "rgb(232, 236, 242)"
+        log_border = "rgba(255, 255, 255, 0.08)"
+        sidebar_border = "rgba(255, 255, 255, 0.06)"
+        sidebar_background = "rgba(0, 0, 0, 0.12)"
+        sidebar_text = "rgb(215, 220, 230)"
+        sidebar_hover = "rgba(255, 255, 255, 0.06)"
+        sidebar_selected_bg = "rgba(255, 255, 255, 0.12)"
+        sidebar_selected_text = "rgb(245, 248, 255)"
+        dashboard_status_name = "rgb(170, 175, 185)"
+        dashboard_status_value = "rgb(225, 230, 238)"
+        dashboard_divider = "rgba(255, 255, 255, 0.08)"
+        input_background = "rgb(15, 20, 28)"
+        input_text = "rgb(225, 230, 238)"
+        input_border = "rgba(255, 255, 255, 0.22)"
+        input_disabled_background = "rgb(24, 30, 40)"
+        input_disabled_text = "rgb(130, 138, 150)"
+        selection_background = f"rgba({_acc}, 0.45)"
+        selection_text = "rgb(240, 245, 252)"
+        tab_background = "rgba(255, 255, 255, 0.08)"
+        tab_text = "rgb(205, 213, 224)"
+        tab_active_background = f"rgba({_acc}, 0.20)"
+        tab_active_text = "rgb(240, 245, 252)"
+        tab_border = "rgba(255, 255, 255, 0.20)"
+        slider_groove = "rgba(255, 255, 255, 0.22)"
+        slider_fill = f"rgba({_acc}, 0.70)"
+        slider_handle = "rgb(239, 244, 252)"
+        slider_handle_border = "rgba(15, 23, 42, 0.55)"
+
+    stylesheet = """
         QLabel#HeadingTitle {
             font-size: 18px;
             font-weight: 600;
         }
         QLabel#HeadingVersion {
             font-size: 11px;
-            color: rgb(150, 155, 165);
+            color: __heading_version__;
         }
         QPushButton#PrimaryButton {
             font-weight: 600;
@@ -148,47 +304,179 @@ def apply_modern_theme(app: QApplication) -> None:
         QTextEdit#LogView {
             font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
             font-size: 11px;
+            color: __log_text__;
+            background: __log_background__;
+            border: 1px solid __log_border__;
+            border-radius: 6px;
         }
         QListWidget#SidebarTabs {
-            border: 1px solid rgba(255, 255, 255, 0.06);
+            border: 1px solid __sidebar_border__;
             border-radius: 10px;
-            background: rgba(0, 0, 0, 0.12);
+            background: __sidebar_background__;
+            color: __sidebar_text__;
             padding: 6px;
         }
         QListWidget#SidebarTabs::item {
             padding: 8px 10px;
             border-radius: 8px;
+            color: __sidebar_text__;
         }
         QListWidget#SidebarTabs::item:hover {
-            background: rgba(255, 255, 255, 0.06);
+            background: __sidebar_hover__;
         }
         QListWidget#SidebarTabs::item:selected {
-            background: rgba(255, 255, 255, 0.12);
+            background: __sidebar_selected_bg__;
+            color: __sidebar_selected_text__;
+            font-weight: 600;
+        }
+        QLineEdit, QSpinBox, QComboBox {
+            background: __input_background__;
+            color: __input_text__;
+            border: 1px solid __input_border__;
+            border-radius: 4px;
+            padding: 2px 6px;
+            selection-background-color: __selection_background__;
+            selection-color: __selection_text__;
+        }
+        QLineEdit:disabled, QSpinBox:disabled, QComboBox:disabled {
+            background: __input_disabled_background__;
+            color: __input_disabled_text__;
+        }
+        QComboBox QAbstractItemView {
+            background: __input_background__;
+            color: __input_text__;
+            border: 1px solid __input_border__;
+            selection-background-color: __selection_background__;
+            selection-color: __selection_text__;
+        }
+        QComboBox::drop-down {
+            subcontrol-origin: padding;
+            subcontrol-position: top right;
+            width: 20px;
+            border-left: 1px solid __input_border__;
+            background: transparent;
+            border-top-right-radius: 4px;
+            border-bottom-right-radius: 4px;
+        }
+        QComboBox::drop-down:hover {
+            background: __tab_background__;
+        }
+        QComboBox::down-arrow {
+            width: 12px;
+            height: 8px;
+            image: url("__arrow_down_path__");
+        }
+        QComboBox:disabled::drop-down {
+            background: transparent;
+        }
+        QSpinBox::up-button, QSpinBox::down-button {
+            subcontrol-origin: border;
+            width: 16px;
+            border-left: 1px solid __input_border__;
+            background: transparent;
+        }
+        QSpinBox::up-button {
+            subcontrol-position: top right;
+            border-top-right-radius: 4px;
+        }
+        QSpinBox::down-button {
+            subcontrol-position: bottom right;
+            border-top: 1px solid __input_border__;
+            border-bottom-right-radius: 4px;
+        }
+        QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+            background: __tab_background__;
+        }
+        QSpinBox:disabled::up-button, QSpinBox:disabled::down-button {
+            background: transparent;
+        }
+        QSpinBox::up-arrow {
+            width: 10px;
+            height: 6px;
+            image: url("__arrow_up_path__");
+        }
+        QSpinBox::down-arrow {
+            width: 10px;
+            height: 6px;
+            image: url("__arrow_down_path__");
+        }
+        QSlider::groove:horizontal {
+            height: 4px;
+            border-radius: 2px;
+            background: __slider_groove__;
+        }
+        QSlider::sub-page:horizontal {
+            border-radius: 2px;
+            background: __slider_fill__;
+        }
+        QSlider::handle:horizontal {
+            width: 12px;
+            margin: -5px 0;
+            border-radius: 6px;
+            background: __slider_handle__;
+            border: 1px solid __slider_handle_border__;
         }
         QLabel#DashboardStatusName {
-            color: rgb(170, 175, 185);
+            color: __dashboard_status_name__;
             font-size: 12px;
         }
         QLabel#DashboardStatusValue {
             font-size: 12px;
             font-weight: 600;
+            color: __dashboard_status_value__;
         }
+        QLabel#DashboardStatusValue[workshopState="good"],
         QLabel[workshopState="good"] {
-            color: #4ade80;
+            color: #16a34a;
             font-weight: 600;
         }
+        QLabel#DashboardStatusValue[workshopState="info"],
         QLabel[workshopState="info"] {
-            color: #60a5fa;
+            color: #2563eb;
             font-weight: 600;
         }
+        QLabel#DashboardStatusValue[workshopState="bad"],
         QLabel[workshopState="bad"] {
-            color: #f87171;
+            color: #dc2626;
             font-weight: 600;
         }
         QFrame#DashboardDivider {
-            color: rgba(255, 255, 255, 0.08);
+            color: __dashboard_divider__;
         }
         """
+    app.setStyleSheet(
+        stylesheet
+        .replace("__heading_version__", heading_version)
+        .replace("__log_text__", log_text)
+        .replace("__log_background__", log_background)
+        .replace("__log_border__", log_border)
+        .replace("__sidebar_border__", sidebar_border)
+        .replace("__sidebar_background__", sidebar_background)
+        .replace("__sidebar_text__", sidebar_text)
+        .replace("__sidebar_hover__", sidebar_hover)
+        .replace("__sidebar_selected_bg__", sidebar_selected_bg)
+        .replace("__sidebar_selected_text__", sidebar_selected_text)
+        .replace("__dashboard_status_name__", dashboard_status_name)
+        .replace("__dashboard_status_value__", dashboard_status_value)
+        .replace("__dashboard_divider__", dashboard_divider)
+        .replace("__input_background__", input_background)
+        .replace("__input_text__", input_text)
+        .replace("__input_border__", input_border)
+        .replace("__input_disabled_background__", input_disabled_background)
+        .replace("__input_disabled_text__", input_disabled_text)
+        .replace("__selection_background__", selection_background)
+        .replace("__selection_text__", selection_text)
+        .replace("__tab_background__", tab_background)
+        .replace("__tab_text__", tab_text)
+        .replace("__tab_active_background__", tab_active_background)
+        .replace("__tab_active_text__", tab_active_text)
+        .replace("__tab_border__", tab_border)
+        .replace("__slider_groove__", slider_groove)
+        .replace("__slider_fill__", slider_fill)
+        .replace("__slider_handle__", slider_handle)
+        .replace("__slider_handle_border__", slider_handle_border)
+        .replace("__arrow_up_path__", arrow_up_path)
+        .replace("__arrow_down_path__", arrow_down_path)
     )
 
 
@@ -528,6 +816,31 @@ def _settings_file_path():
     return os.path.join(base_path, "PatchOpsIII_settings.json")
 
 
+def _load_settings():
+    settings_path = _settings_file_path()
+    if not os.path.exists(settings_path):
+        return {}
+    try:
+        with open(settings_path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _save_settings(data):
+    settings_path = _settings_file_path()
+    if not isinstance(data, dict):
+        return False
+    try:
+        with open(settings_path, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=4)
+        return True
+    except OSError as exc:
+        write_log(f"Failed to save settings: {exc}", "Error")
+        return False
+
+
 def _has_game_executable(directory):
     if not directory or not os.path.isdir(directory):
         return False
@@ -538,16 +851,7 @@ def _has_game_executable(directory):
 
 
 def _load_saved_game_directory():
-    settings_path = _settings_file_path()
-    if not os.path.exists(settings_path):
-        return None
-
-    try:
-        with open(settings_path, "r", encoding="utf-8") as handle:
-            data = json.load(handle)
-    except (OSError, json.JSONDecodeError):
-        return None
-
+    data = _load_settings()
     saved_dir = data.get("game_directory")
     if saved_dir and _has_game_executable(saved_dir):
         return saved_dir
@@ -555,25 +859,26 @@ def _load_saved_game_directory():
 
 
 def save_game_directory(directory):
-    settings_path = _settings_file_path()
-    data = {}
-
-    if os.path.exists(settings_path):
-        try:
-            with open(settings_path, "r", encoding="utf-8") as handle:
-                data = json.load(handle)
-        except (OSError, json.JSONDecodeError):
-            data = {}
-
+    data = _load_settings()
     data["game_directory"] = directory
+    return _save_settings(data)
 
-    try:
-        with open(settings_path, "w", encoding="utf-8") as handle:
-            json.dump(data, handle, indent=4)
-        return True
-    except OSError as exc:
-        write_log(f"Failed to save game directory: {exc}", "Error")
+
+def _load_theme_preference():
+    data = _load_settings()
+    theme = str(data.get("theme", "system")).strip().lower()
+    if theme in VALID_THEME_PREFERENCES:
+        return theme
+    return "system"
+
+
+def save_theme_preference(theme):
+    normalized = str(theme or "").strip().lower()
+    if normalized not in VALID_THEME_PREFERENCES:
         return False
+    data = _load_settings()
+    data["theme"] = normalized
+    return _save_settings(data)
 
 
 def _migrate_settings_if_needed(current_path):
@@ -645,6 +950,7 @@ def parse_cli_arguments():
     parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
     parser.add_argument("--install-t7", action="store_true")
     parser.add_argument("--game-dir", type=str)
+    parser.add_argument("--theme", choices=["system", "light", "dark"])
     args, _ = parser.parse_known_args(sys.argv[1:])
     return args
 
@@ -820,6 +1126,7 @@ class ReforgedInstallWorker(QThread):
 
     def run(self):
         temp_path = None
+        staged_path = None
         try:
             if not self.game_dir or not os.path.isdir(self.game_dir):
                 raise RuntimeError("Invalid game directory.")
@@ -831,13 +1138,21 @@ class ReforgedInstallWorker(QThread):
             fd, temp_path = tempfile.mkstemp(prefix="patchops_reforged_", suffix=".exe")
             os.close(fd)
 
-            request = urllib.request.Request(REFORGED_DOWNLOAD_URL, headers=REFORGED_DOWNLOAD_HEADERS)
-            with urllib.request.urlopen(request, timeout=120) as response, open(temp_path, "wb") as handle:
-                while True:
-                    chunk = response.read(1024 * 256)
-                    if not chunk:
-                        break
-                    handle.write(chunk)
+            verify = _requests_verify_path()
+            with requests.get(
+                REFORGED_DOWNLOAD_URL,
+                headers=REFORGED_DOWNLOAD_HEADERS,
+                stream=True,
+                timeout=120,
+                allow_redirects=True,
+                verify=verify,
+            ) as response:
+                response.raise_for_status()
+                with open(temp_path, "wb") as handle:
+                    for chunk in response.iter_content(chunk_size=1024 * 256):
+                        if not chunk:
+                            continue
+                        handle.write(chunk)
 
             if os.path.getsize(temp_path) <= 0:
                 raise RuntimeError("Downloaded file is empty.")
@@ -861,7 +1176,24 @@ class ReforgedInstallWorker(QThread):
                     self.progress.emit("Backing up current executable...")
                     shutil.copy2(target_exe, backup_path)
 
-            os.replace(temp_path, target_exe)
+            try:
+                os.replace(temp_path, target_exe)
+            except OSError as exc:
+                if exc.errno != errno.EXDEV:
+                    raise
+                # Cross-device rename (e.g., /tmp -> Steam library mount). Preserve
+                # atomic replacement by staging in the target directory first.
+                target_dir = os.path.dirname(target_exe) or self.game_dir
+                fd, staged_path = tempfile.mkstemp(
+                    prefix=".patchops_reforged_stage_",
+                    suffix=".exe",
+                    dir=target_dir,
+                )
+                os.close(fd)
+                shutil.copy2(temp_path, staged_path)
+                os.replace(staged_path, target_exe)
+                staged_path = None
+                os.remove(temp_path)
             temp_path = None
             self.installed.emit(target_exe)
         except Exception as exc:
@@ -870,6 +1202,11 @@ class ReforgedInstallWorker(QThread):
             if temp_path and os.path.exists(temp_path):
                 try:
                     os.remove(temp_path)
+                except OSError:
+                    pass
+            if staged_path and os.path.exists(staged_path):
+                try:
+                    os.remove(staged_path)
                 except OSError:
                     pass
 
@@ -1243,6 +1580,11 @@ class QualityOfLifeWidget(QWidget):
         return option
 
     def refresh_workshop_status(self):
+        state_colors = {
+            "good": "#16a34a",
+            "info": "#2563eb",
+            "bad": "#dc2626",
+        }
         for key, radio in self.workshop_profile_radios.items():
             profile = WORKSHOP_PROFILES[key]
             state = get_workshop_item_state(app_id, profile["workshop_id"])
@@ -1261,6 +1603,9 @@ class QualityOfLifeWidget(QWidget):
             if status_label_widget is not None:
                 status_label_widget.setText(f"\u25cf {status_label}")
                 status_label_widget.setProperty("workshopState", status_state)
+                status_label_widget.setStyleSheet(
+                    f"color: {state_colors.get(status_state, '#9ca3af')}; font-weight: 600;"
+                )
                 status_label_widget.style().unpolish(status_label_widget)
                 status_label_widget.style().polish(status_label_widget)
 
@@ -1458,6 +1803,15 @@ class MainWindow(QMainWindow):
         self._reset_stock_worker: Optional[ResetToStockWorker] = None
         self._reforged_stored_password = ""
         self._enhanced_last_failed = False
+        self._theme_preference = _load_theme_preference()
+        app_instance = QApplication.instance()
+        self._active_theme_mode = (
+            _resolve_theme_mode(app_instance, self._theme_preference)
+            if app_instance is not None else "dark"
+        )
+        self._theme_sync_timer = QTimer(self)
+        self._theme_sync_timer.setInterval(1000)
+        self._theme_sync_timer.timeout.connect(self._sync_theme_runtime)
 
         icon, icon_source = load_application_icon()
         if icon.isNull():
@@ -1484,6 +1838,36 @@ class MainWindow(QMainWindow):
             self._initialize_windows_updater()
         elif self._system == "Linux":
             QTimer.singleShot(2500, self._auto_check_for_linux_updates)
+
+        self._theme_sync_timer.start()
+        if app_instance is not None:
+            try:
+                hints = app_instance.styleHints()
+                color_scheme_signal = getattr(hints, "colorSchemeChanged", None)
+                if color_scheme_signal is not None:
+                    color_scheme_signal.connect(self._on_system_color_scheme_changed)
+            except Exception:
+                pass
+
+    def _on_system_color_scheme_changed(self, *_):
+        self._sync_theme_runtime()
+
+    def _sync_theme_runtime(self):
+        app_instance = QApplication.instance()
+        if app_instance is None:
+            return
+
+        latest_preference = _load_theme_preference()
+        resolved_mode = _resolve_theme_mode(app_instance, latest_preference)
+        if (
+            latest_preference == self._theme_preference
+            and resolved_mode == self._active_theme_mode
+        ):
+            return
+
+        self._theme_preference = latest_preference
+        self._active_theme_mode = _apply_theme_preference(app_instance, latest_preference)
+        self.refresh_dashboard_status()
 
     def load_launch_options_state(self):
         current_options = self._get_applied_launch_options()
@@ -1652,7 +2036,7 @@ class MainWindow(QMainWindow):
         reforged_layout = QVBoxLayout(reforged_tab)
         reforged_layout.addWidget(self._build_reforged_group())
         reforged_layout.addStretch(1)
-        self.tabs.addTab(reforged_tab, load_ui_icon("reforged"), "Reforged")
+        self.reforged_tab_index = self.tabs.addTab(reforged_tab, load_ui_icon("reforged"), "Reforged")
 
         # Graphics Tab
         graphics_tab = QWidget()
@@ -1857,18 +2241,25 @@ class MainWindow(QMainWindow):
     def _on_dashboard_state_changed(self, *_):
         self.refresh_dashboard_status()
 
-    @staticmethod
-    def _status_html(text: str, state: str = "neutral") -> str:
+    def _status_html(self, text: str, state: str = "neutral") -> str:
         """Return an HTML-colored status string for dashboard labels.
 
         state values: 'good' (green), 'bad' (muted red), 'info' (blue), 'neutral' (gray)
         """
-        colors = {
-            "good": "#4ade80",
-            "bad": "#f87171",
-            "info": "#60a5fa",
-            "neutral": "#9ca3af",
-        }
+        if self._active_theme_mode == "light":
+            colors = {
+                "good": "#15803d",
+                "bad": "#b91c1c",
+                "info": "#1d4ed8",
+                "neutral": "#475569",
+            }
+        else:
+            colors = {
+                "good": "#4ade80",
+                "bad": "#f87171",
+                "info": "#60a5fa",
+                "neutral": "#9ca3af",
+            }
         color = colors.get(state, colors["neutral"])
         return f'<span style="color:{color};">&#9679; {text}</span>'
 
@@ -2017,10 +2408,8 @@ class MainWindow(QMainWindow):
         launch_text = "Active" if launch_active else "Inactive"
         status_text = f"{exe_text} | {launch_text}"
 
-        if exe_installed and launch_active:
+        if exe_installed:
             state = "good"
-        elif exe_installed:
-            state = "info"
         elif launch_active:
             state = "info"
         else:
@@ -2243,23 +2632,34 @@ class MainWindow(QMainWindow):
         # Notes
         _add_sep(row); row += 1
 
+        downgrade_note = QLabel(
+            "1. Installing Reforged downgrades BlackOps3.exe to the build from before the February 19, 2026 update."
+        )
+        downgrade_note.setObjectName("DashboardStatusName")
+        downgrade_note.setWordWrap(True)
+        downgrade_note.setContentsMargins(0, 8, 0, 4)
+        layout.addWidget(downgrade_note, row, 0, 1, 4)
+        row += 1
+
         workshop_note = QLabel(
-            f'Installing Reforged also installs the <a href="{REFORGED_WORKSHOP_STEAM_URL}">BO3 Reforged Workshop mod</a>.'
+            f'2. Installing Reforged also installs the <a href="{REFORGED_WORKSHOP_STEAM_URL}">BO3 Reforged Workshop mod</a>.'
         )
         workshop_note.setObjectName("DashboardStatusName")
         workshop_note.setOpenExternalLinks(True)
-        workshop_note.setContentsMargins(0, 8, 0, 4)
+        workshop_note.setWordWrap(True)
+        workshop_note.setContentsMargins(0, 0, 0, 4)
         layout.addWidget(workshop_note, row, 0, 1, 4)
         row += 1
 
-        compat_note = QLabel(
-            "T7Patch compatible: Reforged can be used with or without T7Patch. "
-            "If both players use Reforged, matching passwords are cross-compatible."
+        t7_note = QLabel(
+            "3. You can manage your T7Patch settings here or on the T7 Patch page. "
+            "The T7 Patch page has more options, while this page has options specific to Reforged. "
+            "If Reforged is installed, you can edit additional options on the T7 Patch page."
         )
-        compat_note.setObjectName("DashboardStatusName")
-        compat_note.setWordWrap(True)
-        compat_note.setContentsMargins(0, 0, 0, 8)
-        layout.addWidget(compat_note, row, 0, 1, 4)
+        t7_note.setObjectName("DashboardStatusName")
+        t7_note.setWordWrap(True)
+        t7_note.setContentsMargins(0, 0, 0, 8)
+        layout.addWidget(t7_note, row, 0, 1, 4)
         row += 1
 
         layout.setColumnStretch(0, 1)
@@ -2497,9 +2897,36 @@ class MainWindow(QMainWindow):
     def _show_default_steam_warning(self):
         message = (
             "Launch options are disabled on the default Steam BO3 installation after the recent game update. "
-            "Install Reforged to restore mod launch functionality."
+            "Do you want to install Reforged or Enhanced?"
         )
-        QMessageBox.warning(self, "Reforged Required", message)
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Warning)
+        box.setWindowTitle("Install Mod")
+        box.setText(message)
+
+        enhanced_btn = box.addButton("Enhanced", QMessageBox.AcceptRole)
+        reforged_btn = box.addButton("Reforged", QMessageBox.AcceptRole)
+        no_thanks_btn = box.addButton("No thank you", QMessageBox.RejectRole)
+        box.setDefaultButton(reforged_btn)
+        box.exec()
+
+        clicked = box.clickedButton()
+        if clicked == enhanced_btn:
+            if hasattr(self, "enhanced_tab_index"):
+                self.tabs.setCurrentIndex(self.enhanced_tab_index)
+            write_log("Default install warning: user selected Enhanced.", "Info", self.log_text)
+            if not self.enhanced_dump_edit.text().strip():
+                self._enhanced_smart_browse()
+            if self.enhanced_dump_edit.text().strip():
+                self.on_enhanced_install_clicked()
+        elif clicked == reforged_btn:
+            if hasattr(self, "reforged_tab_index"):
+                self.tabs.setCurrentIndex(self.reforged_tab_index)
+            write_log("Default install warning: user selected Reforged.", "Info", self.log_text)
+            self.install_reforged()
+        elif clicked == no_thanks_btn:
+            write_log("Default install warning: user selected No thank you.", "Info", self.log_text)
+
         self._steam_default_warning_session_shown = True
 
     def _enhanced_smart_browse(self):
@@ -2833,12 +3260,11 @@ def main() -> int:
     app = QApplication(sys.argv)
     base_font = QFont("Inter", 10)
     app.setFont(base_font)
-    if QT_MODERN_AVAILABLE:
-        try:
-            qt_styles.dark(app)
-        except Exception:
-            pass
-    apply_modern_theme(app)
+    theme_preference = _load_theme_preference()
+    if getattr(cli_args, "theme", None):
+        theme_preference = cli_args.theme.strip().lower()
+        save_theme_preference(theme_preference)
+    _apply_theme_preference(app, theme_preference)
     global_icon, icon_source = load_application_icon()
     if global_icon.isNull():
         if icon_source:
