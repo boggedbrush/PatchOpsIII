@@ -49,6 +49,7 @@ EXPECTED_DUMP_FILES = {
 UWP_DUMP_WHITELIST = {
     "BlackOps3.exe",
     "MicrosoftGame.config",
+    "GameChat2.dll",
     "Party.dll",
     "PartyXboxLive.dll",
     "PlayFabMultiplayerGDK.dll",

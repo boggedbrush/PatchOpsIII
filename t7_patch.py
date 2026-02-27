@@ -22,6 +22,10 @@ DEFAULT_STEAM_EXE_SHA256 = "9ba98dba41e18ef47de6c63937340f8eae7cb251f8fbc2e78d70
 REFORGED_TRUSTED_SHA256 = {
     "66b95eb4667bd5b3b3d230e7bed1d29ccd261d48ca2699f01216c863be24ff44",
 }
+T7_INSTALL_MARKERS = (
+    "t7patchloader.dll",
+    "t7patch.dll",
+)
 T7PATCH_RELEASE_TAG_API = "https://api.github.com/repos/shiversoftdev/t7patch/releases/tags/Current"
 
 # Trusted hashes for the pinned T7Patch "Current" assets.
@@ -392,6 +396,12 @@ def check_t7_patch_status(game_dir):
                 elif line.startswith("isfriendsonly="):
                     result["friends_only"] = line.strip().split("=", 1)[1] == "1"
     return result
+
+
+def is_t7_patch_installed(game_dir):
+    if not game_dir or not os.path.isdir(game_dir):
+        return False
+    return any(os.path.exists(os.path.join(game_dir, marker)) for marker in T7_INSTALL_MARKERS)
 
 
 def _t7_json_path(game_dir):
@@ -913,11 +923,12 @@ class T7PatchWidget(QWidget):
         self.refresh_t7_mode_indicator()
         if not skip_status_check and self.game_dir and os.path.exists(self.game_dir):
             status = check_t7_patch_status(self.game_dir)
+            t7_installed = is_t7_patch_installed(self.game_dir)
             reforged_options = read_reforged_t7_options(self.game_dir)
             reforged_password = reforged_options.get("network_pass", "")
             self.reforged_force_ranked_cb.setChecked(reforged_options.get("force_ranked", False))
             self.reforged_steam_achievements_cb.setChecked(reforged_options.get("steam_achievements", False))
-            if status["gamertag"]:
+            if t7_installed and status["gamertag"]:
                 # Update display format to show plain name and color
                 if "plain_name" in status and "color_code" in status:
                     self.current_gt_label.setText(

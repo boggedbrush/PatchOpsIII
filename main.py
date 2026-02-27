@@ -41,13 +41,21 @@ except ModuleNotFoundError:
     except ModuleNotFoundError:
         QT_MODERN_AVAILABLE = False
 
-from t7_patch import T7PatchWidget, is_admin, check_t7_patch_status, restore_lpc_backups
+from t7_patch import (
+    T7PatchWidget,
+    is_admin,
+    check_t7_patch_status,
+    is_t7_patch_installed,
+    restore_lpc_backups,
+)
 from dxvk_manager import DXVKWidget, is_dxvk_async_installed, manage_dxvk_async
 from config import GraphicsSettingsWidget, AdvancedSettingsWidget
 from updater import ReleaseInfo, WindowsUpdater, prompt_linux_update
 from utils import (
     write_log,
     apply_launch_options,
+    cleanup_bo3_enhanced_linux,
+    configure_bo3_enhanced_linux,
     find_steam_user_id,
     steam_userdata_path,
     app_id,
@@ -1115,6 +1123,76 @@ class EnhancedDownloadWorker(QThread):
             self.failed.emit(str(exc))
 
 
+class EnhancedInstallWorker(QThread):
+    progress = Signal(str)
+    finished = Signal(bool, str, str)
+
+    def __init__(self, game_dir: str, dump_source: str, linux_tool_source: Optional[str], system_name: str):
+        super().__init__()
+        self.game_dir = game_dir
+        self.dump_source = dump_source
+        self.linux_tool_source = linux_tool_source
+        self.system_name = system_name
+
+    def run(self):
+        try:
+            self.progress.emit("Installing BO3 Enhanced files...")
+            installed = install_enhanced_files(
+                self.game_dir,
+                MOD_FILES_DIR,
+                STORAGE_PATH,
+                self.dump_source,
+                log_widget=None,
+            )
+            if not installed:
+                self.finished.emit(False, "Installation Failed", self.game_dir)
+                return
+
+            if self.system_name == "Linux":
+                self.progress.emit("Configuring Steam compatibility tool...")
+                configured = configure_bo3_enhanced_linux(self.linux_tool_source, STORAGE_PATH, None)
+                if not configured:
+                    self.finished.emit(
+                        False,
+                        "Installed files, but Linux compatibility setup failed. See logs.",
+                        self.game_dir,
+                    )
+                    return
+
+            self.finished.emit(True, "Installed Successfully", self.game_dir)
+        except Exception as exc:  # noqa: BLE001
+            self.finished.emit(False, str(exc), self.game_dir)
+
+
+class EnhancedUninstallWorker(QThread):
+    progress = Signal(str)
+    finished = Signal(bool, str, str)
+
+    def __init__(self, game_dir: str, system_name: str):
+        super().__init__()
+        self.game_dir = game_dir
+        self.system_name = system_name
+
+    def run(self):
+        try:
+            self.progress.emit("Uninstalling BO3 Enhanced files...")
+            removed = uninstall_enhanced_files(self.game_dir, MOD_FILES_DIR, STORAGE_PATH, log_widget=None)
+            if not removed:
+                self.finished.emit(False, "Uninstall Failed", self.game_dir)
+                return
+
+            if self.system_name == "Linux":
+                self.progress.emit("Cleaning up Steam compatibility settings...")
+                cleanup_ok = cleanup_bo3_enhanced_linux(None)
+                if not cleanup_ok:
+                    self.finished.emit(False, "Uninstall Incomplete", self.game_dir)
+                    return
+
+            self.finished.emit(True, "Uninstalled", self.game_dir)
+        except Exception as exc:  # noqa: BLE001
+            self.finished.emit(False, str(exc), self.game_dir)
+
+
 class ReforgedInstallWorker(QThread):
     progress = Signal(str)
     installed = Signal(str)
@@ -1799,6 +1877,8 @@ class MainWindow(QMainWindow):
         self._steam_default_warning_session_shown = False
         self._enhanced_active = False
         self._enhanced_worker: Optional[EnhancedDownloadWorker] = None
+        self._enhanced_install_worker: Optional[EnhancedInstallWorker] = None
+        self._enhanced_uninstall_worker: Optional[EnhancedUninstallWorker] = None
         self._reforged_worker: Optional[ReforgedInstallWorker] = None
         self._reset_stock_worker: Optional[ResetToStockWorker] = None
         self._reforged_stored_password = ""
@@ -2138,6 +2218,10 @@ class MainWindow(QMainWindow):
         self.enhanced_dump_edit.setPlaceholderText("Select DUMP.zip or BlackOps3.exe from dump folder…")
 
         browse_btn = QPushButton("Browse")
+        browse_icon = load_ui_icon("browse")
+        if not browse_icon.isNull():
+            browse_btn.setIcon(browse_icon)
+            browse_btn.setIconSize(QSize(18, 18))
         browse_btn.clicked.connect(self._enhanced_smart_browse)
 
         layout.addWidget(dump_name, row, 0)
@@ -2423,6 +2507,30 @@ class MainWindow(QMainWindow):
         if not worker_running and hasattr(self, "reforged_status_label"):
             self.reforged_status_label.setText(self._status_html(status_text, state))
 
+    def _set_enhanced_composite_status(self, *, installed: bool, launch_active: bool):
+        install_text = "Installed" if installed else "Not Installed"
+        launch_text = "Active" if launch_active else "Inactive"
+        status_text = f"{install_text} | {launch_text}"
+
+        if installed:
+            state = "good"
+        elif launch_active:
+            state = "info"
+        else:
+            state = "neutral"
+
+        self.dashboard_enhanced_status.setText(self._status_html(status_text, state))
+
+        # Keep the Enhanced tab status aligned with dashboard state unless a worker
+        # is currently reporting download/install/uninstall progress.
+        worker_running = bool(
+            (self._enhanced_worker and self._enhanced_worker.isRunning())
+            or (self._enhanced_install_worker and self._enhanced_install_worker.isRunning())
+            or (self._enhanced_uninstall_worker and self._enhanced_uninstall_worker.isRunning())
+        )
+        if not worker_running and hasattr(self, "enhanced_status_label"):
+            self.enhanced_status_label.setText(self._status_html(status_text, state))
+
     def refresh_dashboard_status(self):
         game_dir = self.game_dir_edit.text().strip()
         if not os.path.isdir(game_dir):
@@ -2436,7 +2544,7 @@ class MainWindow(QMainWindow):
             return
 
         t7_status = check_t7_patch_status(game_dir)
-        t7_installed = os.path.exists(os.path.join(game_dir, "t7patch.conf"))
+        t7_installed = is_t7_patch_installed(game_dir)
         t7_label = "Installed" if t7_installed else "Not Installed"
         if t7_installed and t7_status.get("gamertag"):
             t7_label = f"Installed ({t7_status.get('plain_name', t7_status['gamertag'])})"
@@ -2450,14 +2558,15 @@ class MainWindow(QMainWindow):
                               "good" if dxvk_installed else "neutral")
         )
 
+        applied_launch_options = self._get_applied_launch_options() or ""
         enhanced_summary = status_summary(game_dir, STORAGE_PATH)
-        enhanced_active = bool(enhanced_summary.get("installed"))
-        self.dashboard_enhanced_status.setText(
-            self._status_html("Active" if enhanced_active else "Not Installed",
-                              "good" if enhanced_active else "neutral")
+        enhanced_installed = bool(enhanced_summary.get("installed"))
+        enhanced_launch_active = "windowscodecs=n,b" in applied_launch_options.lower()
+        self._set_enhanced_composite_status(
+            installed=enhanced_installed,
+            launch_active=enhanced_launch_active,
         )
 
-        applied_launch_options = self._get_applied_launch_options() or ""
         launch_name = self._launch_option_name_from_string(applied_launch_options)
 
         reforged_exe_installed = self._is_reforged_active(game_dir)
@@ -2837,9 +2946,11 @@ class MainWindow(QMainWindow):
         summary = status_summary(game_dir, STORAGE_PATH)
         active = bool(summary.get("installed"))
         self._enhanced_active = active
-        self.enhanced_status_label.setText(
-            self._status_html("Enhanced Mode Active", "good") if active
-            else self._status_html("Not installed", "neutral")
+        applied_launch_options = self._get_applied_launch_options() or ""
+        enhanced_launch_active = "windowscodecs=n,b" in applied_launch_options.lower()
+        self._set_enhanced_composite_status(
+            installed=active,
+            launch_active=enhanced_launch_active,
         )
 
         reforged_active = self._is_reforged_active(game_dir)
@@ -2915,10 +3026,6 @@ class MainWindow(QMainWindow):
             if hasattr(self, "enhanced_tab_index"):
                 self.tabs.setCurrentIndex(self.enhanced_tab_index)
             write_log("Default install warning: user selected Enhanced.", "Info", self.log_text)
-            if not self.enhanced_dump_edit.text().strip():
-                self._enhanced_smart_browse()
-            if self.enhanced_dump_edit.text().strip():
-                self.on_enhanced_install_clicked()
         elif clicked == reforged_btn:
             if hasattr(self, "reforged_tab_index"):
                 self.tabs.setCurrentIndex(self.reforged_tab_index)
@@ -2941,6 +3048,17 @@ class MainWindow(QMainWindow):
         else:
             final_path = os.path.dirname(path) if os.path.isfile(path) else path
         self.enhanced_dump_edit.setText(final_path)
+
+    def _resolve_enhanced_linux_tool_source(self) -> Optional[str]:
+        candidates = [
+            os.path.join(APPLICATION_PATH, "bo3-enhanced-proton", "BO3 Enhanced"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "bo3-enhanced-proton", "BO3 Enhanced"),
+            os.path.join(get_application_path(), "bo3-enhanced-proton", "BO3 Enhanced"),
+        ]
+        for candidate in candidates:
+            if candidate and os.path.isdir(candidate):
+                return candidate
+        return None
 
     def on_enhanced_install_clicked(self):
         path = self.enhanced_dump_edit.text().strip()
@@ -3003,20 +3121,42 @@ class MainWindow(QMainWindow):
             self._reset_enhanced_buttons()
             return
 
-        if install_enhanced_files(game_dir, MOD_FILES_DIR, STORAGE_PATH, dump_source, log_widget=self.log_text):
-            self.enhanced_status_label.setText(self._status_html("Installed Successfully", "good"))
-            write_exe_variant(game_dir, "enhanced")
-            self.refresh_enhanced_status(show_warning=True)
-            self.t7_patch_widget.refresh_t7_mode_indicator()
-        else:
-            self.enhanced_status_label.setText(self._status_html("Installation Failed", "bad"))
-            
-        self._reset_enhanced_buttons()
+        tool_source = self._resolve_enhanced_linux_tool_source() if self._system == "Linux" else None
+        self._enhanced_install_worker = EnhancedInstallWorker(
+            game_dir,
+            dump_source,
+            tool_source,
+            self._system,
+        )
+        self._enhanced_install_worker.progress.connect(self._on_enhanced_progress)
+        self._enhanced_install_worker.finished.connect(self._on_enhanced_install_finished)
+        self._enhanced_install_worker.start()
 
     def _on_enhanced_download_failed(self, reason: str):
         self._enhanced_last_failed = True
         self.enhanced_status_label.setText(self._status_html(f"Download Failed — {reason}", "bad"))
         write_log(f"BO3 Enhanced download failed: {reason}", "Error", self.log_text)
+        self._reset_enhanced_buttons()
+
+    def _on_enhanced_install_finished(self, success: bool, message: str, game_dir: str):
+        summary = status_summary(game_dir, STORAGE_PATH) if os.path.isdir(game_dir) else {}
+        installed_now = bool(summary.get("installed"))
+
+        if success:
+            self.enhanced_status_label.setText(self._status_html("Installed Successfully", "good"))
+            write_exe_variant(game_dir, "enhanced")
+            self.refresh_enhanced_status(show_warning=True)
+            self.t7_patch_widget.refresh_t7_mode_indicator()
+            write_log(message, "Success", self.log_text)
+        else:
+            if installed_now:
+                write_exe_variant(game_dir, "enhanced")
+                self.refresh_enhanced_status(show_warning=False)
+                self.enhanced_status_label.setText(self._status_html("Install Incomplete", "bad"))
+            else:
+                self.enhanced_status_label.setText(self._status_html("Installation Failed", "bad"))
+            write_log(message, "Error", self.log_text)
+
         self._reset_enhanced_buttons()
 
     def _reset_enhanced_buttons(self):
@@ -3033,11 +3173,16 @@ class MainWindow(QMainWindow):
         self.enhanced_status_label.setText(self._status_html("Uninstalling…", "info"))
 
         game_dir = self.game_dir_edit.text().strip()
-        # Use QTimer to allow UI update before blocking operation
-        QTimer.singleShot(100, lambda: self._perform_uninstall(game_dir))
+        self._enhanced_uninstall_worker = EnhancedUninstallWorker(game_dir, self._system)
+        self._enhanced_uninstall_worker.progress.connect(self._on_enhanced_progress)
+        self._enhanced_uninstall_worker.finished.connect(self._on_enhanced_uninstall_finished)
+        self._enhanced_uninstall_worker.start()
 
-    def _perform_uninstall(self, game_dir):
-        if uninstall_enhanced_files(game_dir, MOD_FILES_DIR, STORAGE_PATH, log_widget=self.log_text):
+    def _on_enhanced_uninstall_finished(self, success: bool, message: str, game_dir: str):
+        summary = status_summary(game_dir, STORAGE_PATH) if os.path.isdir(game_dir) else {}
+        still_installed = bool(summary.get("installed"))
+
+        if success:
             self.enhanced_status_label.setText(self._status_html("Uninstalled", "neutral"))
             restored_exe = find_game_executable(game_dir)
             restored_hash = file_sha256(restored_exe) if restored_exe else None
@@ -3047,8 +3192,21 @@ class MainWindow(QMainWindow):
                 write_exe_variant(game_dir, "default")
             self.refresh_enhanced_status(show_warning=False)
             self.t7_patch_widget.refresh_t7_mode_indicator()
+            write_log(message, "Success", self.log_text)
         else:
-            self.enhanced_status_label.setText(self._status_html("Uninstall Failed", "bad"))
+            if not still_installed:
+                restored_exe = find_game_executable(game_dir)
+                restored_hash = file_sha256(restored_exe) if restored_exe else None
+                if restored_hash and restored_hash.lower() in REFORGED_TRUSTED_SHA256:
+                    write_exe_variant(game_dir, "reforged")
+                else:
+                    write_exe_variant(game_dir, "default")
+            self.refresh_enhanced_status(show_warning=False)
+            if "Incomplete" in message:
+                self.enhanced_status_label.setText(self._status_html("Uninstall Incomplete", "bad"))
+            else:
+                self.enhanced_status_label.setText(self._status_html("Uninstall Failed", "bad"))
+            write_log(message, "Error", self.log_text)
 
         self.enhanced_install_btn.setEnabled(True)
         self.enhanced_uninstall_btn.setEnabled(True)

@@ -22,6 +22,7 @@
   - [Advanced Tab](#advanced-tab)
   - [Terminal & Logging](#terminal--logging)
 - [Installation](#installation)
+- [Forked Components](#forked-components)
 - [Quick Start](#quick-start)
 - [Screenshots](#screenshots)
 - [Known Issues](#known-issues)
@@ -78,6 +79,13 @@ PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popul
 # run the application
  python main.py
 ```
+
+## Forked Components
+- **BO3 Enhanced Proton fork metadata:** [bo3-enhanced-proton/README.md](bo3-enhanced-proton/README.md)
+  - Upstream source: https://github.com/Weather-OS/GDK-Proton
+  - Current base release: `release10-32`
+  - Local `bo3-enhanced-proton/BO3 Enhanced` content is optional for development/offline workflow and is intentionally gitignored.
+  - Normal Linux installs do not require this local bundle; PatchOpsIII downloads and caches the upstream release on demand.
 
 ## Quick Start
 1. Launch PatchOpsIII and verify your Black Ops III directory.

@@ -6,9 +6,11 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import time
 import vdf
 import platform
+import requests
 
 DEFAULT_LOG_FILENAME = "PatchOpsIII.log"
 LAUNCH_COUNTER_FILENAME = "launch_counter.txt"
@@ -277,6 +279,26 @@ if platform.system() == "Windows" and steam_exe_path and not os.path.exists(stea
     write_log(f"Steam executable not found at {steam_exe_path}. Update your configuration or reinstall Steam.", "Warning", None)
 
 app_id = "311210"  # Black Ops III AppID
+ENHANCED_TOOL_NAME = "BO3 Enhanced"
+ENHANCED_LAUNCH_OPTIONS = 'WINEDLLOVERRIDES="WindowsCodecs=n,b" %command%'
+ENHANCED_PROTON_TAG = "release10-32"
+ENHANCED_PROTON_ARCHIVE_URL = (
+    "https://github.com/Weather-OS/GDK-Proton/releases/download/"
+    f"{ENHANCED_PROTON_TAG}/GDK-Proton10-32.tar.gz"
+)
+
+
+def _normalize_launch_options(launch_options):
+    if not launch_options:
+        return ""
+    return re.sub(r"\s+", " ", launch_options).strip()
+
+
+def _strip_enhanced_launch_override(launch_options):
+    cleaned = launch_options or ""
+    override = r'WINEDLLOVERRIDES="WindowsCodecs=n,b"'
+    cleaned = re.sub(rf"(?<!\S){override}(?!\S)", "", cleaned, flags=re.IGNORECASE)
+    return _normalize_launch_options(cleaned)
 
 def find_steam_user_id():
     if not steam_userdata_path or not os.path.exists(steam_userdata_path):
@@ -287,6 +309,15 @@ def find_steam_user_id():
         write_log("No Steam user ID found!", "Warning", None)
         return None
     return user_ids[0]
+
+
+def get_steam_root_path():
+    if steam_userdata_path:
+        candidate = os.path.dirname(steam_userdata_path)
+        if candidate and os.path.isdir(candidate):
+            return os.path.normpath(candidate)
+    roots = _candidate_steam_roots()
+    return roots[0] if roots else None
 
 
 def _dedupe_existing_dirs(paths):
@@ -456,7 +487,8 @@ def get_backup_locations():
         locations.append(module_backup_dir)
     return locations
 
-def backup_config_file(config_path, log_widget):
+
+def _backup_file(config_path, backup_filename, log_widget):
     backup_dirs = get_backup_locations()
     primary_dir = backup_dirs[0]
     try:
@@ -465,19 +497,20 @@ def backup_config_file(config_path, log_widget):
         write_log(f"Failed to prepare backup directory '{primary_dir}': {e}", "Error", log_widget)
         return False
 
-    backup_file_path = os.path.join(primary_dir, "localconfig_backup.vdf")
+    backup_file_path = os.path.join(primary_dir, backup_filename)
 
     try:
-        shutil.copy2(config_path, backup_file_path)  # copy2 preserves metadata
+        shutil.copy2(config_path, backup_file_path)
         write_log(f"Config backup created at {backup_file_path}", "Success", log_widget)
         return True
     except Exception as e:
         write_log(f"Failed to create backup: {e}", "Error", log_widget)
         return False
 
-def restore_config_file(config_path, log_widget):
+
+def _restore_file(config_path, backup_filename, log_widget):
     for directory in get_backup_locations():
-        backup_file_path = os.path.join(directory, "localconfig_backup.vdf")
+        backup_file_path = os.path.join(directory, backup_filename)
         if not os.path.exists(backup_file_path):
             continue
         try:
@@ -489,6 +522,57 @@ def restore_config_file(config_path, log_widget):
             return False
     write_log("No backup file found", "Warning", log_widget)
     return False
+
+def backup_config_file(config_path, log_widget):
+    return _backup_file(config_path, "localconfig_backup.vdf", log_widget)
+
+def restore_config_file(config_path, log_widget):
+    return _restore_file(config_path, "localconfig_backup.vdf", log_widget)
+
+
+def _linux_running_pids(process_name):
+    try:
+        result = subprocess.run(
+            ["pgrep", "-x", process_name],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return []
+
+    if result.returncode != 0:
+        return []
+
+    pids = []
+    for line in (result.stdout or "").splitlines():
+        line = line.strip()
+        if not line.isdigit():
+            continue
+        pid = line
+        try:
+            stat = subprocess.run(
+                ["ps", "-o", "stat=", "-p", pid],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+        except (subprocess.SubprocessError, OSError):
+            continue
+        if stat.returncode != 0:
+            continue
+        state = (stat.stdout or "").strip()
+        # Exclude zombie/dead processes to avoid false positives.
+        if not state or "Z" in state or "X" in state:
+            continue
+        pids.append(int(pid))
+    return pids
+
+
+def _is_linux_process_running(process_name):
+    return bool(_linux_running_pids(process_name))
 
 def is_steam_running():
     system = platform.system()
@@ -502,12 +586,7 @@ def is_steam_running():
             )
             output = (result.stdout or "").lower()
             return "steam.exe" in output
-        return subprocess.call(
-            ["pgrep", "-x", "steam"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=5
-        ) == 0
+        return _is_linux_process_running("steam")
     except (subprocess.SubprocessError, OSError):
         return False
 
@@ -530,7 +609,7 @@ def close_steam(log_widget):
                     return
         elif system == "Linux":
             result = subprocess.run(
-                ["pkill", "steam"],
+                ["pkill", "-x", "steam"],
                 check=False,
                 timeout=10,
                 stdout=subprocess.DEVNULL,
@@ -566,28 +645,66 @@ def open_steam(log_widget):
                     subprocess.Popen(["cmd", "/c", "start", "", "steam://"])
         else:
             # Check if Steam is already running
-            was_running = (subprocess.call(["pgrep", "-x", "steam"],
-                                           stdout=subprocess.DEVNULL, timeout=5) == 0)
+            was_running = _is_linux_process_running("steam")
             if was_running:
                 write_log("Closing Steam...", "Info", log_widget)
-                subprocess.call(["pkill", "-x", "steam"],
-                                stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL, timeout=5)
+                subprocess.run(
+                    ["pkill", "-x", "steam"],
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=5,
+                )
                 time.sleep(2)  # Allow time for Steam to shut down
 
             write_log("Setting launch options...", "Info", log_widget)
             # (Place here any code that sets your launch options.)
 
             write_log("Opening Steam...", "Info", log_widget)
-            subprocess.Popen(["xdg-open", "steam://"],
-                             stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL)
-            # Fallback: if xdg-open fails and 'steam' exists, launch it directly.
-            if subprocess.call(["which", "steam"],
-                               stdout=subprocess.DEVNULL, timeout=5) == 0:
-                subprocess.Popen(["steam", "-silent"],
-                                 stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL)
+            steam_cmd = None
+            if steam_exe_path:
+                if os.path.isabs(steam_exe_path) and os.path.exists(steam_exe_path):
+                    steam_cmd = steam_exe_path
+                else:
+                    steam_cmd = shutil.which(steam_exe_path)
+            if not steam_cmd:
+                steam_cmd = shutil.which("steam")
+
+            launched = False
+            launch_errors = []
+
+            if steam_cmd:
+                try:
+                    subprocess.Popen(
+                        [steam_cmd, "-silent"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    launched = True
+                except Exception as exc:
+                    launch_errors.append(f"{steam_cmd} -silent failed: {exc}")
+
+            if not launched:
+                xdg_open = shutil.which("xdg-open")
+                if xdg_open:
+                    try:
+                        result = subprocess.run(
+                            [xdg_open, "steam://open/main"],
+                            check=False,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            timeout=10,
+                        )
+                        if result.returncode == 0:
+                            launched = True
+                        else:
+                            launch_errors.append(f"{xdg_open} exited with code {result.returncode}")
+                    except Exception as exc:
+                        launch_errors.append(f"{xdg_open} failed: {exc}")
+
+            if not launched:
+                detail = "; ".join(launch_errors) if launch_errors else "no launch command available"
+                write_log(f"Steam launch command failed: {detail}", "Error", log_widget)
 
         def steam_running():
             if system == "Windows":
@@ -600,8 +717,7 @@ def open_steam(log_widget):
                     return False
                 output = (result.stdout or "").lower()
                 return "steam.exe" in output
-            return subprocess.call(["pgrep", "-x", "steam"],
-                                   stdout=subprocess.DEVNULL, timeout=5) == 0
+            return _is_linux_process_running("steam")
 
         max_wait = 15      # maximum total wait time (seconds)
         poll_interval = 0.5  # poll every 0.5 seconds
@@ -615,11 +731,6 @@ def open_steam(log_widget):
                 if stable_time >= stable_duration:
                     break
             else:
-                if system != "Windows" and stable_time > 0:
-                    # Try launching again if it vanished after being detected.
-                    subprocess.Popen(["xdg-open", "steam://"],
-                                     stdout=subprocess.DEVNULL,
-                                     stderr=subprocess.DEVNULL)
                 stable_time = 0
             time.sleep(poll_interval)
             elapsed += poll_interval
@@ -824,6 +935,57 @@ def set_launch_options(user_id, app_id, launch_options, log_widget, preserve_fs_
         return False
 
 
+def set_launch_options_exact(user_id, app_id, launch_options, log_widget):
+    config_path = os.path.join(steam_userdata_path, user_id, "config", "localconfig.vdf")
+    if not os.path.exists(config_path):
+        write_log("localconfig.vdf not found!", "Error", log_widget)
+        return False
+    if not backup_config_file(config_path, log_widget):
+        write_log("Aborting due to backup failure", "Error", log_widget)
+        return False
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as file:
+            data = vdf.load(file)
+
+        steam_config = data.setdefault("UserLocalConfigStore", {})
+        software = steam_config.setdefault("Software", {})
+        valve = software.setdefault("Valve", {})
+        steam = valve.setdefault("Steam", {})
+        apps = steam.setdefault("apps", {})
+        app_entry = apps.setdefault(app_id, {})
+        app_entry["LaunchOptions"] = launch_options or ""
+
+        write_log(f"Setting launch options to: {app_entry['LaunchOptions']}", "Info", log_widget)
+        with open(config_path, "w", encoding="utf-8") as file:
+            vdf.dump(data, file, pretty=True)
+        return True
+    except Exception as e:
+        write_log(f"Error updating launch options: {e}", "Error", log_widget)
+        restore_config_file(config_path, log_widget)
+        return False
+
+
+def _read_launch_options(user_id, game_app_id):
+    config_path = os.path.join(steam_userdata_path, user_id, "config", "localconfig.vdf")
+    if not os.path.exists(config_path):
+        return None
+    try:
+        with open(config_path, "r", encoding="utf-8") as file:
+            data = vdf.load(file)
+        return (
+            data.get("UserLocalConfigStore", {})
+            .get("Software", {})
+            .get("Valve", {})
+            .get("Steam", {})
+            .get("apps", {})
+            .get(str(game_app_id), {})
+            .get("LaunchOptions", "")
+        )
+    except Exception:
+        return None
+
+
 def apply_launch_options(launch_option, log_widget, preserve_fs_game=False):
     user_id = find_steam_user_id()
     if not user_id:
@@ -831,3 +993,606 @@ def apply_launch_options(launch_option, log_widget, preserve_fs_game=False):
     close_steam(log_widget)
     set_launch_options(user_id, app_id, launch_option, log_widget, preserve_fs_game=preserve_fs_game)
     open_steam(log_widget)
+
+
+def _write_compatibilitytool_manifest(manifest_path, tool_name):
+    data = {}
+    if os.path.exists(manifest_path):
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as handle:
+                data = vdf.load(handle) or {}
+        except Exception:
+            data = {}
+
+    compat_root = data.setdefault("compatibilitytools", {})
+    compat_tools = compat_root.setdefault("compat_tools", {})
+
+    existing_entry = {}
+    if isinstance(compat_tools, dict) and compat_tools:
+        first_key = next(iter(compat_tools))
+        if isinstance(compat_tools.get(first_key), dict):
+            existing_entry = dict(compat_tools[first_key])
+
+    normalized_entry = {
+        "install_path": existing_entry.get("install_path", "."),
+        "display_name": tool_name,
+        "from_oslist": existing_entry.get("from_oslist", "windows"),
+        "to_oslist": existing_entry.get("to_oslist", "linux"),
+    }
+    compat_root["compat_tools"] = {tool_name: normalized_entry}
+
+    with open(manifest_path, "w", encoding="utf-8") as handle:
+        vdf.dump(data, handle, pretty=True)
+
+
+def install_compatibility_tool(tool_source_dir, tool_name, log_widget):
+    if platform.system() != "Linux":
+        return True
+    if not tool_source_dir or not os.path.isdir(tool_source_dir):
+        write_log(f"Compatibility tool source not found: {tool_source_dir}", "Error", log_widget)
+        return False
+
+    steam_root = get_steam_root_path()
+    if not steam_root:
+        write_log("Steam root path could not be resolved.", "Error", log_widget)
+        return False
+
+    compat_dir = os.path.join(steam_root, "compatibilitytools.d")
+    destination = os.path.join(compat_dir, tool_name)
+    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    staging = f"{destination}.tmp-{timestamp}"
+
+    try:
+        os.makedirs(compat_dir, exist_ok=True)
+        if os.path.exists(staging):
+            shutil.rmtree(staging, ignore_errors=True)
+
+        shutil.copytree(tool_source_dir, staging)
+        manifest_path = os.path.join(staging, "compatibilitytool.vdf")
+        _write_compatibilitytool_manifest(manifest_path, tool_name)
+
+        if os.path.exists(destination):
+            backup = f"{destination}.patchops.bak-{timestamp}"
+            os.rename(destination, backup)
+            write_log(f"Existing compatibility tool backed up to {backup}", "Info", log_widget)
+
+        os.rename(staging, destination)
+        write_log(f"Installed compatibility tool '{tool_name}' to {destination}", "Success", log_widget)
+        return True
+    except Exception as exc:
+        write_log(f"Failed to install compatibility tool '{tool_name}': {exc}", "Error", log_widget)
+        try:
+            if os.path.exists(staging):
+                shutil.rmtree(staging, ignore_errors=True)
+        except Exception:
+            pass
+        return False
+
+
+def set_compatibility_tool_mapping(game_app_id, tool_name, log_widget):
+    if platform.system() != "Linux":
+        return True
+
+    steam_root = get_steam_root_path()
+    if not steam_root:
+        write_log("Steam root path could not be resolved.", "Error", log_widget)
+        return False
+
+    config_path = os.path.join(steam_root, "config", "config.vdf")
+    if not os.path.exists(config_path):
+        write_log(f"Steam config not found at {config_path}", "Error", log_widget)
+        return False
+
+    if not _backup_file(config_path, "steam_config_backup.vdf", log_widget):
+        write_log("Aborting due to backup failure", "Error", log_widget)
+        return False
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as file:
+            data = vdf.load(file)
+
+        install_store = data.setdefault("InstallConfigStore", {})
+        software = install_store.setdefault("Software", {})
+        valve = software.setdefault("Valve", {})
+        steam = valve.setdefault("Steam", {})
+        compat_map = steam.setdefault("CompatToolMapping", {})
+        app_id_key = str(game_app_id)
+        previous_mapping = _load_previous_compat_mapping(game_app_id)
+        if previous_mapping is None:
+            had_existing_mapping = app_id_key in compat_map
+            existing_mapping = compat_map.get(app_id_key)
+            if not _save_previous_compat_mapping(game_app_id, had_existing_mapping, existing_mapping, log_widget):
+                write_log("Unable to persist prior compatibility mapping; aborting mapping update.", "Error", log_widget)
+                return False
+
+        compat_map[app_id_key] = {
+            "name": tool_name,
+            "config": "",
+            "priority": "250",
+        }
+
+        with open(config_path, "w", encoding="utf-8") as file:
+            vdf.dump(data, file, pretty=True)
+
+        write_log(f"Mapped AppID {game_app_id} to compatibility tool '{tool_name}'.", "Success", log_widget)
+        return True
+    except Exception as exc:
+        write_log(f"Failed to update compatibility mapping: {exc}", "Error", log_widget)
+        _restore_file(config_path, "steam_config_backup.vdf", log_widget)
+        return False
+
+
+def clear_compatibility_tool_mapping(game_app_id, log_widget):
+    if platform.system() != "Linux":
+        return True
+
+    steam_root = get_steam_root_path()
+    if not steam_root:
+        write_log("Steam root path could not be resolved.", "Error", log_widget)
+        return False
+
+    config_path = os.path.join(steam_root, "config", "config.vdf")
+    if not os.path.exists(config_path):
+        write_log(f"Steam config not found at {config_path}", "Error", log_widget)
+        return False
+
+    if not _backup_file(config_path, "steam_config_backup.vdf", log_widget):
+        write_log("Aborting due to backup failure", "Error", log_widget)
+        return False
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as file:
+            data = vdf.load(file)
+
+        install_store = data.setdefault("InstallConfigStore", {})
+        software = install_store.setdefault("Software", {})
+        valve = software.setdefault("Valve", {})
+        steam = valve.setdefault("Steam", {})
+        compat_map = steam.setdefault("CompatToolMapping", {})
+        app_id_key = str(game_app_id)
+
+        previous_mapping = _load_previous_compat_mapping(game_app_id)
+        if previous_mapping is not None:
+            if previous_mapping.get("had_entry"):
+                previous_entry = previous_mapping.get("entry")
+                if previous_entry is None:
+                    compat_map.pop(app_id_key, None)
+                    write_log(
+                        f"Previous mapping snapshot was empty for AppID {game_app_id}; cleared mapping instead.",
+                        "Warning",
+                        log_widget,
+                    )
+                else:
+                    compat_map[app_id_key] = previous_entry
+                    write_log(f"Restored prior compatibility mapping for AppID {game_app_id}.", "Success", log_widget)
+            else:
+                compat_map.pop(app_id_key, None)
+                write_log(f"Cleared compatibility mapping for AppID {game_app_id}.", "Success", log_widget)
+            _clear_previous_compat_mapping(game_app_id)
+        else:
+            compat_map.pop(app_id_key, None)
+            write_log(f"Cleared compatibility mapping for AppID {game_app_id}.", "Success", log_widget)
+
+        with open(config_path, "w", encoding="utf-8") as file:
+            vdf.dump(data, file, pretty=True)
+        return True
+    except Exception as exc:
+        write_log(f"Failed to clear compatibility mapping: {exc}", "Error", log_widget)
+        _restore_file(config_path, "steam_config_backup.vdf", log_widget)
+        return False
+
+
+def remove_compatibility_tool(tool_name, log_widget):
+    if platform.system() != "Linux":
+        return True
+
+    steam_root = get_steam_root_path()
+    if not steam_root:
+        write_log("Steam root path could not be resolved.", "Error", log_widget)
+        return False
+
+    compat_dir = os.path.join(steam_root, "compatibilitytools.d")
+    target = os.path.join(compat_dir, tool_name)
+    backup_prefix = f"{tool_name}.patchops.bak-"
+
+    candidates = []
+    if os.path.exists(target):
+        candidates.append(target)
+    try:
+        for entry in os.listdir(compat_dir):
+            if entry.startswith(backup_prefix):
+                candidates.append(os.path.join(compat_dir, entry))
+    except Exception:
+        pass
+
+    if not candidates:
+        write_log(f"Compatibility tool '{tool_name}' was already absent.", "Info", log_widget)
+        return True
+
+    # Backup variants cannot remain in compatibilitytools.d because Steam can still
+    # recognize them as installable tools. Removing all PatchOps-created BO3 Enhanced
+    # variants ensures Steam falls back to the user's global default Proton selection.
+
+    errors = []
+    removed = 0
+    for path in candidates:
+        try:
+            if os.path.isdir(path):
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
+            removed += 1
+        except Exception as exc:
+            errors.append(f"{path}: {exc}")
+
+    if errors:
+        write_log(
+            f"Removed {removed} compatibility tool path(s) but failed to remove: {'; '.join(errors)}",
+            "Error",
+            log_widget,
+        )
+        return False
+
+    write_log(
+        f"Removed compatibility tool '{tool_name}' and {max(0, removed - 1)} backup path(s) from Steam.",
+        "Success",
+        log_widget,
+    )
+    return True
+
+
+def _download_enhanced_proton_archive(archive_path, log_widget):
+    try:
+        os.makedirs(os.path.dirname(archive_path), exist_ok=True)
+        with requests.get(ENHANCED_PROTON_ARCHIVE_URL, stream=True, timeout=120) as response:
+            response.raise_for_status()
+            with open(archive_path, "wb") as handle:
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        handle.write(chunk)
+        return True
+    except Exception as exc:
+        write_log(f"Failed to download BO3 Enhanced Proton archive: {exc}", "Error", log_widget)
+        return False
+
+
+def _safe_extract_tar(tar, destination):
+    destination_real = os.path.realpath(destination)
+    for member in tar.getmembers():
+        member_name = os.path.normpath(str(member.name).lstrip("/\\"))
+        if not member_name or member_name == ".":
+            continue
+        if member_name.startswith(".."):
+            raise ValueError(f"Unsafe archive member path: {member.name}")
+        if member.isdev():
+            raise ValueError(f"Archive member uses forbidden device type: {member.name}")
+
+        member_path = os.path.join(destination_real, member_name)
+        parent_real = os.path.realpath(os.path.dirname(member_path))
+        if os.path.commonpath([destination_real, parent_real]) != destination_real:
+            raise ValueError(f"Unsafe archive member path: {member.name}")
+        os.makedirs(parent_real, exist_ok=True)
+
+        if member.isdir():
+            os.makedirs(member_path, exist_ok=True)
+            continue
+        if member.issym():
+            link_target = str(member.linkname or "")
+            if not link_target:
+                raise ValueError(f"Symlink member missing link target: {member.name}")
+            if os.path.isabs(link_target):
+                raise ValueError(f"Symlink member uses absolute link target: {member.name}")
+            normalized_target = os.path.normpath(link_target)
+            if normalized_target.startswith(".."):
+                raise ValueError(f"Symlink member escapes extraction root: {member.name}")
+            link_real = os.path.realpath(os.path.join(parent_real, normalized_target))
+            if os.path.commonpath([destination_real, link_real]) != destination_real:
+                raise ValueError(f"Symlink member escapes extraction root: {member.name}")
+            if os.path.lexists(member_path):
+                if os.path.isdir(member_path) and not os.path.islink(member_path):
+                    shutil.rmtree(member_path)
+                else:
+                    os.remove(member_path)
+            os.symlink(link_target, member_path)
+            continue
+        if member.islnk():
+            extracted = tar.extractfile(member)
+            if extracted is not None:
+                with extracted, open(member_path, "wb") as handle:
+                    shutil.copyfileobj(extracted, handle)
+                continue
+            link_target = str(member.linkname or "")
+            if os.path.isabs(link_target):
+                raise ValueError(f"Hardlink member uses absolute link target: {member.name}")
+            normalized_target = os.path.normpath(link_target)
+            if normalized_target.startswith(".."):
+                raise ValueError(f"Hardlink member escapes extraction root: {member.name}")
+            link_source = os.path.join(destination_real, normalized_target)
+            link_source_real = os.path.realpath(link_source)
+            if os.path.commonpath([destination_real, link_source_real]) != destination_real:
+                raise ValueError(f"Hardlink member escapes extraction root: {member.name}")
+            if not os.path.exists(link_source):
+                raise ValueError(f"Hardlink source is missing during extraction: {member.name}")
+            os.link(link_source, member_path)
+            continue
+        if member.isfile():
+            extracted = tar.extractfile(member)
+            if extracted is None:
+                raise ValueError(f"Could not read archive member: {member.name}")
+            with extracted, open(member_path, "wb") as handle:
+                shutil.copyfileobj(extracted, handle)
+            continue
+        raise ValueError(f"Unsupported archive member type: {member.name}")
+
+
+def _prepare_enhanced_tool_cache(storage_dir, log_widget):
+    cache_root = os.path.join(storage_dir or get_app_data_dir(), "bo3-enhanced-proton-cache")
+    os.makedirs(cache_root, exist_ok=True)
+
+    target_dir = os.path.join(cache_root, ENHANCED_TOOL_NAME)
+    manifest_path = os.path.join(target_dir, "compatibilitytool.vdf")
+    if os.path.isdir(target_dir) and os.path.isfile(manifest_path):
+        return target_dir
+
+    archive_path = os.path.join(cache_root, f"GDK-Proton-{ENHANCED_PROTON_TAG}.tar.gz")
+    if not os.path.exists(archive_path):
+        write_log(f"Downloading BO3 Enhanced Proton ({ENHANCED_PROTON_TAG})...", "Info", log_widget)
+        if not _download_enhanced_proton_archive(archive_path, log_widget):
+            return None
+
+    extract_root = os.path.join(cache_root, f"extract-{ENHANCED_PROTON_TAG}")
+    if os.path.exists(extract_root):
+        shutil.rmtree(extract_root, ignore_errors=True)
+    os.makedirs(extract_root, exist_ok=True)
+
+    try:
+        with tarfile.open(archive_path, "r:gz") as tar:
+            _safe_extract_tar(tar, extract_root)
+
+        extracted_dirs = [
+            os.path.join(extract_root, entry)
+            for entry in os.listdir(extract_root)
+            if os.path.isdir(os.path.join(extract_root, entry))
+        ]
+        if not extracted_dirs:
+            write_log("Downloaded Proton archive did not contain a tool directory.", "Error", log_widget)
+            return None
+
+        source_dir = extracted_dirs[0]
+        temp_target = os.path.join(cache_root, f"{ENHANCED_TOOL_NAME}.tmp")
+        if os.path.exists(temp_target):
+            shutil.rmtree(temp_target, ignore_errors=True)
+        shutil.move(source_dir, temp_target)
+        _write_compatibilitytool_manifest(os.path.join(temp_target, "compatibilitytool.vdf"), ENHANCED_TOOL_NAME)
+
+        if os.path.exists(target_dir):
+            shutil.rmtree(target_dir, ignore_errors=True)
+        os.rename(temp_target, target_dir)
+        write_log(f"Prepared cached BO3 Enhanced Proton at {target_dir}", "Success", log_widget)
+        return target_dir
+    except Exception as exc:
+        write_log(f"Failed to prepare BO3 Enhanced Proton cache: {exc}", "Error", log_widget)
+        return None
+    finally:
+        try:
+            shutil.rmtree(extract_root, ignore_errors=True)
+        except Exception:
+            pass
+
+
+def resolve_bo3_enhanced_tool_source(preferred_source_dir, storage_dir, log_widget):
+    if preferred_source_dir and os.path.isdir(preferred_source_dir):
+        return preferred_source_dir
+    return _prepare_enhanced_tool_cache(storage_dir, log_widget)
+
+
+def configure_bo3_enhanced_linux(tool_source_dir, storage_dir, log_widget):
+    if platform.system() != "Linux":
+        return True
+
+    user_id = find_steam_user_id()
+    if not user_id:
+        write_log("Steam user ID not found; cannot configure Linux BO3 Enhanced flow.", "Error", log_widget)
+        return False
+
+    resolved_tool_source = resolve_bo3_enhanced_tool_source(tool_source_dir, storage_dir, log_widget)
+    if not resolved_tool_source:
+        write_log(
+            "Could not resolve a BO3 Enhanced Proton source (local bundle or cached download).",
+            "Error",
+            log_widget,
+        )
+        return False
+
+    close_steam(log_widget)
+    success = False
+    try:
+        if not install_compatibility_tool(resolved_tool_source, ENHANCED_TOOL_NAME, log_widget):
+            return False
+        if not set_compatibility_tool_mapping(app_id, ENHANCED_TOOL_NAME, log_widget):
+            return False
+        previous_launch_options = _load_previous_launch_options(app_id)
+        if previous_launch_options is None:
+            current_launch_options = _read_launch_options(user_id, app_id)
+            if current_launch_options is None:
+                write_log("Unable to read current launch options; aborting Linux BO3 Enhanced setup.", "Error", log_widget)
+                return False
+            if not _save_previous_launch_options(app_id, current_launch_options, log_widget):
+                write_log("Unable to persist previous launch options; aborting Linux BO3 Enhanced setup.", "Error", log_widget)
+                return False
+        if not set_launch_options_exact(user_id, app_id, ENHANCED_LAUNCH_OPTIONS, log_widget):
+            return False
+        success = True
+    finally:
+        open_steam(log_widget)
+
+    if success:
+        write_log(
+            "Linux BO3 Enhanced flow configured: tool installed, AppID mapped, and launch options applied.",
+            "Success",
+            log_widget,
+        )
+    else:
+        write_log(
+            "Linux BO3 Enhanced flow setup was only partially applied. Review previous log entries.",
+            "Warning",
+            log_widget,
+        )
+    return success
+
+
+def _compat_mapping_state_path(game_app_id):
+    return os.path.join(get_app_data_dir(), "backups", f"compat_mapping_{game_app_id}.json")
+
+
+def _launch_options_state_path(game_app_id):
+    return os.path.join(get_app_data_dir(), "backups", f"launch_options_{game_app_id}.json")
+
+
+def _save_previous_launch_options(game_app_id, launch_options, log_widget):
+    path = _launch_options_state_path(game_app_id)
+    payload = {"launch_options": launch_options if launch_options is not None else ""}
+    temp_path = f"{path}.tmp"
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(temp_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2)
+        os.replace(temp_path, path)
+        return True
+    except Exception as exc:
+        write_log(f"Failed to save previous launch options state: {exc}", "Error", log_widget)
+        try:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        except Exception:
+            pass
+        return False
+
+
+def _load_previous_launch_options(game_app_id):
+    path = _launch_options_state_path(game_app_id)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        if not isinstance(data, dict):
+            return None
+        value = data.get("launch_options")
+        return value if isinstance(value, str) else ""
+    except Exception:
+        return None
+
+
+def _clear_previous_launch_options(game_app_id):
+    path = _launch_options_state_path(game_app_id)
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+
+def _save_previous_compat_mapping(game_app_id, had_entry, entry, log_widget):
+    path = _compat_mapping_state_path(game_app_id)
+    payload = {"had_entry": bool(had_entry), "entry": entry if had_entry else None}
+    temp_path = f"{path}.tmp"
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(temp_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2)
+        os.replace(temp_path, path)
+        return True
+    except Exception as exc:
+        write_log(f"Failed to save previous compatibility mapping state: {exc}", "Error", log_widget)
+        try:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        except Exception:
+            pass
+        return False
+
+
+def _load_previous_compat_mapping(game_app_id):
+    path = _compat_mapping_state_path(game_app_id)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        if not isinstance(data, dict):
+            return None
+        had_entry = bool(data.get("had_entry"))
+        if had_entry:
+            return {"had_entry": True, "entry": data.get("entry")}
+        return {"had_entry": False, "entry": None}
+    except Exception:
+        return None
+
+
+def _clear_previous_compat_mapping(game_app_id):
+    path = _compat_mapping_state_path(game_app_id)
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+
+def cleanup_bo3_enhanced_linux(log_widget):
+    if platform.system() != "Linux":
+        return True
+
+    user_id = find_steam_user_id()
+    if not user_id:
+        write_log("Steam user ID not found; cannot clear BO3 launch options.", "Error", log_widget)
+
+    close_steam(log_widget)
+    success = True
+    try:
+        success = clear_compatibility_tool_mapping(app_id, log_widget) and success
+        if user_id:
+            previous_launch_options = _load_previous_launch_options(app_id)
+            if previous_launch_options is not None:
+                success = set_launch_options_exact(user_id, app_id, previous_launch_options, log_widget) and success
+                if success:
+                    _clear_previous_launch_options(app_id)
+            else:
+                current_launch_options = _read_launch_options(user_id, app_id)
+                if current_launch_options is None:
+                    write_log("Unable to read current launch options during cleanup.", "Error", log_widget)
+                    success = False
+                else:
+                    cleaned_launch_options = _strip_enhanced_launch_override(current_launch_options)
+                    if cleaned_launch_options != _normalize_launch_options(current_launch_options):
+                        success = set_launch_options_exact(
+                            user_id,
+                            app_id,
+                            cleaned_launch_options,
+                            log_widget,
+                        ) and success
+                    else:
+                        write_log(
+                            "No BO3 Enhanced launch override found; leaving launch options unchanged.",
+                            "Info",
+                            log_widget,
+                        )
+        else:
+            success = False
+        success = remove_compatibility_tool(ENHANCED_TOOL_NAME, log_widget) and success
+    finally:
+        open_steam(log_widget)
+
+    if success:
+        write_log(
+            "Linux BO3 Enhanced cleanup complete: mapping cleared, launch options reset, and tool removed.",
+            "Success",
+            log_widget,
+        )
+    else:
+        write_log(
+            "Linux BO3 Enhanced cleanup was only partially applied. Review previous log entries.",
+            "Warning",
+            log_widget,
+        )
+    return success
