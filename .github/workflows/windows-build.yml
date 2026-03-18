@@ -46,7 +46,9 @@ jobs:
         working-directory: .
     env:
       WINDOWS_DIST_DIR: dist\windows
+      WINDOWS_DIST_FOLDER: PatchOpsIII.dist
       WINDOWS_BINARY: PatchOpsIII.exe
+      WINDOWS_ARCHIVE: PatchOpsIII-windows.zip
       VT_CLI_ARCHIVE: vt-cli-latest.zip
       COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
       COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
@@ -124,8 +126,7 @@ jobs:
       - name: Build executable with Nuitka
         run: |
           python -m nuitka `
-            --onefile `
-            --onefile-no-compression `
+            --standalone `
             --windows-disable-console `
             --clang `
             --lto=yes `
@@ -153,7 +154,7 @@ jobs:
             main.py
       - name: Ensure executable exists
         run: |
-          $target = Join-Path $env:WINDOWS_DIST_DIR $env:WINDOWS_BINARY
+          $target = Join-Path (Join-Path $env:WINDOWS_DIST_DIR $env:WINDOWS_DIST_FOLDER) $env:WINDOWS_BINARY
           if (-not (Test-Path $target)) {
             throw "$target was not produced"
           }
@@ -165,7 +166,7 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "1"
         run: |
-          $target = Join-Path $env:WINDOWS_DIST_DIR $env:WINDOWS_BINARY
+          $target = Join-Path (Join-Path $env:WINDOWS_DIST_DIR $env:WINDOWS_DIST_FOLDER) $env:WINDOWS_BINARY
           if (-not (Test-Path $target)) {
             throw "$target was not produced"
           }
@@ -173,10 +174,21 @@ jobs:
           $signature = Join-Path $env:WINDOWS_DIST_DIR 'PatchOpsIII.sig'
           cosign sign-blob --yes --key cosign.key --output-signature $signature $target
           Remove-Item cosign.key
+      - name: Package standalone build
+        run: |
+          $distFolder = Join-Path $env:WINDOWS_DIST_DIR $env:WINDOWS_DIST_FOLDER
+          if (-not (Test-Path $distFolder)) {
+            throw "$distFolder was not produced"
+          }
+          $archive = Join-Path $env:WINDOWS_DIST_DIR $env:WINDOWS_ARCHIVE
+          if (Test-Path $archive) {
+            Remove-Item $archive -Force
+          }
+          Compress-Archive -Path "$distFolder\\*" -DestinationPath $archive
       - name: Compute Windows hash
         id: compute_hash
         run: |
-          $target = Join-Path $env:WINDOWS_DIST_DIR $env:WINDOWS_BINARY
+          $target = Join-Path $env:WINDOWS_DIST_DIR $env:WINDOWS_ARCHIVE
           if (-not (Test-Path $target)) {
             throw "$target was not produced"
           }
@@ -230,14 +242,14 @@ jobs:
         env:
           VT_API_KEY: ${{ env.VT_API_KEY }}
         run: |
-          $target = Join-Path $env:WINDOWS_DIST_DIR $env:WINDOWS_BINARY
+          $target = Join-Path $env:WINDOWS_DIST_DIR $env:WINDOWS_ARCHIVE
           .\vt.exe scan file $target --apikey $env:VT_API_KEY
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: PatchOpsIII-windows
           path: |
-            ${{ env.WINDOWS_DIST_DIR }}/${{ env.WINDOWS_BINARY }}
+            ${{ env.WINDOWS_DIST_DIR }}/${{ env.WINDOWS_ARCHIVE }}
             ${{ env.WINDOWS_DIST_DIR }}/hash.log
             ${{ env.WINDOWS_DIST_DIR }}/PatchOpsIII.sig
           if-no-files-found: ignore

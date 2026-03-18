@@ -63,6 +63,16 @@ PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popul
 3. **Run:** Launch `PatchOpsIII.exe` on Windows (or the corresponding binary for other platforms as they become available).
 4. **Dependencies:** The packaged build bundles all required Python dependencies; no additional setup is needed.
 
+### Windows Antivirus / Bitdefender Notes
+- PatchOpsIII has historically used Nuitka onefile packaging on Windows, which extracts runtime files such as `main.dll` into a temporary `%LOCALAPPDATA%\\Temp\\onefile_*` directory at launch. Some antivirus engines, including Bitdefender, may quarantine those temporary files heuristically before the app opens.
+- The Windows CI build now publishes a **standalone zip** instead of a onefile executable so the bundled DLLs stay in the extracted app folder rather than a random temp directory, which reduces false-positive risk.
+- If Bitdefender still blocks the app:
+  1. Download only from the official GitHub Releases page.
+  2. Extract the zip to a normal user-writable folder such as `C:\\Apps\\PatchOpsIII` instead of running it from Downloads, Temp, or inside the game directory.
+  3. Restore the quarantined file and add an exception for the extracted PatchOpsIII folder in Bitdefender.
+  4. If needed, verify the release hash from the release notes / GitHub asset metadata before restoring the file.
+  5. As a fallback, run the project from source with `python main.py`, which avoids onefile-style extraction behavior entirely.
+
 ### Developer Setup
 ```bash
 # clone the repository

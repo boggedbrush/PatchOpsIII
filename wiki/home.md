@@ -95,3 +95,12 @@ Displays logs in a terminal view, providing transparency about what operations s
 - [All-around Enhancement Mod](https://steamcommunity.com/sharedfiles/filedetails/?id=2631943123) (full version) currently crashes before launch, so it is not provided as a PatchOpsIII launch option
 - Launch options stability may vary between users
 - Some features are still under testing
+
+### Antivirus False Positives on Windows
+- If Bitdefender or another antivirus quarantines `main.dll` from a `%LOCALAPPDATA%\\Temp\\onefile_*` directory, that is usually a heuristic flag on self-extracting onefile packaging rather than proof of a malicious payload.
+- Preferred mitigation: use the packaged **standalone zip** release and run `PatchOpsIII.exe` from the extracted application folder, not from a temp directory.
+- Additional mitigations:
+  - Keep the app in a stable path such as `C:\\Apps\\PatchOpsIII`.
+  - Restore the file from quarantine and whitelist the PatchOpsIII folder after verifying the download came from GitHub Releases.
+  - Compare the published SHA-256 hash with your local file before creating an antivirus exception.
+  - If packaging-related detections persist, use the developer workflow (`python main.py`) instead of the packaged Windows binary.
