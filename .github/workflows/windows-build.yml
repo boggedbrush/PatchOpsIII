@@ -46,7 +46,6 @@ jobs:
         working-directory: .
     env:
       WINDOWS_DIST_DIR: dist\windows
-      WINDOWS_DIST_FOLDER: PatchOpsIII.dist
       WINDOWS_BINARY: PatchOpsIII.exe
       WINDOWS_ARCHIVE: PatchOpsIII-windows.zip
       VT_CLI_ARCHIVE: vt-cli-latest.zip
@@ -106,9 +105,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            PatchOpsIII.build
-            PatchOpsIII.dist
-            PatchOpsIII.onefile-build
+            main.build
+            main.dist
+            main.onefile-build
             .nuitka-cache
           key: nuitka-${{ runner.os }}-${{ steps.version.outputs.raw }}
       - name: Prepare build directories
@@ -116,9 +115,9 @@ jobs:
           if (Test-Path 'dist') { Remove-Item 'dist' -Recurse -Force }
           if (Test-Path 'build') { Remove-Item 'build' -Recurse -Force }
           if ('${{ steps.cache-nuitka.outputs.cache-hit }}' -ne 'true') {
-            if (Test-Path 'PatchOpsIII.build') { Remove-Item 'PatchOpsIII.build' -Recurse -Force }
-            if (Test-Path 'PatchOpsIII.dist') { Remove-Item 'PatchOpsIII.dist' -Recurse -Force }
-            if (Test-Path 'PatchOpsIII.onefile-build') { Remove-Item 'PatchOpsIII.onefile-build' -Recurse -Force }
+            if (Test-Path 'main.build') { Remove-Item 'main.build' -Recurse -Force }
+            if (Test-Path 'main.dist') { Remove-Item 'main.dist' -Recurse -Force }
+            if (Test-Path 'main.onefile-build') { Remove-Item 'main.onefile-build' -Recurse -Force }
             if (Test-Path '.nuitka-cache') { Remove-Item '.nuitka-cache' -Recurse -Force }
           }
           if (Test-Path 'PatchOpsIII.spec') { Remove-Item 'PatchOpsIII.spec' -Force }
@@ -152,9 +151,27 @@ jobs:
             --output-dir=$env:WINDOWS_DIST_DIR `
             --output-filename=$env:WINDOWS_BINARY `
             main.py
+      - name: Resolve standalone output paths
+        run: |
+          $distFolders = Get-ChildItem -Path $env:WINDOWS_DIST_DIR -Directory -Filter '*.dist'
+          $target = $null
+          $distFolder = $null
+          foreach ($folder in $distFolders) {
+            $candidate = Join-Path $folder.FullName $env:WINDOWS_BINARY
+            if (Test-Path $candidate) {
+              $distFolder = $folder.FullName
+              $target = $candidate
+              break
+            }
+          }
+          if (-not $target) {
+            throw "Could not find $env:WINDOWS_BINARY inside any *.dist folder under $env:WINDOWS_DIST_DIR"
+          }
+          "WINDOWS_DIST_FOLDER=$distFolder" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WINDOWS_TARGET_EXE=$target" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Ensure executable exists
         run: |
-          $target = Join-Path (Join-Path $env:WINDOWS_DIST_DIR $env:WINDOWS_DIST_FOLDER) $env:WINDOWS_BINARY
+          $target = $env:WINDOWS_TARGET_EXE
           if (-not (Test-Path $target)) {
             throw "$target was not produced"
           }
@@ -166,7 +183,7 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "1"
         run: |
-          $target = Join-Path (Join-Path $env:WINDOWS_DIST_DIR $env:WINDOWS_DIST_FOLDER) $env:WINDOWS_BINARY
+          $target = $env:WINDOWS_TARGET_EXE
           if (-not (Test-Path $target)) {
             throw "$target was not produced"
           }
@@ -176,7 +193,7 @@ jobs:
           Remove-Item cosign.key
       - name: Package standalone build
         run: |
-          $distFolder = Join-Path $env:WINDOWS_DIST_DIR $env:WINDOWS_DIST_FOLDER
+          $distFolder = $env:WINDOWS_DIST_FOLDER
           if (-not (Test-Path $distFolder)) {
             throw "$distFolder was not produced"
           }
