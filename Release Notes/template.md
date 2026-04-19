@@ -58,7 +58,7 @@
 
 ## 🧑‍💻 Acknowledgements
 PatchOpsIII is built upon the work of these amazing projects:
-- **t7patch:** [t7patch on GitHub](https://github.com/shiversoftdev/t7patch)
+- **t7patch:** [t7patch on GitHub](https://github.com/Scroptss/T7Patch)
 - **dxvk-gplasync:** [dxvk-gplasync on GitLab](https://gitlab.com/Ph42oN/dxvk-gplasync)
 - **ValvePython/vdf:** [ValvePython/vdf on GitHub](https://github.com/ValvePython/vdf)
 
