@@ -43,8 +43,10 @@ except ModuleNotFoundError:
 
 from t7_patch import (
     T7PatchWidget,
+    DEFAULT_STEAM_EXE_SHA256,
     is_admin,
     check_t7_patch_status,
+    describe_t7_patch_target,
     is_t7_patch_installed,
     restore_lpc_backups,
 )
@@ -2487,6 +2489,38 @@ class MainWindow(QMainWindow):
 
         return False
 
+    def _describe_exe_build(self, game_dir: str):
+        if not game_dir or not os.path.isdir(game_dir):
+            return ("Not configured", "neutral")
+
+        if detect_enhanced_install(game_dir):
+            return ("Enhanced DUMP", "good")
+
+        exe_path = find_game_executable(game_dir)
+        exe_hash = file_sha256(exe_path).lower() if exe_path else None
+        if exe_hash == DEFAULT_STEAM_EXE_SHA256.lower():
+            return ("Current (Feb 2026)", "good")
+        if exe_hash and exe_hash in REFORGED_TRUSTED_SHA256:
+            return ("Legacy (Pre-Feb 2026)", "info")
+
+        variant = read_exe_variant(game_dir)
+        if variant == "default":
+            return ("Current (Feb 2026)", "good")
+        if variant == "reforged":
+            return ("Legacy (Pre-Feb 2026)", "info")
+        if variant == "enhanced":
+            return ("Enhanced DUMP", "good")
+
+        return ("Custom / Unknown", "neutral")
+
+    def _refresh_reforged_build_indicator(self, game_dir: str):
+        if not hasattr(self, "reforged_build_label"):
+            return
+        text, state = self._describe_exe_build(game_dir)
+        self.reforged_build_label.setText(self._status_html(text, state))
+        target = describe_t7_patch_target(game_dir)
+        self.reforged_build_label.setToolTip(f'PatchOpsIII will install {target["patch_label"]} for this EXE build.')
+
     def _set_reforged_composite_status(self, *, exe_installed: bool, launch_active: bool):
         exe_text = "Installed" if exe_installed else "Not Installed"
         launch_text = "Active" if launch_active else "Inactive"
@@ -2575,6 +2609,7 @@ class MainWindow(QMainWindow):
             exe_installed=reforged_exe_installed,
             launch_active=reforged_launch_active,
         )
+        self._refresh_reforged_build_indicator(game_dir)
 
         launch_state = "neutral" if launch_name == "Default (None)" else "info"
         self.dashboard_launch_status.setText(self._status_html(launch_name, launch_state))
@@ -2623,12 +2658,12 @@ class MainWindow(QMainWindow):
         btn_layout.setContentsMargins(0, 0, 0, 12)
         btn_layout.setSpacing(10)
 
-        self.reforged_install_btn = QPushButton("Install Reforged")
+        self.reforged_install_btn = QPushButton("Use Legacy EXE")
         self.reforged_install_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.reforged_install_btn.clicked.connect(self.install_reforged)
         btn_layout.addWidget(self.reforged_install_btn, 1)
 
-        self.reforged_uninstall_btn = QPushButton("Uninstall Reforged")
+        self.reforged_uninstall_btn = QPushButton("Use Current EXE")
         self.reforged_uninstall_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.reforged_uninstall_btn.clicked.connect(self.uninstall_reforged)
         btn_layout.addWidget(self.reforged_uninstall_btn, 1)
@@ -2662,6 +2697,22 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(status_name, row, 0)
         layout.addWidget(self.reforged_status_label, row, 1, 1, 3)
+        row += 1
+
+        _add_sep(row); row += 1
+
+        build_name = QLabel("EXE Build")
+        build_name.setObjectName("DashboardStatusName")
+        build_name.setContentsMargins(0, 8, 0, 8)
+
+        self.reforged_build_label = QLabel(self._status_html("Not configured"))
+        self.reforged_build_label.setObjectName("DashboardStatusValue")
+        self.reforged_build_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.reforged_build_label.setTextFormat(Qt.RichText)
+        self.reforged_build_label.setContentsMargins(0, 8, 0, 8)
+
+        layout.addWidget(build_name, row, 0)
+        layout.addWidget(self.reforged_build_label, row, 1, 1, 3)
         row += 1
 
         # Network Password row
@@ -2742,7 +2793,7 @@ class MainWindow(QMainWindow):
         _add_sep(row); row += 1
 
         downgrade_note = QLabel(
-            "1. Installing Reforged downgrades BlackOps3.exe to the build from before the February 19, 2026 update."
+            "1. Use Legacy EXE to swap BlackOps3.exe to the pre-February 19, 2026 build used by older mods."
         )
         downgrade_note.setObjectName("DashboardStatusName")
         downgrade_note.setWordWrap(True)
@@ -2751,7 +2802,7 @@ class MainWindow(QMainWindow):
         row += 1
 
         workshop_note = QLabel(
-            f'2. Installing Reforged also installs the <a href="{REFORGED_WORKSHOP_STEAM_URL}">BO3 Reforged Workshop mod</a>.'
+            f'2. The legacy swap still pairs with the <a href="{REFORGED_WORKSHOP_STEAM_URL}">BO3 Reforged Workshop mod</a> when you want that setup.'
         )
         workshop_note.setObjectName("DashboardStatusName")
         workshop_note.setOpenExternalLinks(True)
@@ -2761,9 +2812,8 @@ class MainWindow(QMainWindow):
         row += 1
 
         t7_note = QLabel(
-            "3. You can manage your T7Patch settings here or on the T7 Patch page. "
-            "The T7 Patch page has more options, while this page has options specific to Reforged. "
-            "If Reforged is installed, you can edit additional options on the T7 Patch page."
+            "3. PatchOpsIII now chooses the matching T7 Patch automatically based on the active EXE build. "
+            "You can manage extra T7 options here or on the T7 Patch page."
         )
         t7_note.setObjectName("DashboardStatusName")
         t7_note.setWordWrap(True)
@@ -2782,14 +2832,14 @@ class MainWindow(QMainWindow):
     def install_reforged(self):
         game_dir = self.game_dir_edit.text().strip()
         if not os.path.isdir(game_dir):
-            write_log("Set a valid game directory before installing Reforged.", "Error", self.log_text)
+            write_log("Set a valid game directory before switching to the legacy EXE.", "Error", self.log_text)
             return
         if self._reforged_worker and self._reforged_worker.isRunning():
             return
 
         self.reforged_install_btn.setEnabled(False)
         self.reforged_uninstall_btn.setEnabled(False)
-        self.reforged_status_label.setText(self._status_html("Installing Reforged…", "info"))
+        self.reforged_status_label.setText(self._status_html("Switching to legacy EXE…", "info"))
 
         self._reforged_worker = ReforgedInstallWorker(game_dir)
         self._reforged_worker.progress.connect(self._on_reforged_progress)
@@ -2804,8 +2854,8 @@ class MainWindow(QMainWindow):
     def _on_reforged_installed(self, target_path: str):
         self.reforged_install_btn.setEnabled(True)
         self.reforged_uninstall_btn.setEnabled(True)
-        self.reforged_status_label.setText(self._status_html("Installed", "good"))
-        write_log(f"Reforged installed to {target_path}", "Success", self.log_text)
+        self.reforged_status_label.setText(self._status_html("Legacy EXE active", "good"))
+        write_log(f"Legacy executable installed to {target_path}", "Success", self.log_text)
         write_exe_variant(self.game_dir_edit.text().strip(), "reforged")
         self.refresh_enhanced_status(show_warning=False)
         self.refresh_dashboard_status()
@@ -2816,26 +2866,26 @@ class MainWindow(QMainWindow):
     def _on_reforged_failed(self, reason: str):
         self.reforged_install_btn.setEnabled(True)
         self.reforged_uninstall_btn.setEnabled(True)
-        self.reforged_status_label.setText(self._status_html(f"Install Failed — {reason}", "bad"))
-        write_log(f"Reforged install failed: {reason}", "Error", self.log_text)
+        self.reforged_status_label.setText(self._status_html(f"Legacy swap failed — {reason}", "bad"))
+        write_log(f"Legacy EXE swap failed: {reason}", "Error", self.log_text)
 
     def uninstall_reforged(self):
         game_dir = self.game_dir_edit.text().strip()
         if not os.path.isdir(game_dir):
-            write_log("Set a valid game directory before uninstalling Reforged.", "Error", self.log_text)
+            write_log("Set a valid game directory before restoring the current EXE.", "Error", self.log_text)
             return
 
         target_exe = find_game_executable(game_dir) or os.path.join(game_dir, "BlackOps3.exe")
         backup_path = existing_backup_path(target_exe)
 
         if not backup_path or not os.path.exists(backup_path):
-            write_log("No backup executable found — cannot restore original.", "Error", self.log_text)
-            self.reforged_status_label.setText(self._status_html("Uninstall Failed — no backup found", "bad"))
+            write_log("No backup executable found — cannot restore the current EXE.", "Error", self.log_text)
+            self.reforged_status_label.setText(self._status_html("Current EXE restore failed — no backup found", "bad"))
             return
 
         self.reforged_install_btn.setEnabled(False)
         self.reforged_uninstall_btn.setEnabled(False)
-        self.reforged_status_label.setText(self._status_html("Uninstalling…", "info"))
+        self.reforged_status_label.setText(self._status_html("Restoring current EXE…", "info"))
 
         try:
             if os.path.exists(target_exe):
@@ -2843,14 +2893,14 @@ class MainWindow(QMainWindow):
             os.rename(backup_path, target_exe)
             write_exe_variant(game_dir, "default")
             self._clear_reforged_launch_option_if_active()
-            write_log("Reforged uninstalled. Original executable restored.", "Success", self.log_text)
-            self.reforged_status_label.setText(self._status_html("Uninstalled", "neutral"))
+            write_log("Current executable restored from backup.", "Success", self.log_text)
+            self.reforged_status_label.setText(self._status_html("Current EXE active", "neutral"))
             self.refresh_enhanced_status(show_warning=False)
             self.refresh_dashboard_status()
             self.t7_patch_widget.refresh_t7_mode_indicator()
         except Exception as exc:
-            write_log(f"Reforged uninstall failed: {exc}", "Error", self.log_text)
-            self.reforged_status_label.setText(self._status_html(f"Uninstall Failed — {exc}", "bad"))
+            write_log(f"Current EXE restore failed: {exc}", "Error", self.log_text)
+            self.reforged_status_label.setText(self._status_html(f"Current EXE restore failed — {exc}", "bad"))
         finally:
             self.reforged_install_btn.setEnabled(True)
             self.reforged_uninstall_btn.setEnabled(True)
@@ -2968,7 +3018,7 @@ class MainWindow(QMainWindow):
                 False,
                 reason=(
                     "Workshop mod launch options are disabled on default Steam BO3 after the recent update. "
-                    "Install Reforged to restore mod launch functionality. "
+                    "Use Legacy EXE to restore mod launch functionality. "
                     "Default and Play Offline remain available."
                 ),
             )

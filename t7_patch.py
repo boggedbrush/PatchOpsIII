@@ -30,6 +30,8 @@ T7PATCH_CORE_REPOSITORY = "Scroptss/T7Patch"
 T7PATCH_CORE_TAG = "v3.02"
 T7PATCH_LEGACY_REPOSITORY = "shiversoftdev/t7patch"
 T7PATCH_LEGACY_TAG = "Current"
+T7PATCH_PROFILE_CURRENT = "current"
+T7PATCH_PROFILE_LEGACY = "legacy"
 
 
 def _github_release_tag_api(repo_name: str, tag_name: str) -> str:
@@ -43,7 +45,8 @@ def _github_release_asset_url(repo_name: str, tag_name: str, asset_name: str) ->
 # The maintained Feb 2026-compatible patch now lives in Scroptss/T7Patch. LPC is
 # still sourced from the legacy release because the new fork does not publish it.
 T7PATCH_ASSETS = {
-    "Linux.Steamdeck.and.Manual.Windows.Install.zip": {
+    "current_archive": {
+        "asset_name": "Linux.Steamdeck.and.Manual.Windows.Install.zip",
         "download_url": _github_release_asset_url(
             T7PATCH_CORE_REPOSITORY,
             T7PATCH_CORE_TAG,
@@ -54,7 +57,20 @@ T7PATCH_ASSETS = {
             "e34411e70d3c99773445ab758851304d7f6a80867a987ec7f4a1a1df72b11bb1",
         },
     },
-    "LPC.1.zip": {
+    "legacy_archive": {
+        "asset_name": "Linux.Steamdeck.and.Manual.Windows.Install.zip",
+        "download_url": _github_release_asset_url(
+            T7PATCH_LEGACY_REPOSITORY,
+            T7PATCH_LEGACY_TAG,
+            "Linux.Steamdeck.and.Manual.Windows.Install.zip",
+        ),
+        "release_api": _github_release_tag_api(T7PATCH_LEGACY_REPOSITORY, T7PATCH_LEGACY_TAG),
+        "trusted_sha256": {
+            "388491c01643b0abd51f13290d0c36dec9737fcfbb0ed5e2f5ef6804e1b73dcb",
+        },
+    },
+    "legacy_lpc": {
+        "asset_name": "LPC.1.zip",
         "download_url": _github_release_asset_url(
             T7PATCH_LEGACY_REPOSITORY,
             T7PATCH_LEGACY_TAG,
@@ -66,6 +82,19 @@ T7PATCH_ASSETS = {
         },
     },
 }
+T7PATCH_PROFILES = {
+    T7PATCH_PROFILE_CURRENT: {
+        "mode_label": "Current EXE",
+        "patch_label": f"T7 Patch {T7PATCH_CORE_TAG}",
+        "archive_asset": "current_archive",
+    },
+    T7PATCH_PROFILE_LEGACY: {
+        "mode_label": "Legacy EXE",
+        "patch_label": "T7 Patch 2.04",
+        "archive_asset": "legacy_archive",
+    },
+}
+T7PATCH_LEGACY_ONLY_FILES = {"discord_game_sdk.dll", "zbr2.dll"}
 
 _t7patch_release_digests_cache = {}
 
@@ -262,11 +291,12 @@ def _fetch_t7patch_release_digests(release_api):
     return digests
 
 
-def _expected_asset_sha256(asset_name, log_widget):
-    asset_meta = T7PATCH_ASSETS.get(asset_name)
+def _expected_asset_sha256(asset_key, log_widget):
+    asset_meta = T7PATCH_ASSETS.get(asset_key)
     if not asset_meta:
         return set()
 
+    asset_name = asset_meta["asset_name"]
     api_digest = _fetch_t7patch_release_digests(asset_meta["release_api"]).get(asset_name)
     if api_digest:
         return {api_digest.lower()}
@@ -307,7 +337,7 @@ def download_file(url, filename, log_widget, expected_sha256=None):
 
 def install_lpc_files(game_dir, mod_files_dir, log_widget):
     """Download and install LPC files"""
-    zip_url = T7PATCH_ASSETS["LPC.1.zip"]["download_url"]
+    zip_url = T7PATCH_ASSETS["legacy_lpc"]["download_url"]
     zip_dest = os.path.join(mod_files_dir, "LPC.zip")
     temp_dir = os.path.join(mod_files_dir, "LPC_temp")
     lpc_dir = os.path.join(game_dir, "LPC")
@@ -321,7 +351,7 @@ def install_lpc_files(game_dir, mod_files_dir, log_widget):
     
     try:
         # Download LPC.zip
-        expected_hashes = _expected_asset_sha256("LPC.1.zip", log_widget)
+        expected_hashes = _expected_asset_sha256("legacy_lpc", log_widget)
         if not expected_hashes:
             write_log(
                 "No trusted SHA-256 available for LPC.1.zip; aborting download.",
@@ -447,6 +477,72 @@ def _find_bo3_executable(game_dir):
     return None
 
 
+def _describe_game_build(game_dir):
+    if not game_dir or not os.path.isdir(game_dir):
+        return {
+            "label": "Unknown",
+            "state": "neutral",
+            "profile": T7PATCH_PROFILE_CURRENT,
+        }
+
+    if detect_enhanced_install(game_dir):
+        return {
+            "label": "Enhanced",
+            "state": "good",
+            "profile": T7PATCH_PROFILE_CURRENT,
+        }
+
+    exe_path = _find_bo3_executable(game_dir)
+    exe_hash = file_sha256(exe_path).lower() if exe_path else None
+    if exe_hash == DEFAULT_STEAM_EXE_SHA256.lower():
+        return {
+            "label": "Current EXE",
+            "state": "neutral",
+            "profile": T7PATCH_PROFILE_CURRENT,
+        }
+    if exe_hash and exe_hash in REFORGED_TRUSTED_SHA256:
+        return {
+            "label": "Legacy EXE",
+            "state": "info",
+            "profile": T7PATCH_PROFILE_LEGACY,
+        }
+
+    variant = read_exe_variant(game_dir)
+    if variant == "reforged":
+        return {
+            "label": "Legacy EXE",
+            "state": "info",
+            "profile": T7PATCH_PROFILE_LEGACY,
+        }
+    if variant in {"default", "enhanced"}:
+        return {
+            "label": "Current EXE",
+            "state": "neutral",
+            "profile": T7PATCH_PROFILE_CURRENT,
+        }
+    return {
+        "label": "Custom EXE",
+        "state": "info",
+        "profile": T7PATCH_PROFILE_CURRENT,
+    }
+
+
+def detect_t7_patch_profile(game_dir):
+    return _describe_game_build(game_dir)["profile"]
+
+
+def describe_t7_patch_target(game_dir):
+    build = _describe_game_build(game_dir)
+    profile = T7PATCH_PROFILES[build["profile"]]
+    return {
+        "profile": build["profile"],
+        "mode_label": build["label"],
+        "patch_label": profile["patch_label"],
+        "display_label": f'{build["label"]} -> {profile["patch_label"]}',
+        "state": build["state"],
+    }
+
+
 def read_reforged_t7_options(game_dir):
     result = {
         "network_pass": "",
@@ -538,14 +634,23 @@ class InstallT7PatchWorker(QThread):
     def run(self):
         log_forwarder = _WorkerLogForwarder(self.log_message)
         try:
+            target = describe_t7_patch_target(self.game_dir)
+            profile = T7PATCH_PROFILES[target["profile"]]
+            archive_asset_key = profile["archive_asset"]
+            archive_asset = T7PATCH_ASSETS[archive_asset_key]
+
             if sys.platform.startswith("win"):
                 add_defender_exclusion(self.mod_files_dir, log_forwarder)
                 add_defender_exclusion(self.game_dir, log_forwarder)
             else:
                 write_log("Linux detected. Skipping antivirus exclusion. Please add an exclusion in your antivirus settings if needed.", "Warning", log_forwarder)
 
-            write_log(f"Downloading T7 Patch {T7PATCH_CORE_TAG}...", "Info", log_forwarder)
-            zip_url = T7PATCH_ASSETS["Linux.Steamdeck.and.Manual.Windows.Install.zip"]["download_url"]
+            write_log(
+                f'Detected {target["mode_label"]}. Installing {profile["patch_label"]}...',
+                "Info",
+                log_forwarder,
+            )
+            zip_url = archive_asset["download_url"]
             zip_dest = os.path.join(self.mod_files_dir, "T7Patch.zip")
             source_dir = os.path.join(self.mod_files_dir, "linux")
 
@@ -554,7 +659,7 @@ class InstallT7PatchWorker(QThread):
             if os.path.exists(source_dir):
                 shutil.rmtree(source_dir)
 
-            expected_hashes = _expected_asset_sha256("Linux.Steamdeck.and.Manual.Windows.Install.zip", log_forwarder)
+            expected_hashes = _expected_asset_sha256(archive_asset_key, log_forwarder)
             if not expected_hashes:
                 raise Exception("No trusted SHA-256 available for T7 Patch archive.")
 
@@ -574,6 +679,12 @@ class InstallT7PatchWorker(QThread):
                         if file.lower() == "t7patch.conf" and os.path.exists(os.path.join(dest, file)):
                             continue
                         shutil.copy2(os.path.join(root, file), dest)
+
+                if target["profile"] == T7PATCH_PROFILE_CURRENT:
+                    for filename in T7PATCH_LEGACY_ONLY_FILES:
+                        stale_path = os.path.join(self.game_dir, filename)
+                        if os.path.exists(stale_path):
+                            os.remove(stale_path)
 
                 try:
                     os.remove(zip_dest)
@@ -925,7 +1036,7 @@ class T7PatchWidget(QWidget):
         indicators_layout.setSpacing(12)
 
         self.reforged_support_label = QLabel(
-            "Reforged: Network Password / Force Ranked / Steam Achievements sync to players/T7.json."
+            "PatchOpsIII picks the correct T7 Patch for the active EXE. Reforged options sync to players/T7.json."
         )
         self.reforged_support_label.setObjectName("DashboardStatusName")
         indicators_layout.addWidget(self.reforged_support_label, 1)
@@ -1039,27 +1150,8 @@ class T7PatchWidget(QWidget):
                 self.t7_mode_label.setText(self._status_html("Unknown"))
                 return
 
-            if detect_enhanced_install(self.game_dir):
-                self.t7_mode_label.setText(self._status_html("Enhanced", "good"))
-                return
-
-            if self._is_reforged_active():
-                self.t7_mode_label.setText(self._status_html("Reforged", "info"))
-                return
-
-            variant = read_exe_variant(self.game_dir)
-            exe_path = _find_bo3_executable(self.game_dir)
-            exe_hash = file_sha256(exe_path) if exe_path else None
-
-            if exe_hash and exe_hash == DEFAULT_STEAM_EXE_SHA256:
-                self.t7_mode_label.setText(self._status_html("Default", "neutral"))
-                return
-
-            if variant == "default":
-                self.t7_mode_label.setText(self._status_html("Default", "neutral"))
-                return
-
-            self.t7_mode_label.setText(self._status_html("Custom", "info"))
+            target = describe_t7_patch_target(self.game_dir)
+            self.t7_mode_label.setText(self._status_html(target["display_label"], target["state"]))
         finally:
             self._refresh_reforged_option_controls()
 
