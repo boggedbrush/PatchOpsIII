@@ -127,7 +127,7 @@ PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popul
 This project would not be possible without the incredible work of the broader community:
 
 - **t7patch** – Security and stability backbone for Black Ops III multiplayer.  
-  [https://github.com/shiversoftdev/t7patch](https://github.com/shiversoftdev/t7patch)
+  Original work by `shiversoftdev`, continued by `Scroptss`: [https://github.com/Scroptss/T7Patch](https://github.com/Scroptss/T7Patch)
 - **dxvk-gplasync** – Vulkan translation layer with async shader compilation.  
   [https://gitlab.com/Ph42oN/dxvk-gplasync](https://gitlab.com/Ph42oN/dxvk-gplasync)
 - **ValvePython/vdf** – Reliable Steam VDF parsing utilities used throughout PatchOpsIII.  
