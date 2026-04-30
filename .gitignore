@@ -11,7 +11,7 @@ BO3 Mod Files/
 *.bat
 build/
 dist/
-src/
+node_modules/
 
 # Log files:
 *.log

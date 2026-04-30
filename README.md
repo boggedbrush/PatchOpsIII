@@ -80,6 +80,24 @@ PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popul
  python main.py
 ```
 
+### Electron Frontend Setup
+PatchOpsIII also includes a React + TypeScript + TailwindCSS renderer wrapped by Electron. Bun is the JavaScript runtime/package manager for this path, while Python remains the backend.
+
+```bash
+# install Python service dependencies
+python -m venv .venv
+source .venv/bin/activate  # On Windows use: .venv\Scripts\activate
+pip install -r requirements.txt
+
+# install desktop frontend dependencies
+bun install
+
+# run Electron, Vite, and the Python local API
+bun run dev
+```
+
+The Electron main process starts `uvicorn backend.api:app` as a local service. The renderer communicates with Python through HTTP APIs and `/ws` WebSockets; Electron IPC is reserved for desktop-specific bridge actions such as selecting a local game directory.
+
 ## Forked Components
 - **BO3 Enhanced Proton fork metadata:** [bo3-enhanced-proton/README.md](bo3-enhanced-proton/README.md)
   - Upstream source: https://github.com/Weather-OS/GDK-Proton

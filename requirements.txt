@@ -4,3 +4,6 @@ requests
 vdf
 zstandard
 Direct-Download
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.8
