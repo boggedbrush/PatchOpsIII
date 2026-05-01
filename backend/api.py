@@ -52,7 +52,6 @@ from bo3_enhanced import (
     validate_dump_source,
 )
 from t7_patch import (
-    REFORGED_TRUSTED_SHA256,
     _expected_asset_sha256,
     add_defender_exclusion,
     backup_lpc_files,
@@ -61,9 +60,7 @@ from t7_patch import (
     install_lpc_files,
     is_admin,
     is_t7_patch_installed,
-    read_reforged_t7_options,
     restore_lpc_backups,
-    update_reforged_t7_options,
     update_t7patch_conf,
 )
 from dxvk_manager import (
@@ -78,7 +75,7 @@ from dxvk_manager import (
 )
 
 
-APP_ROOT = Path(__file__).resolve().parents[1]
+APP_ROOT = Path(sys.executable).resolve().parents[1] if getattr(sys, "frozen", False) else Path(__file__).resolve().parents[1]
 SETTINGS_PATH = Path(get_app_data_dir()) / "electron-settings.json"
 PRESETS_PATH = APP_ROOT / "presets.json"
 MOD_FILES_DIR = Path(get_app_data_dir()) / "BO3 Mod Files"
@@ -98,7 +95,9 @@ WORKSHOP_PROFILES = {
 }
 GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/boggedbrush/PatchOpsIII/releases/latest"
 GITHUB_RELEASE_PAGE_URL = "https://github.com/boggedbrush/PatchOpsIII/releases/latest"
-REFORGED_WORKSHOP_ID = "3667377161"
+SUPPORTED_LAUNCH_OPTIONS = {"", "+set fs_game offlinemp"} | {
+    profile["launch_option"] for profile in WORKSHOP_PROFILES.values()
+}
 
 
 class LogBus:
@@ -203,8 +202,6 @@ class T7ConfigPayload(BaseModel):
     colorCode: str = ""
     networkPassword: str | None = None
     friendsOnly: bool | None = None
-    forceRanked: bool | None = None
-    steamAchievements: bool | None = None
 
 
 class EnhancedInstallPayload(BaseModel):
@@ -390,25 +387,11 @@ def _find_bo3_executable(game_dir: str | None) -> Path | None:
     return None
 
 
-def _is_reforged_active(game_dir: str | None) -> bool:
-    if not game_dir:
-        return False
-
-    executable = _find_bo3_executable(game_dir)
-    exe_hash = file_sha256(str(executable)) if executable else None
-    if exe_hash and exe_hash.lower() in REFORGED_TRUSTED_SHA256:
-        return True
-
-    return read_exe_variant(game_dir) == "reforged" and exe_hash is None and bool(executable and executable.exists())
-
-
 def _t7_mode(game_dir: str | None) -> str:
     if not game_dir:
         return "Unknown"
     if detect_enhanced_install(game_dir):
         return "Enhanced"
-    if _is_reforged_active(game_dir):
-        return "Reforged"
 
     executable = _find_bo3_executable(game_dir)
     exe_hash = file_sha256(str(executable)) if executable else None
@@ -429,31 +412,18 @@ def _t7_status(game_dir: str | None) -> dict[str, Any]:
             "networkPassword": "",
             "friendsOnly": False,
             "mode": "Unknown",
-            "reforgedActive": False,
-            "reforged": {
-                "networkPass": "",
-                "forceRanked": False,
-                "steamAchievements": False,
-            },
         }
 
     patch_status = check_t7_patch_status(game_dir)
-    reforged_options = read_reforged_t7_options(game_dir)
     return {
         "installed": is_t7_patch_installed(game_dir),
         "confExists": (Path(game_dir) / "t7patch.conf").exists(),
         "gamertag": patch_status.get("gamertag", ""),
         "plainName": patch_status.get("plain_name", ""),
         "colorCode": patch_status.get("color_code", ""),
-        "networkPassword": patch_status.get("password") or reforged_options.get("network_pass", ""),
+        "networkPassword": patch_status.get("password", ""),
         "friendsOnly": bool(patch_status.get("friends_only")),
         "mode": _t7_mode(game_dir),
-        "reforgedActive": _is_reforged_active(game_dir),
-        "reforged": {
-            "networkPass": reforged_options.get("network_pass", ""),
-            "forceRanked": bool(reforged_options.get("force_ranked")),
-            "steamAchievements": bool(reforged_options.get("steam_achievements")),
-        },
     }
 
 
@@ -678,9 +648,7 @@ def _uninstall_enhanced(game_dir: str) -> None:
         if not cleanup_ok:
             raise RuntimeError("BO3 Enhanced files were removed, but Linux compatibility cleanup was incomplete.")
 
-    executable = _find_bo3_executable(game_dir)
-    restored_hash = file_sha256(str(executable)) if executable else None
-    write_exe_variant(game_dir, "reforged" if restored_hash and restored_hash.lower() in REFORGED_TRUSTED_SHA256 else "default")
+    write_exe_variant(game_dir, "default")
     write_log("Uninstalled BO3 Enhanced successfully.", "Success", log_target)
 
 
@@ -771,19 +739,6 @@ def _current_launch_options() -> str | None:
     return _read_launch_options(user_id, app_id)
 
 
-def _open_external_url(url: str) -> None:
-    system = platform.system()
-    if system == "Windows":
-        os.startfile(url)  # type: ignore[attr-defined]
-    elif system == "Darwin":
-        subprocess.Popen(["open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    else:
-        launcher = shutil.which("xdg-open") or shutil.which("steam")
-        if not launcher:
-            raise RuntimeError("No system URL launcher was found.")
-        subprocess.Popen([launcher, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-
 def _version_parts(value: str) -> tuple[int, ...]:
     parts = [int(part) for part in re.split(r"[^0-9]+", value.lstrip("vV")) if part.isdigit()]
     return tuple(parts or [0])
@@ -792,12 +747,12 @@ def _version_parts(value: str) -> tuple[int, ...]:
 def _select_update_asset(release_data: dict[str, Any]) -> dict[str, Any] | None:
     assets = release_data.get("assets") or []
     system = platform.system()
-    suffixes = (".exe", ".zip") if system == "Windows" else (".appimage", ".appimage.zsync")
-    for suffix in suffixes:
+    asset_names = ("PatchOpsIII.exe",) if system == "Windows" else ("PatchOpsIII.AppImage",)
+    for expected_name in asset_names:
         for asset in assets:
             name = str(asset.get("name") or "")
             url = asset.get("browser_download_url")
-            if name.lower().endswith(suffix) and url:
+            if name.lower() == expected_name.lower() and url:
                 return {
                     "name": name,
                     "url": url,
@@ -871,6 +826,19 @@ def _launch_profiles(current_options: str | None) -> list[dict[str, Any]]:
     return profiles
 
 
+def _open_external_url(url: str) -> None:
+    system = platform.system()
+    if system == "Windows":
+        os.startfile(url)  # type: ignore[attr-defined]
+    elif system == "Darwin":
+        subprocess.Popen(["open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        launcher = shutil.which("xdg-open") or shutil.which("steam")
+        if not launcher:
+            raise RuntimeError("No system URL launcher was found.")
+        subprocess.Popen([launcher, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def _current_state() -> dict[str, Any]:
     game_dir = _find_game_directory()
     content = _read_config(game_dir)
@@ -926,7 +894,6 @@ def _current_state() -> dict[str, Any]:
             "t7Patch": bool(game_dir and ((Path(game_dir) / "t7patch.exe").exists() or (Path(game_dir) / "t7patch.dll").exists())),
             "dxvk": bool(game_dir and is_dxvk_async_installed(game_dir)),
             "enhanced": bool(enhanced_summary.get("installed")),
-            "reforged": bool(game_dir and _is_reforged_active(game_dir)),
         },
         "logs": log_bus.recent[-80:],
     }
@@ -1148,6 +1115,10 @@ async def launch_game() -> dict[str, Any]:
 
 @app.post("/api/launch-options")
 async def launch_options(payload: LaunchOptionsPayload) -> dict[str, Any]:
+    if payload.options not in SUPPORTED_LAUNCH_OPTIONS:
+        error = "Unsupported launch option."
+        write_log(error, "Warning", log_target)
+        return {"ok": False, "error": error, "state": _current_state()}
     ok = apply_launch_options(payload.options, log_target, preserve_fs_game=payload.preserve_fs_game)
     return {"ok": bool(ok), "state": _current_state()}
 
@@ -1256,22 +1227,14 @@ async def set_t7_config(payload: T7ConfigPayload) -> dict[str, Any]:
 
         if payload.networkPassword is not None:
             password = payload.networkPassword.strip()
-            if t7_conf.exists():
-                update_t7patch_conf(game_dir, new_password=password, log_widget=log_target)
-            update_reforged_t7_options(game_dir, password=password, log_widget=log_target)
+            if not t7_conf.exists():
+                return {"ok": False, "error": "t7patch.conf was not found. Install T7 Patch before changing the network password."}
+            update_t7patch_conf(game_dir, new_password=password, log_widget=log_target)
 
         if payload.friendsOnly is not None:
             if not t7_conf.exists():
                 return {"ok": False, "error": "t7patch.conf was not found. Install T7 Patch before changing Friends Only mode."}
             update_t7patch_conf(game_dir, friends_only=payload.friendsOnly, log_widget=log_target)
-
-        if payload.forceRanked is not None or payload.steamAchievements is not None:
-            update_reforged_t7_options(
-                game_dir,
-                force_ranked=payload.forceRanked,
-                steam_achievements=payload.steamAchievements,
-                log_widget=log_target,
-            )
     except Exception as exc:
         write_log(f"Failed to update T7 Patch settings: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
@@ -1536,3 +1499,13 @@ async def logs(websocket: WebSocket) -> None:
             await websocket.receive_text()
     except WebSocketDisconnect:
         log_bus.disconnect(websocket)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        app,
+        host=os.environ.get("PATCHOPSIII_BACKEND_HOST", "127.0.0.1"),
+        port=int(os.environ.get("PATCHOPSIII_BACKEND_PORT", "8765")),
+    )

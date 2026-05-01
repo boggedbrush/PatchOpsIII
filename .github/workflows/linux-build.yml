@@ -30,11 +30,10 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   build-linux:
-    name: Build Linux AppImage
+    name: Build Linux Electron AppImage
     runs-on: ubuntu-latest
     outputs:
       hash: ${{ steps.compute_hash.outputs.hash }}
@@ -45,177 +44,65 @@ jobs:
         shell: bash
         working-directory: .
     env:
-      OUTPUT_DIR: dist/appimage
-      APPIMAGE_NAME: PatchOpsIII.AppImage
-      ZSYNC_NAME: PatchOpsIII.AppImage.zsync
-      VT_CLI_ARCHIVE: vt-cli.zip
-      COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-      COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
-      VT_API_KEY: ${{ secrets.VT_API_KEY }}
+      APPIMAGE_PATH: dist/packages/PatchOpsIII.AppImage
+      ZSYNC_PATH: dist/packages/PatchOpsIII.AppImage.zsync
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
-      - name: Determine version from version.py
-        id: version
-        run: |
-          python <<'PY'
-          import os
-          import re
-          import runpy
-
-          data = runpy.run_path('version.py')
-          raw_version = str(data.get('APP_VERSION', '')).strip()
-          if not raw_version:
-              raise SystemExit('APP_VERSION is empty in version.py')
-
-          tagged = raw_version if raw_version.lower().startswith('v') else f'v{raw_version}'
-          normalized = re.sub(r"[^0-9.]", ".", raw_version)
-          normalized = re.sub(r"\.+", ".", normalized).strip(".") or "0.0.0"
-
-          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as fh:
-              fh.write(f'raw={raw_version}\n')
-              fh.write(f'tagged={tagged}\n')
-              fh.write(f'normalized={normalized}\n')
-
-          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as fh:
-              fh.write(f'PATCHOPSIII_VERSION={raw_version}\n')
-          PY
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: 'pip'
           cache-dependency-path: requirements.txt
-      - name: Cache Nuitka build cache
-        uses: actions/cache@v4
-        with:
-          path: .nuitka-cache
-          key: nuitka-linux-${{ steps.version.outputs.raw }}
-          restore-keys: |
-            nuitka-linux-
-      - name: Cache pip downloads
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-3.12-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-3.12-
-            ${{ runner.os }}-pip-
-      - name: Cache linuxdeploy toolchain
-        uses: actions/cache@v4
-        with:
-          path: build/linuxdeploy-tools
-          key: linuxdeploy-${{ runner.os }}
-      - name: Install Python dependencies
+      - name: Install Python backend dependencies
         run: |
-          python -m pip install -U pip
-          python -m pip install -r requirements.txt
-          python -m pip install -U nuitka pyside6
-      - name: Build AppImage
-        run: bash scripts/build_appimage.sh
-      - name: Verify AppImage output
+          python -m venv .venv
+          .venv/bin/python -m pip install -U pip
+          .venv/bin/python -m pip install -r requirements.txt
+          .venv/bin/python -m pip install -U pyinstaller
+      - name: Install Electron dependencies
+        run: bun install --frozen-lockfile
+      - name: Build Electron AppImage
+        run: bun run dist:linux
+      - name: Install zsync
         run: |
-          target="$OUTPUT_DIR/$APPIMAGE_NAME"
-          if [ ! -f "$target" ]; then
-            echo "$target was not produced" >&2
-            ls -R "$OUTPUT_DIR" || true
+          sudo apt-get update
+          sudo apt-get install -y zsync
+      - name: Generate AppImage zsync metadata
+        run: |
+          if [ ! -f "$APPIMAGE_PATH" ]; then
+            find dist -maxdepth 4 -type f -print
+            echo "$APPIMAGE_PATH was not produced" >&2
             exit 1
           fi
-          "$target" --appimage-updateinformation
-      - name: Install cosign (optional)
-        if: ${{ env.COSIGN_PRIVATE_KEY != '' }}
-        uses: sigstore/cosign-installer@v3.4.0
-      - name: Sign AppImage with cosign
-        if: ${{ env.COSIGN_PRIVATE_KEY != '' }}
-        env:
-          COSIGN_EXPERIMENTAL: "1"
-        run: |
-          target="$OUTPUT_DIR/$APPIMAGE_NAME"
-          if [ ! -f "$target" ]; then
-            echo "$target was not produced" >&2
-            exit 1
-          fi
-          printf "%s" "$COSIGN_PRIVATE_KEY" > cosign.key
-          cosign sign-blob --yes --key cosign.key --output-signature "$target.sig" --output-certificate "$target.pem" "$target"
-          rm -f cosign.key
+          chmod +x "$APPIMAGE_PATH"
+          appimage_name="$(basename "$APPIMAGE_PATH")"
+          appimage_dir="$(dirname "$APPIMAGE_PATH")"
+          (
+            cd "$appimage_dir"
+            zsyncmake -u "$appimage_name" -o "$appimage_name.zsync" "$appimage_name"
+          )
       - name: Compute AppImage hash
         id: compute_hash
         run: |
-          target="$OUTPUT_DIR/$APPIMAGE_NAME"
-          if [ ! -f "$target" ]; then
-            echo "$target was not produced" >&2
-            exit 1
-          fi
-          hash=$(sha256sum "$target" | cut -d ' ' -f1)
-          printf "%s\n" "$hash" > "$OUTPUT_DIR/hash.log"
-          echo "SHA256: $hash"
+          hash=$(sha256sum "$APPIMAGE_PATH" | cut -d ' ' -f1)
+          printf "%s\n" "$hash" > "dist/packages/hash.log"
           vt_url="https://www.virustotal.com/gui/file/$hash"
-          echo "LINUX_VT_URL=$vt_url" >> "$GITHUB_ENV"
           printf "hash=%s\n" "$hash" >> "$GITHUB_OUTPUT"
           printf "vt_url=%s\n" "$vt_url" >> "$GITHUB_OUTPUT"
-      - name: Determine VirusTotal CLI release
-        id: vt_release
-        if: ${{ env.VT_API_KEY != '' }}
-        run: |
-          set -euo pipefail
-          python <<'PY'
-          import json
-          import os
-          import urllib.request
-
-          url = 'https://api.github.com/repos/VirusTotal/vt-cli/releases/latest'
-          with urllib.request.urlopen(url) as response:
-              data = json.load(response)
-          tag = data.get('tag_name')
-          try:
-              asset_url = next(asset['browser_download_url'] for asset in data['assets'] if asset['name'] == 'Linux64.zip')
-          except StopIteration:
-              raise SystemExit('Linux64.zip asset not found in VirusTotal CLI release metadata')
-          if not tag:
-              raise SystemExit('Release tag missing from VirusTotal CLI metadata')
-          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as fh:
-              fh.write(f'tag={tag}\n')
-              fh.write(f'url={asset_url}\n')
-          PY
-      - name: Cache VirusTotal CLI
-        if: ${{ env.VT_API_KEY != '' }}
-        id: cache-vt
-        uses: actions/cache@v4
-        with:
-          path: |
-            vt
-            ${{ env.VT_CLI_ARCHIVE }}
-          key: vt-${{ runner.os }}-${{ steps.vt_release.outputs.tag }}
-      - name: Download VirusTotal CLI
-        if: ${{ env.VT_API_KEY != '' && steps.cache-vt.outputs.cache-hit != 'true' }}
-        run: |
-          set -euo pipefail
-          curl -sSL "${{ steps.vt_release.outputs.url }}" -o "$VT_CLI_ARCHIVE"
-          unzip -q -o "$VT_CLI_ARCHIVE"
-      - name: Ensure VirusTotal CLI executable
-        if: ${{ env.VT_API_KEY != '' }}
-        run: |
-          if [ -f vt ]; then
-            chmod +x vt
-          else
-            echo 'VirusTotal CLI binary not found' >&2
-            exit 1
-          fi
-      - name: VirusTotal scan (optional)
-        if: ${{ env.VT_API_KEY != '' }}
-        env:
-          VT_API_KEY: ${{ env.VT_API_KEY }}
-        run: |
-          ./vt scan file "$OUTPUT_DIR/$APPIMAGE_NAME" --apikey "$VT_API_KEY"
-      - name: Upload AppImage artifact
+      - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
           name: PatchOpsIII-linux
           path: |
-            ${{ env.OUTPUT_DIR }}/${{ env.APPIMAGE_NAME }}
-            ${{ env.OUTPUT_DIR }}/${{ env.ZSYNC_NAME }}
-            ${{ env.OUTPUT_DIR }}/hash.log
-            ${{ env.OUTPUT_DIR }}/${{ env.APPIMAGE_NAME }}.sig
-            ${{ env.OUTPUT_DIR }}/${{ env.APPIMAGE_NAME }}.pem
-          if-no-files-found: ignore
+            dist/packages/PatchOpsIII.AppImage
+            dist/packages/PatchOpsIII.AppImage.zsync
+            dist/packages/hash.log
+          if-no-files-found: error

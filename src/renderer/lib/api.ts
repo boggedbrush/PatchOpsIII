@@ -41,12 +41,6 @@ export type PatchOpsState = {
     networkPassword: string;
     friendsOnly: boolean;
     mode: string;
-    reforgedActive: boolean;
-    reforged: {
-      networkPass: string;
-      forceRanked: boolean;
-      steamAchievements: boolean;
-    };
   };
   dxvk: {
     installed: boolean;
@@ -93,7 +87,6 @@ export type PatchOpsState = {
     t7Patch: boolean;
     dxvk: boolean;
     enhanced: boolean;
-    reforged: boolean;
   };
   logs: LogEntry[];
 };

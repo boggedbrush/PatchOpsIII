@@ -343,6 +343,15 @@ function App() {
     );
   }
 
+  async function installSelectedProfile() {
+    await runAction("workshop-install", () =>
+      apiRequest<ApiResult>("/api/workshop-install", {
+        method: "POST",
+        body: JSON.stringify({ profileId: selectedProfile })
+      })
+    );
+  }
+
   async function toggleIntro(enabled: boolean) {
     await runAction("intro", () =>
       apiRequest<ApiResult>("/api/intro-skip", {
@@ -392,15 +401,6 @@ function App() {
       apiRequest<ApiResult>("/api/t7-config", {
         method: "POST",
         body: JSON.stringify({ gamertag: t7Gamertag, colorCode: t7ColorCode })
-      })
-    );
-  }
-
-  async function installSelectedProfile() {
-    await runAction("workshop-install", () =>
-      apiRequest<ApiResult>("/api/workshop-install", {
-        method: "POST",
-        body: JSON.stringify({ profileId: selectedProfile })
       })
     );
   }
@@ -658,7 +658,6 @@ function App() {
         : state?.launchProfiles.find((item) => item.id === state.activeLaunchProfile)?.label;
   const selectedLaunchProfile = state?.launchProfiles.find((profile) => profile.id === selectedProfile);
   const selectedProfileInstallable = Boolean(selectedLaunchProfile && selectedLaunchProfile.id !== "default" && selectedLaunchProfile.id !== "offline");
-  const workshopOptionsDisabled = Boolean(state?.enhanced.installed);
   const dxvkDetectedThreads = detectedCompilerThreads();
 
   return (
@@ -755,7 +754,6 @@ function App() {
                           type="radio"
                           name="launch-profile"
                           checked={selectedProfile === profile.id}
-                          disabled={workshopOptionsDisabled && profile.id !== "default" && profile.id !== "offline"}
                           onChange={() => setSelectedProfile(profile.id)}
                         />
                         <span>{profile.label}</span>
@@ -768,13 +766,13 @@ function App() {
                     ))}
                   </div>
                   <div className="button-row">
-                    <button className="small-button" disabled={!selectedProfileInstallable || workshopOptionsDisabled || busy === "workshop-install"} onClick={installSelectedProfile}>
+                    <button className="small-button" disabled={!selectedProfileInstallable || busy === "workshop-install"} onClick={installSelectedProfile}>
                       Install Selected Mod
                     </button>
                     <button className="small-button" onClick={() => runAction("refresh", refresh)}>
                       Refresh
                     </button>
-                    <button className="small-button" disabled={workshopOptionsDisabled && selectedProfile !== "default" && selectedProfile !== "offline"} onClick={applyProfile}>
+                    <button className="small-button" onClick={applyProfile}>
                       Apply
                     </button>
                   </div>

@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(__dirname, "../..");
+const appRoot = app.isPackaged ? process.resourcesPath : path.resolve(__dirname, "../..");
+const rendererRoot = app.isPackaged ? app.getAppPath() : appRoot;
 const backendHost = "127.0.0.1";
 const backendPort = Number(process.env.PATCHOPSIII_BACKEND_PORT ?? 8765);
 const backendUrl = `http://${backendHost}:${backendPort}`;
@@ -26,8 +27,8 @@ function pythonCommand() {
 
   const venvPython =
     process.platform === "win32"
-      ? path.join(repoRoot, ".venv", "Scripts", "python.exe")
-      : path.join(repoRoot, ".venv", "bin", "python");
+      ? path.join(appRoot, ".venv", "Scripts", "python.exe")
+      : path.join(appRoot, ".venv", "bin", "python");
 
   if (existsSync(venvPython)) {
     return venvPython;
@@ -40,18 +41,26 @@ function startBackend() {
   if (backendProcess) {
     return;
   }
+  const packagedBackend =
+    process.platform === "win32"
+      ? path.join(appRoot, "backend-bin", "patchops-backend.exe")
+      : path.join(appRoot, "backend-bin", "patchops-backend");
+  const usePackagedBackend = app.isPackaged && existsSync(packagedBackend);
+  const command = usePackagedBackend ? packagedBackend : pythonCommand();
+  const args = usePackagedBackend
+    ? []
+    : ["-m", "uvicorn", "backend.api:app", "--host", backendHost, "--port", String(backendPort)];
+
   stoppingBackend = false;
-  backendProcess = spawn(
-    pythonCommand(),
-    ["-m", "uvicorn", "backend.api:app", "--host", backendHost, "--port", String(backendPort)],
-    {
-      cwd: repoRoot,
-      env: {
-        ...process.env,
-        PYTHONUNBUFFERED: "1"
-      }
+  backendProcess = spawn(command, args, {
+    cwd: appRoot,
+    env: {
+      ...process.env,
+      PATCHOPSIII_BACKEND_HOST: backendHost,
+      PATCHOPSIII_BACKEND_PORT: String(backendPort),
+      PYTHONUNBUFFERED: "1"
     }
-  );
+  });
 
   backendProcess.stdout.on("data", (chunk) => console.log(`[backend] ${chunk.toString().trim()}`));
   backendProcess.stderr.on("data", (chunk) => console.error(`[backend] ${chunk.toString().trim()}`));
@@ -124,7 +133,7 @@ async function createWindow() {
   if (process.env.VITE_DEV_SERVER_URL) {
     await mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
-    await mainWindow.loadFile(path.join(repoRoot, "dist/renderer/index.html"));
+    await mainWindow.loadFile(path.join(rendererRoot, "dist/renderer/index.html"));
   }
 }
 
