@@ -36,7 +36,8 @@ function start(name: string, command: string, args: string[]) {
     shell: process.platform === "win32",
     env: {
       ...process.env,
-      PYTHONUNBUFFERED: "1"
+      PYTHONUNBUFFERED: "1",
+      VITE_PATCHOPSIII_TITLEBAR_PLATFORM: process.env.VITE_PATCHOPSIII_TITLEBAR_PLATFORM ?? "win32"
     }
   });
 

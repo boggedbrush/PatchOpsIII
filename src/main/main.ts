@@ -13,6 +13,12 @@ let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcessWithoutNullStreams | null = null;
 let stoppingBackend = false;
 
+function sendWindowState() {
+  mainWindow?.webContents.send("desktop:window-state", {
+    maximized: mainWindow.isMaximized()
+  });
+}
+
 function pythonCommand() {
   if (process.env.PATCHOPSIII_PYTHON) {
     return process.env.PATCHOPSIII_PYTHON;
@@ -96,13 +102,19 @@ async function createWindow() {
     minHeight: 720,
     title: "PatchOpsIII",
     backgroundColor: "#080806",
+    frame: process.platform === "darwin",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    trafficLightPosition: process.platform === "darwin" ? { x: 18, y: 16 } : undefined,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false
     }
   });
+
+  mainWindow.on("maximize", sendWindowState);
+  mainWindow.on("unmaximize", sendWindowState);
+  mainWindow.on("restore", sendWindowState);
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
@@ -129,6 +141,22 @@ ipcMain.handle("desktop:pick-game-directory", async () => {
 
 ipcMain.handle("desktop:backend-url", () => backendUrl);
 ipcMain.handle("desktop:platform", () => process.platform);
+ipcMain.handle("desktop:window-state", () => ({ maximized: Boolean(mainWindow?.isMaximized()) }));
+ipcMain.handle("desktop:window-minimize", () => mainWindow?.minimize());
+ipcMain.handle("desktop:window-toggle-maximize", () => {
+  if (!mainWindow) {
+    return { maximized: false };
+  }
+  if (mainWindow.isMaximized()) {
+    mainWindow.unmaximize();
+  } else {
+    mainWindow.maximize();
+  }
+  const state = { maximized: mainWindow.isMaximized() };
+  mainWindow.webContents.send("desktop:window-state", state);
+  return state;
+});
+ipcMain.handle("desktop:window-close", () => mainWindow?.close());
 
 app.whenReady().then(createWindow);
 app.on("activate", () => {

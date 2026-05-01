@@ -12,6 +12,9 @@ import {
   Image,
   KeyRound,
   LayoutDashboard,
+  Maximize2,
+  Minus,
+  Minimize2,
   PlaySquare,
   RotateCcw,
   Save,
@@ -127,6 +130,69 @@ function logTone(category: string) {
   if (category === "Warning") return "log-warning";
   if (category === "Error") return "log-error";
   return "log-info";
+}
+
+function initialDesktopPlatform() {
+  if (import.meta.env.VITE_PATCHOPSIII_TITLEBAR_PLATFORM) {
+    return import.meta.env.VITE_PATCHOPSIII_TITLEBAR_PLATFORM;
+  }
+  if (navigator.platform.toLowerCase().includes("mac")) {
+    return "darwin";
+  }
+  return "web";
+}
+
+function TitleBar({ appVersion, updateDisabled, onCheckForUpdates }: { appVersion: string; updateDisabled: boolean; onCheckForUpdates: () => void }) {
+  const [platform, setPlatform] = useState(initialDesktopPlatform);
+  const [maximized, setMaximized] = useState(false);
+  const isMac = platform === "darwin";
+  const hasDesktopChrome = Boolean(window.patchOpsDesktop);
+  const showWindowControls = !isMac;
+
+  useEffect(() => {
+    let removeWindowStateListener: (() => void) | undefined;
+    void window.patchOpsDesktop?.getPlatform().then(setPlatform).catch(() => undefined);
+    void window.patchOpsDesktop?.getWindowState?.().then((state) => setMaximized(state.maximized));
+    removeWindowStateListener = window.patchOpsDesktop?.onWindowStateChange?.((state) => setMaximized(state.maximized));
+    return () => removeWindowStateListener?.();
+  }, []);
+
+  async function toggleMaximize() {
+    const state = await window.patchOpsDesktop?.toggleMaximizeWindow?.();
+    if (state) {
+      setMaximized(state.maximized);
+    }
+  }
+
+  return (
+    <div className={cx("titlebar", isMac ? "titlebar-mac" : "titlebar-desktop")}>
+      <div className="titlebar-grip" aria-hidden="true" />
+      <div className="titlebar-brand">
+        <img src={logoUrl} alt="" className="titlebar-logo" />
+        <div className="titlebar-copy">
+          <strong>PatchOpsIII</strong>
+          <button type="button" className="titlebar-update" title="Check for Updates" aria-label="Check for Updates" onClick={onCheckForUpdates} disabled={updateDisabled}>
+            <span className="titlebar-version">v{appVersion}</span>
+            <RefreshCw className="titlebar-update-icon" size={13} strokeWidth={2.4} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+      <div className="titlebar-drag" />
+      {showWindowControls && (
+        <div className="window-controls" aria-label="Window controls">
+          <button type="button" className="window-control" aria-label="Minimize window" onClick={() => window.patchOpsDesktop?.minimizeWindow?.()} tabIndex={hasDesktopChrome ? 0 : -1}>
+            <Minus size={15} strokeWidth={2.4} />
+          </button>
+          <button type="button" className="window-control" aria-label={maximized ? "Restore window" : "Maximize window"} onClick={toggleMaximize} tabIndex={hasDesktopChrome ? 0 : -1}>
+            {maximized ? <Minimize2 size={13} strokeWidth={2.2} /> : <Maximize2 size={13} strokeWidth={2.2} />}
+          </button>
+          <button type="button" className="window-control close" aria-label="Close window" onClick={() => window.patchOpsDesktop?.closeWindow?.()} tabIndex={hasDesktopChrome ? 0 : -1}>
+            <X size={15} strokeWidth={2.4} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function isVisibleLog(entry: LogEntry) {
@@ -543,25 +609,7 @@ function App() {
 
   return (
     <main className="app-shell">
-      <header className="app-top">
-        <div className="app-title">
-          <img src={logoUrl} alt="" className="app-logo" />
-          <div className="title-text">
-            <strong>PatchOpsIII</strong>
-            <span>v{state?.appVersion ?? "1.2.2"}</span>
-          </div>
-        </div>
-        <div className="top-actions">
-          <button className="tool-button" onClick={checkForUpdates} disabled={busy === "update-check"}>
-            <RefreshCw size={17} />
-            Check for Updates
-          </button>
-          <button className="tool-button primary" onClick={() => runAction("launch", () => apiRequest<ApiResult>("/api/launch", { method: "POST" }))}>
-            <PlaySquare size={16} />
-            Launch Game
-          </button>
-        </div>
-      </header>
+      <TitleBar appVersion={state?.appVersion ?? "1.2.2"} updateDisabled={busy === "update-check"} onCheckForUpdates={checkForUpdates} />
 
       <div className="directory-row">
         <label>
@@ -574,6 +622,10 @@ function App() {
         >
           <FolderOpen size={17} />
           Browse...
+        </button>
+        <button className="tool-button primary launch" onClick={() => runAction("launch", () => apiRequest<ApiResult>("/api/launch", { method: "POST" }))}>
+          <PlaySquare size={16} />
+          Launch Game
         </button>
       </div>
 
