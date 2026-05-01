@@ -12,9 +12,6 @@ import {
   Image,
   KeyRound,
   LayoutDashboard,
-  Maximize2,
-  Minus,
-  Minimize2,
   PlaySquare,
   RotateCcw,
   Save,
@@ -31,6 +28,12 @@ import { apiRequest, makeSocket, type ApiResult, type LogEntry, type PatchOpsSta
 import "./styles/app.css";
 
 const logoUrl = new URL("../../website/assets/img/patchopsiii.png", import.meta.url).href;
+const captionIconUrls = {
+  close: new URL("./assets/caption-buttons/close.svg", import.meta.url).href,
+  maximize: new URL("./assets/caption-buttons/maximize.svg", import.meta.url).href,
+  minimize: new URL("./assets/caption-buttons/minimize.svg", import.meta.url).href,
+  restore: new URL("./assets/caption-buttons/restore.svg", import.meta.url).href
+};
 
 const navItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -142,6 +145,14 @@ function initialDesktopPlatform() {
   return "web";
 }
 
+type CaptionGlyphStyle = React.CSSProperties & {
+  "--caption-icon": string;
+};
+
+function CaptionGlyph({ iconUrl }: { iconUrl: string }) {
+  return <span className="window-glyph" style={{ "--caption-icon": `url("${iconUrl}")` } as CaptionGlyphStyle} aria-hidden="true" />;
+}
+
 function TitleBar({ appVersion, updateDisabled, onCheckForUpdates }: { appVersion: string; updateDisabled: boolean; onCheckForUpdates: () => void }) {
   const [platform, setPlatform] = useState(initialDesktopPlatform);
   const [maximized, setMaximized] = useState(false);
@@ -194,13 +205,13 @@ function TitleBar({ appVersion, updateDisabled, onCheckForUpdates }: { appVersio
       {showWindowControls && (
         <div className="window-controls" aria-label="Window controls">
           <button type="button" className="window-control" aria-label="Minimize window" onClick={minimizeWindow}>
-            <Minus size={15} strokeWidth={2.4} />
+            <CaptionGlyph iconUrl={captionIconUrls.minimize} />
           </button>
           <button type="button" className="window-control" aria-label={maximized ? "Restore window" : "Maximize window"} onClick={toggleMaximize}>
-            {maximized ? <Minimize2 size={13} strokeWidth={2.2} /> : <Maximize2 size={13} strokeWidth={2.2} />}
+            <CaptionGlyph iconUrl={maximized ? captionIconUrls.restore : captionIconUrls.maximize} />
           </button>
           <button type="button" className="window-control close" aria-label="Close window" onClick={closeWindow}>
-            <X size={15} strokeWidth={2.4} />
+            <CaptionGlyph iconUrl={captionIconUrls.close} />
           </button>
         </div>
       )}

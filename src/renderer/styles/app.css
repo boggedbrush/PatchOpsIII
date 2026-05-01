@@ -7,7 +7,7 @@
   --app-gap: clamp(10px, 1vw, 14px);
   --panel-gap: clamp(10px, 1vw, 16px);
   --content-max: 1480px;
-  --titlebar-height: 46px;
+  --titlebar-height: 32px;
   --control-height: 36px;
   --nav-width: clamp(150px, 11vw, 184px);
   --bg: #0d0d0f;
@@ -171,10 +171,10 @@ button:disabled {
 }
 
 .titlebar-logo {
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   flex: 0 0 auto;
-  border-radius: 7px;
+  border-radius: 6px;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
 
@@ -187,7 +187,7 @@ button:disabled {
 }
 
 .titlebar-copy strong {
-  font-size: 17px;
+  font-size: 15px;
   line-height: 1;
   letter-spacing: 0;
 }
@@ -209,7 +209,7 @@ button:disabled {
   display: inline-grid;
   place-items: center;
   width: 42px;
-  height: 22px;
+  height: 20px;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -281,7 +281,6 @@ button:disabled {
   width: 46px;
   height: 100%;
   border: 0;
-  border-left: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 0;
   background: transparent;
   color: rgba(246, 246, 246, 0.76);
@@ -296,6 +295,16 @@ button:disabled {
   color: var(--text);
 }
 
+.window-control:focus,
+.window-control:focus-visible {
+  outline: none;
+}
+
+.window-control:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
 .window-control.close:hover {
   background: #c91b17;
   color: #fff;
@@ -304,6 +313,18 @@ button:disabled {
 .window-control svg {
   app-region: no-drag;
   -webkit-app-region: no-drag;
+  pointer-events: none;
+}
+
+.window-glyph {
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+  display: block;
+  width: 10px;
+  height: 10px;
+  background: currentColor;
+  mask: var(--caption-icon) center / contain no-repeat;
+  -webkit-mask: var(--caption-icon) center / contain no-repeat;
   pointer-events: none;
 }
 
@@ -1812,7 +1833,7 @@ button:disabled {
     --app-pad: 12px;
     --app-gap: 10px;
     --control-height: 34px;
-    --titlebar-height: 42px;
+    --titlebar-height: 32px;
   }
 
   .titlebar-copy strong {
@@ -1836,16 +1857,16 @@ button:disabled {
   }
 
   .titlebar-logo {
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
   }
 
   .window-controls {
-    grid-template-columns: repeat(3, 42px);
+    grid-template-columns: repeat(3, 46px);
   }
 
   .window-control {
-    width: 42px;
+    width: 46px;
   }
 
   .app-top {
