@@ -991,8 +991,9 @@ def apply_launch_options(launch_option, log_widget, preserve_fs_game=False):
     if not user_id:
         raise Exception("Steam user ID not found!")
     close_steam(log_widget)
-    set_launch_options(user_id, app_id, launch_option, log_widget, preserve_fs_game=preserve_fs_game)
+    success = set_launch_options(user_id, app_id, launch_option, log_widget, preserve_fs_game=preserve_fs_game)
     open_steam(log_widget)
+    return success
 
 
 def _write_compatibilitytool_manifest(manifest_path, tool_name):

@@ -6,12 +6,16 @@ import json
 import os
 import platform
 import re
+import shutil
 import stat
 import string
+import subprocess
+import zipfile
 from collections import deque
 from pathlib import Path
 from typing import Any
 
+import requests
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -20,7 +24,11 @@ from utils import (
     _read_launch_options,
     app_id,
     apply_launch_options,
+    clear_log_file,
+    cleanup_bo3_enhanced_linux,
+    configure_bo3_enhanced_linux,
     existing_backup_path,
+    file_sha256,
     find_steam_user_id,
     get_app_data_dir,
     get_log_file_path,
@@ -30,16 +38,52 @@ from utils import (
     launch_game_via_steam,
     PATCHOPS_BACKUP_SUFFIX,
     patchops_backup_path,
+    read_exe_variant,
+    write_exe_variant,
     write_log,
 )
 from version import APP_VERSION
-from bo3_enhanced import status_summary
+from bo3_enhanced import (
+    detect_enhanced_install,
+    download_latest_enhanced,
+    install_enhanced_files,
+    status_summary,
+    uninstall_enhanced_files,
+    validate_dump_source,
+)
+from t7_patch import (
+    REFORGED_TRUSTED_SHA256,
+    _expected_asset_sha256,
+    add_defender_exclusion,
+    backup_lpc_files,
+    check_t7_patch_status,
+    download_file,
+    install_lpc_files,
+    is_admin,
+    is_t7_patch_installed,
+    read_reforged_t7_options,
+    restore_lpc_backups,
+    update_reforged_t7_options,
+    update_t7patch_conf,
+)
+from dxvk_manager import (
+    DXVK_ASYNC_FILES,
+    _build_dxvk_conf,
+    _preset_settings,
+    _supports_gpl_async_cache,
+    extract_archive,
+    get_download_url,
+    get_latest_release,
+    is_dxvk_async_installed,
+)
 
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 SETTINGS_PATH = Path(get_app_data_dir()) / "electron-settings.json"
 PRESETS_PATH = APP_ROOT / "presets.json"
+MOD_FILES_DIR = Path(get_app_data_dir()) / "BO3 Mod Files"
 GAME_EXECUTABLE_NAMES = ("BlackOpsIII.exe", "BlackOps3.exe")
+T7_GAME_FILES = ("t7patch.dll", "t7patch.conf", "discord_game_sdk.dll", "dsound.dll", "t7patchloader.dll", "zbr2.dll")
 WORKSHOP_PROFILES = {
     "all_around": {
         "name": "All-around Enhancement Lite",
@@ -51,12 +95,10 @@ WORKSHOP_PROFILES = {
         "workshop_id": "2942053577",
         "launch_option": "+set fs_game 2942053577",
     },
-    "reforged": {
-        "name": "Reforged",
-        "workshop_id": "3667377161",
-        "launch_option": "+set fs_game 3667377161",
-    },
 }
+GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/boggedbrush/PatchOpsIII/releases/latest"
+GITHUB_RELEASE_PAGE_URL = "https://github.com/boggedbrush/PatchOpsIII/releases/latest"
+REFORGED_WORKSHOP_ID = "3667377161"
 
 
 class LogBus:
@@ -123,6 +165,10 @@ class LaunchOptionsPayload(BaseModel):
     preserve_fs_game: bool = False
 
 
+class WorkshopInstallPayload(BaseModel):
+    profileId: str = Field(..., min_length=1)
+
+
 class ConfigValuePayload(BaseModel):
     key: str = Field(..., min_length=1)
     value: str | int | float | bool
@@ -131,6 +177,34 @@ class ConfigValuePayload(BaseModel):
 
 class TogglePayload(BaseModel):
     enabled: bool
+
+
+class VramPayload(BaseModel):
+    limited: bool
+    target: int = Field(75, ge=75, le=100)
+
+
+class T7ConfigPayload(BaseModel):
+    gamertag: str | None = None
+    colorCode: str = ""
+    networkPassword: str | None = None
+    friendsOnly: bool | None = None
+    forceRanked: bool | None = None
+    steamAchievements: bool | None = None
+
+
+class EnhancedInstallPayload(BaseModel):
+    dumpSource: str = Field(..., min_length=1)
+
+
+class DxvkConfigPayload(BaseModel):
+    enableAsync: bool = True
+    gplAsyncCache: bool = True
+    numCompilerThreads: int = Field(0, ge=0, le=64)
+    maxFrameRate: int = Field(0, ge=0, le=360)
+    maxFrameLatency: int = Field(1, ge=0, le=16)
+    tearFree: str = "True"
+    hudEnabled: bool = False
 
 
 class PresetPayload(BaseModel):
@@ -213,6 +287,24 @@ def _extract_config(content: str, key: str, default: Any) -> Any:
     return match.group(1) if match else default
 
 
+def _config_int(content: str, key: str, default: int) -> int:
+    try:
+        return int(float(_extract_config(content, key, default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _config_float(content: str, key: str, default: float) -> float:
+    try:
+        return float(_extract_config(content, key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _config_bool(content: str, key: str, enabled_value: str = "1", default: str = "0") -> bool:
+    return str(_extract_config(content, key, default)) == enabled_value
+
+
 def _write_config_value(game_dir: str, key: str, value: str | int | float | bool, comment: str) -> None:
     config = _config_path(game_dir)
     if not config or not config.exists():
@@ -226,6 +318,11 @@ def _write_config_value(game_dir: str, key: str, value: str | int | float | bool
         text = f"{text.rstrip()}\n{replacement}\n"
     config.write_text(text, encoding="utf-8")
     write_log(f"Set {key} to {value}.", "Success", log_target)
+
+
+def _config_is_readonly(game_dir: str | None) -> bool:
+    config = _config_path(game_dir)
+    return bool(config and config.exists() and not os.access(config, os.W_OK))
 
 
 def _preset_names() -> list[str]:
@@ -269,11 +366,455 @@ def _qol_status(game_dir: str | None) -> dict[str, bool]:
     }
 
 
+def _find_bo3_executable(game_dir: str | None) -> Path | None:
+    if not game_dir:
+        return None
+    for name in GAME_EXECUTABLE_NAMES:
+        candidate = Path(game_dir) / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _is_reforged_active(game_dir: str | None) -> bool:
+    if not game_dir:
+        return False
+
+    executable = _find_bo3_executable(game_dir)
+    exe_hash = file_sha256(str(executable)) if executable else None
+    if exe_hash and exe_hash.lower() in REFORGED_TRUSTED_SHA256:
+        return True
+
+    return read_exe_variant(game_dir) == "reforged" and exe_hash is None and bool(executable and executable.exists())
+
+
+def _t7_mode(game_dir: str | None) -> str:
+    if not game_dir:
+        return "Unknown"
+    if detect_enhanced_install(game_dir):
+        return "Enhanced"
+    if _is_reforged_active(game_dir):
+        return "Reforged"
+
+    executable = _find_bo3_executable(game_dir)
+    exe_hash = file_sha256(str(executable)) if executable else None
+    variant = read_exe_variant(game_dir)
+    if exe_hash == "9ba98dba41e18ef47de6c63937340f8eae7cb251f8fbc2e78d70047b64aa15b5" or variant == "default":
+        return "Default"
+    return "Custom" if executable else "Unknown"
+
+
+def _t7_status(game_dir: str | None) -> dict[str, Any]:
+    if not game_dir:
+        return {
+            "installed": False,
+            "confExists": False,
+            "gamertag": "",
+            "plainName": "",
+            "colorCode": "",
+            "networkPassword": "",
+            "friendsOnly": False,
+            "mode": "Unknown",
+            "reforgedActive": False,
+            "reforged": {
+                "networkPass": "",
+                "forceRanked": False,
+                "steamAchievements": False,
+            },
+        }
+
+    patch_status = check_t7_patch_status(game_dir)
+    reforged_options = read_reforged_t7_options(game_dir)
+    return {
+        "installed": is_t7_patch_installed(game_dir),
+        "confExists": (Path(game_dir) / "t7patch.conf").exists(),
+        "gamertag": patch_status.get("gamertag", ""),
+        "plainName": patch_status.get("plain_name", ""),
+        "colorCode": patch_status.get("color_code", ""),
+        "networkPassword": patch_status.get("password") or reforged_options.get("network_pass", ""),
+        "friendsOnly": bool(patch_status.get("friends_only")),
+        "mode": _t7_mode(game_dir),
+        "reforgedActive": _is_reforged_active(game_dir),
+        "reforged": {
+            "networkPass": reforged_options.get("network_pass", ""),
+            "forceRanked": bool(reforged_options.get("force_ranked")),
+            "steamAchievements": bool(reforged_options.get("steam_achievements")),
+        },
+    }
+
+
+def _enhanced_status(game_dir: str | None) -> dict[str, Any]:
+    if not game_dir:
+        return {
+            "installed": False,
+            "detectedAt": None,
+            "acknowledgedAt": None,
+            "launchOptionsActive": False,
+            "dumpSource": _load_settings().get("enhanced_dump_source", ""),
+        }
+
+    summary = status_summary(game_dir, get_app_data_dir())
+    current_options = _current_launch_options() or ""
+    return {
+        "installed": bool(summary.get("installed")),
+        "detectedAt": summary.get("detected_at"),
+        "acknowledgedAt": summary.get("acknowledged_at"),
+        "launchOptionsActive": "windowscodecs=n,b" in current_options.lower(),
+        "dumpSource": _load_settings().get("enhanced_dump_source", ""),
+    }
+
+
+def _read_dxvk_settings(game_dir: str | None) -> dict[str, Any]:
+    settings = _preset_settings("recommended")
+    if not game_dir:
+        return {
+            "enableAsync": settings["enable_async"],
+            "gplAsyncCache": settings["gpl_async_cache"],
+            "numCompilerThreads": settings["num_compiler_threads"],
+            "maxFrameRate": settings["max_frame_rate"],
+            "maxFrameLatency": settings["max_frame_latency"],
+            "tearFree": settings["tear_free"],
+            "hudEnabled": settings["hud_enabled"],
+        }
+
+    conf = Path(game_dir) / "dxvk.conf"
+    if conf.exists():
+        try:
+            for line in conf.read_text(encoding="utf-8", errors="ignore").splitlines():
+                if "=" not in line or line.strip().startswith("#"):
+                    continue
+                key, value = [part.strip() for part in line.split("=", 1)]
+                lowered = value.lower()
+                if key == "dxvk.enableAsync":
+                    settings["enable_async"] = lowered == "true"
+                elif key == "dxvk.gplAsyncCache":
+                    settings["gpl_async_cache"] = lowered == "true"
+                elif key == "dxvk.numCompilerThreads":
+                    settings["num_compiler_threads"] = int(value)
+                elif key == "dxgi.maxFrameRate":
+                    settings["max_frame_rate"] = int(value)
+                elif key == "dxgi.maxFrameLatency":
+                    settings["max_frame_latency"] = int(value)
+                elif key == "dxvk.tearFree":
+                    settings["tear_free"] = value
+                elif key == "dxvk.hud":
+                    settings["hud_enabled"] = bool(value)
+        except Exception as exc:
+            write_log(f"Failed to read dxvk.conf: {exc}", "Warning", log_target)
+
+    return {
+        "enableAsync": bool(settings["enable_async"]),
+        "gplAsyncCache": bool(settings["gpl_async_cache"]),
+        "numCompilerThreads": int(settings["num_compiler_threads"]),
+        "maxFrameRate": int(settings["max_frame_rate"]),
+        "maxFrameLatency": int(settings["max_frame_latency"]),
+        "tearFree": str(settings["tear_free"]),
+        "hudEnabled": bool(settings["hud_enabled"]),
+    }
+
+
+def _dxvk_payload_to_settings(payload: DxvkConfigPayload) -> dict[str, Any]:
+    tear_free = payload.tearFree if payload.tearFree in {"Auto", "True", "False"} else "Auto"
+    return {
+        "enable_async": payload.enableAsync,
+        "gpl_async_cache": payload.gplAsyncCache,
+        "num_compiler_threads": payload.numCompilerThreads,
+        "max_frame_rate": payload.maxFrameRate,
+        "max_frame_latency": payload.maxFrameLatency,
+        "tear_free": tear_free,
+        "hud_enabled": payload.hudEnabled,
+    }
+
+
+def _write_dxvk_conf(game_dir: str, settings: dict[str, Any], include_gpl_async_cache: bool = True) -> None:
+    conf = Path(game_dir) / "dxvk.conf"
+    conf.write_text(_build_dxvk_conf(settings, include_gpl_async_cache=include_gpl_async_cache), encoding="utf-8")
+    write_log("Updated dxvk.conf from DXVK settings.", "Success", log_target)
+
+
+def _dxvk_status(game_dir: str | None) -> dict[str, Any]:
+    return {
+        "installed": bool(game_dir and is_dxvk_async_installed(game_dir)),
+        "confExists": bool(game_dir and (Path(game_dir) / "dxvk.conf").exists()),
+        "settings": _read_dxvk_settings(game_dir),
+    }
+
+
+def _install_dxvk(game_dir: str, payload: DxvkConfigPayload) -> None:
+    MOD_FILES_DIR.mkdir(parents=True, exist_ok=True)
+    release = get_latest_release()
+    dxvk_url = get_download_url(release)
+    archive_path = MOD_FILES_DIR / "dxvk-gplasync"
+    extract_dir = MOD_FILES_DIR / "dxvk_extracted"
+
+    if extract_dir.exists():
+        shutil.rmtree(extract_dir)
+    extract_dir.mkdir(parents=True, exist_ok=True)
+
+    downloaded_archive: str | None = None
+    try:
+        write_log("Downloading DXVK-GPLAsync...", "Info", log_target)
+        downloaded_archive = str(_download_file(dxvk_url, str(archive_path)))
+        write_log("Downloaded DXVK-GPLAsync successfully.", "Success", log_target)
+        extract_archive(downloaded_archive, str(extract_dir))
+        write_log("Extracted DXVK-GPLAsync successfully.", "Success", log_target)
+
+        source_dir: Path | None = None
+        for root, _, files in os.walk(extract_dir):
+            if all(filename in files for filename in DXVK_ASYNC_FILES):
+                source_dir = Path(root)
+                break
+        if not source_dir:
+            raise RuntimeError("Required DXVK files were not found in the archive.")
+
+        for filename in DXVK_ASYNC_FILES:
+            shutil.copy2(source_dir / filename, Path(game_dir) / filename)
+            write_log(f"Installed {filename}.", "Success", log_target)
+
+        settings = _dxvk_payload_to_settings(payload)
+        _write_dxvk_conf(game_dir, settings, include_gpl_async_cache=_supports_gpl_async_cache(release))
+        write_log("DXVK-GPLAsync installed successfully.", "Success", log_target)
+    finally:
+        if downloaded_archive and os.path.exists(downloaded_archive):
+            try:
+                os.remove(downloaded_archive)
+            except OSError:
+                pass
+        if extract_dir.exists():
+            shutil.rmtree(extract_dir, ignore_errors=True)
+
+
+def _download_file(url: str, filename: str) -> str:
+    with requests.get(url, stream=True, timeout=30) as response:
+        response.raise_for_status()
+        original_filename = os.path.basename(url.split("?", 1)[0])
+        final_filename = os.path.join(os.path.dirname(filename), original_filename or os.path.basename(filename))
+        with open(final_filename, "wb") as handle:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    handle.write(chunk)
+    return final_filename
+
+
+def _uninstall_dxvk(game_dir: str) -> None:
+    changed = False
+    for filename in DXVK_ASYNC_FILES:
+        target = Path(game_dir) / filename
+        if target.exists():
+            target.unlink()
+            changed = True
+            write_log(f"Removed {filename}.", "Success", log_target)
+    conf = Path(game_dir) / "dxvk.conf"
+    if conf.exists():
+        conf.unlink()
+        changed = True
+        write_log("Removed dxvk.conf.", "Success", log_target)
+    write_log("DXVK-GPLAsync has been uninstalled." if changed else "DXVK-GPLAsync was not installed.", "Success" if changed else "Info", log_target)
+
+
+def _resolve_enhanced_linux_tool_source() -> str | None:
+    candidates = [
+        APP_ROOT / "bo3-enhanced-proton" / "BO3 Enhanced",
+        Path(get_app_data_dir()) / "bo3-enhanced-proton-cache" / "BO3 Enhanced",
+    ]
+    for candidate in candidates:
+        if candidate.is_dir():
+            return str(candidate)
+    return None
+
+
+def _install_enhanced(game_dir: str, dump_source: str) -> None:
+    normalized_source = str(Path(dump_source).expanduser())
+    if not os.path.exists(normalized_source):
+        raise FileNotFoundError("The selected dump source does not exist.")
+    if not validate_dump_source(normalized_source):
+        raise ValueError("The dump source is missing required files.")
+
+    settings = _load_settings()
+    settings["enhanced_dump_source"] = normalized_source
+    _save_settings(settings)
+
+    MOD_FILES_DIR.mkdir(parents=True, exist_ok=True)
+    write_log("Fetching latest BO3 Enhanced release...", "Info", log_target)
+    enhanced_path = download_latest_enhanced(str(MOD_FILES_DIR), get_app_data_dir())
+    if not enhanced_path:
+        raise RuntimeError("Failed to download BO3 Enhanced.")
+
+    write_log("Installing BO3 Enhanced files...", "Info", log_target)
+    installed = install_enhanced_files(game_dir, str(MOD_FILES_DIR), get_app_data_dir(), normalized_source, log_widget=log_target)
+    if not installed:
+        raise RuntimeError("BO3 Enhanced installation failed.")
+
+    if platform.system() == "Linux":
+        configured = configure_bo3_enhanced_linux(_resolve_enhanced_linux_tool_source(), get_app_data_dir(), log_target)
+        if not configured:
+            raise RuntimeError("Installed files, but Linux compatibility setup failed.")
+
+    write_exe_variant(game_dir, "enhanced")
+    write_log("Installed BO3 Enhanced successfully.", "Success", log_target)
+
+
+def _uninstall_enhanced(game_dir: str) -> None:
+    removed = uninstall_enhanced_files(game_dir, str(MOD_FILES_DIR), get_app_data_dir(), log_widget=log_target)
+    if not removed:
+        raise RuntimeError("BO3 Enhanced uninstall failed.")
+
+    if platform.system() == "Linux":
+        cleanup_ok = cleanup_bo3_enhanced_linux(log_target)
+        if not cleanup_ok:
+            raise RuntimeError("BO3 Enhanced files were removed, but Linux compatibility cleanup was incomplete.")
+
+    executable = _find_bo3_executable(game_dir)
+    restored_hash = file_sha256(str(executable)) if executable else None
+    write_exe_variant(game_dir, "reforged" if restored_hash and restored_hash.lower() in REFORGED_TRUSTED_SHA256 else "default")
+    write_log("Uninstalled BO3 Enhanced successfully.", "Success", log_target)
+
+
+def _install_t7_patch(game_dir: str) -> None:
+    if platform.system() == "Windows" and not is_admin():
+        raise PermissionError("Run PatchOpsIII as administrator to install or update T7 Patch.")
+
+    MOD_FILES_DIR.mkdir(parents=True, exist_ok=True)
+    if platform.system() == "Windows":
+        add_defender_exclusion(str(MOD_FILES_DIR), log_target)
+        add_defender_exclusion(game_dir, log_target)
+
+    write_log("Downloading T7 Patch...", "Info", log_target)
+    zip_url = "https://github.com/shiversoftdev/t7patch/releases/download/Current/Linux.Steamdeck.and.Manual.Windows.Install.zip"
+    zip_dest = MOD_FILES_DIR / "T7Patch.zip"
+    source_dir = MOD_FILES_DIR / "linux"
+
+    if zip_dest.exists():
+        zip_dest.unlink()
+    if source_dir.exists():
+        shutil.rmtree(source_dir)
+
+    expected_hashes = _expected_asset_sha256("Linux.Steamdeck.and.Manual.Windows.Install.zip", log_target)
+    if not expected_hashes:
+        raise RuntimeError("No trusted SHA-256 available for T7 Patch archive.")
+    download_file(zip_url, str(zip_dest), log_target, expected_sha256=expected_hashes)
+    write_log("Downloaded T7 Patch successfully.", "Success", log_target)
+
+    with zipfile.ZipFile(zip_dest, "r") as archive:
+        archive.extractall(MOD_FILES_DIR)
+    write_log("Extracted T7 Patch successfully.", "Success", log_target)
+
+    if not source_dir.exists():
+        raise RuntimeError("T7 Patch archive did not contain the expected linux folder.")
+
+    for root, _, files in os.walk(source_dir):
+        relative = os.path.relpath(root, source_dir)
+        destination = Path(game_dir) if relative == "." else Path(game_dir) / relative
+        destination.mkdir(parents=True, exist_ok=True)
+        for filename in files:
+            if filename.lower() == "t7patch.conf" and (destination / filename).exists():
+                continue
+            shutil.copy2(Path(root) / filename, destination / filename)
+
+    if not backup_lpc_files(game_dir, log_target):
+        raise RuntimeError("Failed to back up LPC files.")
+    if not install_lpc_files(game_dir, str(MOD_FILES_DIR), log_target):
+        raise RuntimeError("Failed to install LPC files.")
+    write_log("Installed T7 Patch successfully.", "Success", log_target)
+
+
+def _uninstall_t7_patch(game_dir: str) -> None:
+    removed_game = False
+    for filename in T7_GAME_FILES:
+        target = Path(game_dir) / filename
+        if target.exists():
+            target.unlink()
+            removed_game = True
+    if removed_game:
+        write_log("Uninstalled T7 Patch files from the game directory.", "Success", log_target)
+
+    linux_dir = MOD_FILES_DIR / "linux"
+    removed_mod = False
+    if linux_dir.exists():
+        for filename in T7_GAME_FILES:
+            target = linux_dir / filename
+            if target.exists():
+                target.unlink()
+                removed_mod = True
+        if linux_dir.exists() and not any(linux_dir.iterdir()):
+            linux_dir.rmdir()
+
+    zip_path = MOD_FILES_DIR / "T7Patch.zip"
+    if zip_path.exists():
+        zip_path.unlink()
+        removed_mod = True
+
+    if removed_mod:
+        write_log("Removed cached T7 Patch files.", "Success", log_target)
+    restore_lpc_backups(game_dir, log_target)
+    write_log("T7 Patch has been completely uninstalled.", "Success", log_target)
+
+
 def _current_launch_options() -> str | None:
     user_id = find_steam_user_id()
     if not user_id:
         return None
     return _read_launch_options(user_id, app_id)
+
+
+def _open_external_url(url: str) -> None:
+    system = platform.system()
+    if system == "Windows":
+        os.startfile(url)  # type: ignore[attr-defined]
+    elif system == "Darwin":
+        subprocess.Popen(["open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        launcher = shutil.which("xdg-open") or shutil.which("steam")
+        if not launcher:
+            raise RuntimeError("No system URL launcher was found.")
+        subprocess.Popen([launcher, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def _version_parts(value: str) -> tuple[int, ...]:
+    parts = [int(part) for part in re.split(r"[^0-9]+", value.lstrip("vV")) if part.isdigit()]
+    return tuple(parts or [0])
+
+
+def _select_update_asset(release_data: dict[str, Any]) -> dict[str, Any] | None:
+    assets = release_data.get("assets") or []
+    system = platform.system()
+    suffixes = (".exe", ".zip") if system == "Windows" else (".appimage", ".appimage.zsync")
+    for suffix in suffixes:
+        for asset in assets:
+            name = str(asset.get("name") or "")
+            url = asset.get("browser_download_url")
+            if name.lower().endswith(suffix) and url:
+                return {
+                    "name": name,
+                    "url": url,
+                    "size": asset.get("size") or 0,
+                    "contentType": asset.get("content_type") or "application/octet-stream",
+                }
+    return None
+
+
+def _check_for_update() -> dict[str, Any]:
+    response = requests.get(GITHUB_LATEST_RELEASE_URL, timeout=30)
+    response.raise_for_status()
+    release_data = response.json()
+    version = str(release_data.get("tag_name") or release_data.get("name") or "0.0.0")
+    page_url = release_data.get("html_url") or GITHUB_RELEASE_PAGE_URL
+    asset = _select_update_asset(release_data)
+    available = bool(
+        asset
+        and not release_data.get("draft")
+        and not release_data.get("prerelease")
+        and _version_parts(version) > _version_parts(APP_VERSION)
+    )
+    return {
+        "available": available,
+        "currentVersion": APP_VERSION,
+        "latestVersion": version,
+        "name": release_data.get("name") or "PatchOpsIII",
+        "body": release_data.get("body") or "",
+        "pageUrl": page_url,
+        "asset": asset,
+    }
 
 
 def _launch_profiles(current_options: str | None) -> list[dict[str, Any]]:
@@ -337,27 +878,41 @@ def _current_state() -> dict[str, Any]:
         "currentLaunchOptions": current_launch_options,
         "activeLaunchProfile": next((profile["id"] for profile in launch_profiles if profile["active"]), "custom" if current_launch_options else "default"),
         "launchProfiles": launch_profiles,
+        "enhanced": _enhanced_status(game_dir),
+        "t7": _t7_status(game_dir),
+        "dxvk": _dxvk_status(game_dir),
         "qol": qol,
         "graphics": {
-            "maxFps": int(float(_extract_config(content, "MaxFPS", 165))),
-            "fov": int(float(_extract_config(content, "FOV", 80))),
-            "displayMode": int(float(_extract_config(content, "FullScreenMode", 1))),
+            "maxFps": _config_int(content, "MaxFPS", 165),
+            "fov": _config_int(content, "FOV", 80),
+            "displayMode": _config_int(content, "FullScreenMode", 1),
             "resolution": _extract_config(content, "WindowSize", "1920x1080"),
-            "refreshRate": float(_extract_config(content, "RefreshRate", 60)),
-            "vsync": _extract_config(content, "Vsync", "1") == "1",
-            "drawFps": _extract_config(content, "DrawFPS", "0") == "1",
+            "refreshRate": _config_float(content, "RefreshRate", 60),
+            "renderResolution": _config_int(content, "ResolutionPercent", 100),
+            "vsync": _config_bool(content, "Vsync", "1", "1"),
+            "drawFps": _config_bool(content, "DrawFPS", "1", "0"),
         },
         "advanced": {
-            "smoothFramerate": _extract_config(content, "SmoothFramerate", "0") == "1",
-            "unlockOptions": _extract_config(content, "RestrictGraphicsOptions", "1") == "0",
-            "reduceCpu": _extract_config(content, "SerializeRender", "0") == "2",
-            "maxFrameLatency": int(float(_extract_config(content, "MaxFrameLatency", 1))),
+            "smoothFramerate": _config_bool(content, "SmoothFramerate", "1", "0"),
+            "unlockOptions": _config_bool(content, "RestrictGraphicsOptions", "0", "1"),
+            "reduceCpu": _config_bool(content, "SerializeRender", "2", "0"),
+            "maxFrameLatency": _config_int(content, "MaxFrameLatency", 1),
+            "vramLimited": not (
+                str(_extract_config(content, "VideoMemory", "1")) == "1"
+                and str(_extract_config(content, "StreamMinResident", "0")) == "0"
+            ),
+            "vramTarget": int(_config_float(content, "VideoMemory", 0.75) * 100),
+            "configReadonly": _config_is_readonly(game_dir),
+        },
+        "maintenance": {
+            "modFilesDir": str(MOD_FILES_DIR),
+            "logPayload": _log_payload(),
         },
         "mods": {
             "t7Patch": bool(game_dir and ((Path(game_dir) / "t7patch.exe").exists() or (Path(game_dir) / "t7patch.dll").exists())),
-            "dxvk": bool(game_dir and (Path(game_dir) / "dxgi.dll").exists() and (Path(game_dir) / "d3d11.dll").exists()),
+            "dxvk": bool(game_dir and is_dxvk_async_installed(game_dir)),
             "enhanced": bool(enhanced_summary.get("installed")),
-            "reforged": bool(game_dir and (Path(game_dir) / ".patchops_exe_variant.json").exists()),
+            "reforged": bool(game_dir and _is_reforged_active(game_dir)),
         },
         "logs": log_bus.recent[-80:],
     }
@@ -430,6 +985,98 @@ def _directory_entries(directory: Path) -> list[dict[str, Any]]:
     return entries[:300]
 
 
+def _restore_backup(target: Path, success_message: str) -> bool:
+    backup = existing_backup_path(str(target))
+    if backup and os.path.exists(backup):
+        if target.exists():
+            target.unlink()
+        Path(backup).rename(target)
+        write_log(success_message, "Success", log_target)
+        return True
+    return False
+
+
+def _restore_intro_videos(game_dir: str) -> None:
+    video_dir = Path(game_dir) / "video"
+    if not video_dir.exists():
+        return
+    restored = 0
+    for backup_file in list(video_dir.glob(f"*.mkv{PATCHOPS_BACKUP_SUFFIX}")) + list(video_dir.glob(f"*.mkv{LEGACY_BACKUP_SUFFIX}")):
+        original_name = backup_file.name
+        if original_name.endswith(PATCHOPS_BACKUP_SUFFIX):
+            original_name = original_name[: -len(PATCHOPS_BACKUP_SUFFIX)]
+        elif original_name.endswith(LEGACY_BACKUP_SUFFIX):
+            original_name = original_name[: -len(LEGACY_BACKUP_SUFFIX)]
+        target = video_dir / original_name
+        if not target.exists():
+            backup_file.rename(target)
+            restored += 1
+    if restored:
+        write_log(f"Restored {restored} intro video file(s).", "Success", log_target)
+
+
+def _reset_to_stock(game_dir: str) -> None:
+    if detect_enhanced_install(game_dir):
+        try:
+            _uninstall_enhanced(game_dir)
+        except Exception as exc:
+            write_log(f"Enhanced reset step failed: {exc}", "Warning", log_target)
+
+    executable = _find_bo3_executable(game_dir) or (Path(game_dir) / "BlackOps3.exe")
+    try:
+        if _restore_backup(executable, "Restored original executable from backup."):
+            write_exe_variant(game_dir, "default")
+    except Exception as exc:
+        write_log(f"Executable reset step failed: {exc}", "Warning", log_target)
+
+    try:
+        _uninstall_t7_patch(game_dir)
+    except Exception as exc:
+        write_log(f"T7 Patch reset step failed: {exc}", "Warning", log_target)
+
+    try:
+        _uninstall_dxvk(game_dir)
+    except Exception as exc:
+        write_log(f"DXVK reset step failed: {exc}", "Warning", log_target)
+
+    try:
+        _restore_backup(Path(game_dir) / "d3dcompiler_46.dll", "Restored d3dcompiler_46.dll.")
+        _restore_intro_videos(game_dir)
+    except Exception as exc:
+        write_log(f"Quality of Life reset step failed: {exc}", "Warning", log_target)
+
+    for key, value, comment in (
+        ("SmoothFramerate", "0", "0 or 1"),
+        ("VideoMemory", "1", "0.75 to 1"),
+        ("StreamMinResident", "0", "0 or 1"),
+        ("MaxFrameLatency", "1", "0 to 4"),
+        ("SerializeRender", "0", "0 to 2"),
+        ("RestrictGraphicsOptions", "1", "0 or 1"),
+    ):
+        try:
+            _write_config_value(game_dir, key, value, comment)
+        except Exception as exc:
+            write_log(f"Failed to reset {key}: {exc}", "Warning", log_target)
+
+    try:
+        apply_launch_options("", log_target)
+        write_log("Cleared Steam launch options.", "Success", log_target)
+    except Exception as exc:
+        write_log(f"Launch options reset failed: {exc}", "Warning", log_target)
+
+    write_log("Reset to stock complete.", "Success", log_target)
+
+
+def _log_payload() -> str:
+    log_path = get_log_file_path()
+    try:
+        body = Path(log_path).read_text(encoding="utf-8").strip()
+    except Exception:
+        body = ""
+    platform_label = f"{platform.system()} {platform.release()} ({platform.machine()})".strip()
+    return f"PatchOpsIII {APP_VERSION} - {platform_label} logs:\n```\n{body or '(no log entries found)'}\n```"
+
+
 @app.on_event("startup")
 async def startup() -> None:
     pass
@@ -488,7 +1135,39 @@ async def launch_game() -> dict[str, Any]:
 @app.post("/api/launch-options")
 async def launch_options(payload: LaunchOptionsPayload) -> dict[str, Any]:
     ok = apply_launch_options(payload.options, log_target, preserve_fs_game=payload.preserve_fs_game)
-    return {"ok": bool(ok)}
+    return {"ok": bool(ok), "state": _current_state()}
+
+
+@app.post("/api/workshop-install")
+async def workshop_install(payload: WorkshopInstallPayload) -> dict[str, Any]:
+    profile = WORKSHOP_PROFILES.get(payload.profileId)
+    if not profile:
+        return {"ok": False, "error": "Select an installable Workshop mod."}
+    try:
+        ok = apply_launch_options(profile["launch_option"], log_target, preserve_fs_game=False)
+        if not ok:
+            return {"ok": False, "error": "Failed to apply launch options."}
+        url = f"steam://openurl/https://steamcommunity.com/sharedfiles/filedetails/?id={profile['workshop_id']}"
+        _open_external_url(url)
+        write_log(f"Opened {profile['name']} Workshop page in Steam.", "Info", log_target)
+    except Exception as exc:
+        write_log(f"Workshop install flow failed: {exc}", "Error", log_target)
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "state": _current_state()}
+
+
+@app.post("/api/update-check")
+async def update_check() -> dict[str, Any]:
+    try:
+        result = _check_for_update()
+        if result["available"]:
+            write_log(f"Update available: {result['latestVersion']}", "Success", log_target)
+        else:
+            write_log("No updates available.", "Info", log_target)
+        return {"ok": True, "update": result, "state": _current_state()}
+    except Exception as exc:
+        write_log(f"Update check failed: {exc}", "Error", log_target)
+        return {"ok": False, "error": str(exc)}
 
 
 @app.post("/api/config")
@@ -504,6 +1183,140 @@ async def set_config(payload: ConfigValuePayload) -> dict[str, Any]:
     return {"ok": True, "state": _current_state()}
 
 
+@app.post("/api/dxvk-install")
+async def install_dxvk(payload: DxvkConfigPayload) -> dict[str, Any]:
+    game_dir = _find_game_directory()
+    if not game_dir:
+        return {"ok": False, "error": "Game directory is not set."}
+    try:
+        _install_dxvk(game_dir, payload)
+    except Exception as exc:
+        write_log(f"DXVK-GPLAsync install failed: {exc}", "Error", log_target)
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "state": _current_state()}
+
+
+@app.post("/api/dxvk-uninstall")
+async def uninstall_dxvk() -> dict[str, Any]:
+    game_dir = _find_game_directory()
+    if not game_dir:
+        return {"ok": False, "error": "Game directory is not set."}
+    try:
+        _uninstall_dxvk(game_dir)
+    except Exception as exc:
+        write_log(f"DXVK-GPLAsync uninstall failed: {exc}", "Error", log_target)
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "state": _current_state()}
+
+
+@app.post("/api/dxvk-config")
+async def dxvk_config(payload: DxvkConfigPayload) -> dict[str, Any]:
+    game_dir = _find_game_directory()
+    if not game_dir:
+        return {"ok": False, "error": "Game directory is not set."}
+    try:
+        _write_dxvk_conf(game_dir, _dxvk_payload_to_settings(payload))
+    except Exception as exc:
+        write_log(f"Failed to update DXVK settings: {exc}", "Error", log_target)
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "state": _current_state()}
+
+
+@app.post("/api/t7-config")
+async def set_t7_config(payload: T7ConfigPayload) -> dict[str, Any]:
+    game_dir = _find_game_directory()
+    if not game_dir:
+        return {"ok": False, "error": "Game directory is not set."}
+
+    t7_conf = Path(game_dir) / "t7patch.conf"
+    try:
+        if payload.gamertag is not None:
+            plain_name = payload.gamertag.strip()
+            if not t7_conf.exists():
+                return {"ok": False, "error": "t7patch.conf was not found. Install T7 Patch before updating the gamertag."}
+            if not plain_name:
+                return {"ok": False, "error": "Gamertag cannot be empty."}
+            if len(plain_name) > 20:
+                return {"ok": False, "error": "Gamertag cannot exceed 20 characters."}
+            update_t7patch_conf(game_dir, new_name=f"{payload.colorCode}{plain_name}", log_widget=log_target)
+
+        if payload.networkPassword is not None:
+            password = payload.networkPassword.strip()
+            if t7_conf.exists():
+                update_t7patch_conf(game_dir, new_password=password, log_widget=log_target)
+            update_reforged_t7_options(game_dir, password=password, log_widget=log_target)
+
+        if payload.friendsOnly is not None:
+            if not t7_conf.exists():
+                return {"ok": False, "error": "t7patch.conf was not found. Install T7 Patch before changing Friends Only mode."}
+            update_t7patch_conf(game_dir, friends_only=payload.friendsOnly, log_widget=log_target)
+
+        if payload.forceRanked is not None or payload.steamAchievements is not None:
+            update_reforged_t7_options(
+                game_dir,
+                force_ranked=payload.forceRanked,
+                steam_achievements=payload.steamAchievements,
+                log_widget=log_target,
+            )
+    except Exception as exc:
+        write_log(f"Failed to update T7 Patch settings: {exc}", "Error", log_target)
+        return {"ok": False, "error": str(exc)}
+
+    return {"ok": True, "state": _current_state()}
+
+
+@app.post("/api/t7-install")
+async def install_t7_patch() -> dict[str, Any]:
+    game_dir = _find_game_directory()
+    if not game_dir:
+        return {"ok": False, "error": "Game directory is not set."}
+    try:
+        _install_t7_patch(game_dir)
+    except Exception as exc:
+        write_log(f"T7 Patch install failed: {exc}", "Error", log_target)
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "state": _current_state()}
+
+
+@app.post("/api/t7-uninstall")
+async def uninstall_t7_patch() -> dict[str, Any]:
+    game_dir = _find_game_directory()
+    if not game_dir:
+        return {"ok": False, "error": "Game directory is not set."}
+    try:
+        _uninstall_t7_patch(game_dir)
+    except Exception as exc:
+        write_log(f"T7 Patch uninstall failed: {exc}", "Error", log_target)
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "state": _current_state()}
+
+
+@app.post("/api/enhanced-install")
+async def install_enhanced(payload: EnhancedInstallPayload) -> dict[str, Any]:
+    game_dir = _find_game_directory()
+    if not game_dir:
+        return {"ok": False, "error": "Game directory is not set."}
+    try:
+        _install_enhanced(game_dir, payload.dumpSource)
+    except Exception as exc:
+        write_log(f"BO3 Enhanced install failed: {exc}", "Error", log_target)
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "state": _current_state()}
+
+
+@app.post("/api/enhanced-uninstall")
+async def uninstall_enhanced() -> dict[str, Any]:
+    game_dir = _find_game_directory()
+    if not game_dir:
+        return {"ok": False, "error": "Game directory is not set."}
+    try:
+        _uninstall_enhanced(game_dir)
+    except Exception as exc:
+        write_log(f"BO3 Enhanced uninstall failed: {exc}", "Error", log_target)
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "state": _current_state()}
+
+
 @app.post("/api/presets/apply")
 async def apply_preset(payload: PresetPayload) -> dict[str, Any]:
     game_dir = _find_game_directory()
@@ -514,6 +1327,10 @@ async def apply_preset(payload: PresetPayload) -> dict[str, Any]:
         preset = presets[payload.name]
         for key, item in preset.items():
             if key == "ReduceStutter":
+                dll = Path(game_dir) / "d3dcompiler_46.dll"
+                backup = Path(patchops_backup_path(str(dll)))
+                if str(item[0]) == "1" and dll.exists() and not backup.exists():
+                    dll.rename(backup)
                 continue
             value, comment = item
             _write_config_value(game_dir, key, value, comment)
@@ -629,6 +1446,70 @@ async def config_readonly(payload: TogglePayload) -> dict[str, Any]:
         write_log(f"config.ini set to {'read-only' if payload.enabled else 'writable'}.", "Success", log_target)
     except Exception as exc:
         write_log(f"Failed to change config.ini permissions: {exc}", "Error", log_target)
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "state": _current_state()}
+
+
+@app.post("/api/vram-target")
+async def vram_target(payload: VramPayload) -> dict[str, Any]:
+    game_dir = _find_game_directory()
+    if not game_dir:
+        return {"ok": False, "error": "Game directory is not set."}
+    try:
+        if payload.limited:
+            decimal_value = payload.target / 100
+            _write_config_value(game_dir, "VideoMemory", decimal_value, "0.75 to 1")
+            _write_config_value(game_dir, "StreamMinResident", "1", "0 or 1")
+            write_log(f"Limited VRAM usage set to {payload.target}%.", "Success", log_target)
+        else:
+            _write_config_value(game_dir, "VideoMemory", "1", "0.75 to 1")
+            _write_config_value(game_dir, "StreamMinResident", "0", "0 or 1")
+            write_log("Enabled full VRAM usage.", "Success", log_target)
+    except Exception as exc:
+        write_log(f"Failed to update VRAM target: {exc}", "Error", log_target)
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "state": _current_state()}
+
+
+@app.get("/api/logs/payload")
+async def logs_payload() -> dict[str, Any]:
+    return {"ok": True, "payload": _log_payload()}
+
+
+@app.post("/api/logs/clear")
+async def logs_clear() -> dict[str, Any]:
+    if not clear_log_file():
+        return {"ok": False, "error": "Failed to clear log file."}
+    log_bus._recent.clear()
+    write_log("Logs cleared.", "Success", log_target)
+    return {"ok": True, "state": _current_state()}
+
+
+@app.post("/api/mod-files/clear")
+async def clear_mod_files() -> dict[str, Any]:
+    try:
+        MOD_FILES_DIR.mkdir(parents=True, exist_ok=True)
+        for item in MOD_FILES_DIR.iterdir():
+            if item.is_dir():
+                shutil.rmtree(item)
+            else:
+                item.unlink()
+        write_log(f"Cleared mod files in {MOD_FILES_DIR}", "Success", log_target)
+    except Exception as exc:
+        write_log(f"Failed to clear mod files: {exc}", "Error", log_target)
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "state": _current_state()}
+
+
+@app.post("/api/reset-stock")
+async def reset_stock() -> dict[str, Any]:
+    game_dir = _find_game_directory()
+    if not game_dir:
+        return {"ok": False, "error": "Game directory is not set."}
+    try:
+        _reset_to_stock(game_dir)
+    except Exception as exc:
+        write_log(f"Reset to stock failed: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
     return {"ok": True, "state": _current_state()}
 

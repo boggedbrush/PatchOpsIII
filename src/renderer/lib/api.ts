@@ -25,6 +25,42 @@ export type PatchOpsState = {
     state: string;
     path?: string | null;
   }>;
+  enhanced: {
+    installed: boolean;
+    detectedAt: string | null;
+    acknowledgedAt: string | null;
+    launchOptionsActive: boolean;
+    dumpSource: string;
+  };
+  t7: {
+    installed: boolean;
+    confExists: boolean;
+    gamertag: string;
+    plainName: string;
+    colorCode: string;
+    networkPassword: string;
+    friendsOnly: boolean;
+    mode: string;
+    reforgedActive: boolean;
+    reforged: {
+      networkPass: string;
+      forceRanked: boolean;
+      steamAchievements: boolean;
+    };
+  };
+  dxvk: {
+    installed: boolean;
+    confExists: boolean;
+    settings: {
+      enableAsync: boolean;
+      gplAsyncCache: boolean;
+      numCompilerThreads: number;
+      maxFrameRate: number;
+      maxFrameLatency: number;
+      tearFree: string;
+      hudEnabled: boolean;
+    };
+  };
   qol: {
     d3dcompiler: boolean;
     intro: boolean;
@@ -36,6 +72,7 @@ export type PatchOpsState = {
     displayMode: number;
     resolution: string;
     refreshRate: number;
+    renderResolution: number;
     vsync: boolean;
     drawFps: boolean;
   };
@@ -44,6 +81,13 @@ export type PatchOpsState = {
     unlockOptions: boolean;
     reduceCpu: boolean;
     maxFrameLatency: number;
+    vramLimited: boolean;
+    vramTarget: number;
+    configReadonly: boolean;
+  };
+  maintenance: {
+    modFilesDir: string;
+    logPayload: string;
   };
   mods: {
     t7Patch: boolean;

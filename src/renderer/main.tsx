@@ -2,16 +2,24 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   AlertTriangle,
-  BadgeCheck,
-  Cog,
-  Diamond,
+  Clipboard,
+  Cpu,
+  Download,
+  Eraser,
+  ExternalLink,
   FolderOpen,
   Gem,
   Image,
+  KeyRound,
   LayoutDashboard,
   PlaySquare,
+  RotateCcw,
+  Save,
+  ShieldCheck,
   RefreshCw,
-  Shield,
+  Trash2,
+  UserRound,
+  Wrench,
   X
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -23,14 +31,16 @@ const logoUrl = new URL("../../website/assets/img/patchopsiii.png", import.meta.
 
 const navItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "t7", label: "T7 Patch", icon: BadgeCheck },
+  { id: "t7", label: "T7 Patch", icon: ShieldCheck },
   { id: "enhanced", label: "Enhanced", icon: Gem },
-  { id: "reforged", label: "Reforged", icon: Diamond },
+  // removed for now as the developer has decided to turn this mod into a paid service
   { id: "graphics", label: "Graphics", icon: Image },
-  { id: "advanced", label: "Advanced", icon: Cog }
+  { id: "tools", label: "Tools", icon: Wrench }
 ] as const;
 
 type ViewId = (typeof navItems)[number]["id"];
+type GraphicsTabId = "graphics" | "advanced" | "dxvk";
+type DxvkSettings = PatchOpsState["dxvk"]["settings"];
 
 type BrowseEntry = {
   name: string;
@@ -55,6 +65,10 @@ type BrowseState = {
 const configMap = {
   maxFps: { key: "MaxFPS", comment: "Maximum FPS cap" },
   fov: { key: "FOV", comment: "Field of view" },
+  displayMode: { key: "FullScreenMode", comment: "0=Windowed,1=Fullscreen,2=Fullscreen Windowed" },
+  resolution: { key: "WindowSize", comment: "any text" },
+  refreshRate: { key: "RefreshRate", comment: "1 to 240" },
+  renderResolution: { key: "ResolutionPercent", comment: "50 to 200" },
   vsync: { key: "Vsync", comment: "Vertical sync" },
   drawFps: { key: "DrawFPS", comment: "FPS counter" },
   smoothFramerate: { key: "SmoothFramerate", comment: "Frame smoothing" },
@@ -62,6 +76,47 @@ const configMap = {
   reduceCpu: { key: "SerializeRender", comment: "Reduce CPU pressure" },
   maxFrameLatency: { key: "MaxFrameLatency", comment: "Maximum frame latency" }
 } as const;
+
+const gamertagColors = [
+  { code: "", label: "Default", swatch: "#f6f6f6" },
+  { code: "^1", label: "Red", swatch: "#ff453a" },
+  { code: "^2", label: "Green", swatch: "#34c759" },
+  { code: "^3", label: "Yellow", swatch: "#ffd60a" },
+  { code: "^4", label: "Blue", swatch: "#5ac8fa" },
+  { code: "^5", label: "Cyan", swatch: "#64d2ff" },
+  { code: "^6", label: "Pink", swatch: "#ff2d55" },
+  { code: "^7", label: "White", swatch: "#ffffff" },
+  { code: "^8", label: "Mid Blue", swatch: "#0a84ff" },
+  { code: "^9", label: "Cinnabar", swatch: "#ff6b35" },
+  { code: "^0", label: "Black", swatch: "#151518" }
+] as const;
+
+const displayModes = [
+  { value: 0, label: "Windowed" },
+  { value: 1, label: "Fullscreen" },
+  { value: 2, label: "Fullscreen Windowed" }
+] as const;
+
+const dxvkPresets: Record<string, DxvkSettings> = {
+  Recommended: {
+    enableAsync: true,
+    gplAsyncCache: true,
+    numCompilerThreads: 0,
+    maxFrameRate: 0,
+    maxFrameLatency: 1,
+    tearFree: "True",
+    hudEnabled: false
+  },
+  None: {
+    enableAsync: true,
+    gplAsyncCache: false,
+    numCompilerThreads: 0,
+    maxFrameRate: 0,
+    maxFrameLatency: 0,
+    tearFree: "Auto",
+    hudEnabled: false
+  }
+};
 
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -92,6 +147,7 @@ function browseErrorMessage(error: unknown) {
 function App() {
   const [state, setState] = useState<PatchOpsState | null>(null);
   const [activeView, setActiveView] = useState<ViewId>("dashboard");
+  const [activeGraphicsTab, setActiveGraphicsTab] = useState<GraphicsTabId>("graphics");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [selectedProfile, setSelectedProfile] = useState("default");
@@ -100,11 +156,27 @@ function App() {
   const [browseData, setBrowseData] = useState<BrowseState | null>(null);
   const [browseInput, setBrowseInput] = useState("");
   const [browseError, setBrowseError] = useState<string | null>(null);
+  const [browseMode, setBrowseMode] = useState<"game" | "dump">("game");
+  const [t7Gamertag, setT7Gamertag] = useState("");
+  const [t7ColorCode, setT7ColorCode] = useState("");
+  const [t7Password, setT7Password] = useState("");
+  const [showT7Password, setShowT7Password] = useState(false);
+  const [showT7PasswordEdit, setShowT7PasswordEdit] = useState(false);
+  const [enhancedDumpSource, setEnhancedDumpSource] = useState("");
+  const [dxvkSettings, setDxvkSettings] = useState<DxvkSettings>(dxvkPresets.Recommended);
 
   async function refresh() {
     const next = await apiRequest<PatchOpsState>("/api/status");
     setState(next);
     setLogs(next.logs.filter(isVisibleLog));
+  }
+
+  async function checkForUpdates() {
+    await runAction("update-check", () =>
+      apiRequest<ApiResult<{ update: unknown }>>("/api/update-check", {
+        method: "POST"
+      })
+    );
   }
 
   async function runAction<T>(id: string, action: () => Promise<ApiResult<T> | PatchOpsState | unknown>) {
@@ -194,6 +266,184 @@ function App() {
     );
   }
 
+  async function updateT7Gamertag() {
+    await runAction("t7-gamertag", () =>
+      apiRequest<ApiResult>("/api/t7-config", {
+        method: "POST",
+        body: JSON.stringify({ gamertag: t7Gamertag, colorCode: t7ColorCode })
+      })
+    );
+  }
+
+  async function installSelectedProfile() {
+    await runAction("workshop-install", () =>
+      apiRequest<ApiResult>("/api/workshop-install", {
+        method: "POST",
+        body: JSON.stringify({ profileId: selectedProfile })
+      })
+    );
+  }
+
+  async function applyPreset(name: string) {
+    await runAction("preset", () =>
+      apiRequest<ApiResult>("/api/presets/apply", {
+        method: "POST",
+        body: JSON.stringify({ name })
+      })
+    );
+  }
+
+  async function updateT7Password() {
+    await runAction("t7-password", () =>
+      apiRequest<ApiResult>("/api/t7-config", {
+        method: "POST",
+        body: JSON.stringify({ networkPassword: t7Password })
+      })
+    );
+  }
+
+  async function updateT7FriendsOnly(friendsOnly: boolean) {
+    await runAction("t7-friends", () =>
+      apiRequest<ApiResult>("/api/t7-config", {
+        method: "POST",
+        body: JSON.stringify({ friendsOnly })
+      })
+    );
+  }
+
+  async function installT7Patch() {
+    await runAction("t7-install", () =>
+      apiRequest<ApiResult>("/api/t7-install", {
+        method: "POST"
+      })
+    );
+  }
+
+  async function uninstallT7Patch() {
+    if (!window.confirm("Uninstall T7 Patch files and restore LPC backups?")) {
+      return;
+    }
+    await runAction("t7-uninstall", () =>
+      apiRequest<ApiResult>("/api/t7-uninstall", {
+        method: "POST"
+      })
+    );
+  }
+
+  async function installEnhanced() {
+    await runAction("enhanced-install", () =>
+      apiRequest<ApiResult>("/api/enhanced-install", {
+        method: "POST",
+        body: JSON.stringify({ dumpSource: enhancedDumpSource })
+      })
+    );
+  }
+
+  async function uninstallEnhanced() {
+    if (!window.confirm("Uninstall BO3 Enhanced files and restore backups?")) {
+      return;
+    }
+    await runAction("enhanced-uninstall", () =>
+      apiRequest<ApiResult>("/api/enhanced-uninstall", {
+        method: "POST"
+      })
+    );
+  }
+
+  async function applyDxvkSettings(nextSettings = dxvkSettings) {
+    await runAction("dxvk-config", () =>
+      apiRequest<ApiResult>("/api/dxvk-config", {
+        method: "POST",
+        body: JSON.stringify(nextSettings)
+      })
+    );
+  }
+
+  async function installDxvk() {
+    await runAction("dxvk-install", () =>
+      apiRequest<ApiResult>("/api/dxvk-install", {
+        method: "POST",
+        body: JSON.stringify(dxvkSettings)
+      })
+    );
+  }
+
+  async function uninstallDxvk() {
+    if (!window.confirm("Uninstall DXVK-GPLAsync and remove dxvk.conf?")) {
+      return;
+    }
+    await runAction("dxvk-uninstall", () =>
+      apiRequest<ApiResult>("/api/dxvk-uninstall", {
+        method: "POST"
+      })
+    );
+  }
+
+  async function setConfigReadonly(enabled: boolean) {
+    await runAction("config-readonly", () =>
+      apiRequest<ApiResult>("/api/config-readonly", {
+        method: "POST",
+        body: JSON.stringify({ enabled })
+      })
+    );
+  }
+
+  async function setVramTarget(limited: boolean, target = state?.advanced.vramTarget ?? 75) {
+    await runAction("vram-target", () =>
+      apiRequest<ApiResult>("/api/vram-target", {
+        method: "POST",
+        body: JSON.stringify({ limited, target })
+      })
+    );
+  }
+
+  async function copyLogs() {
+    setBusy("copy-logs");
+    setError(null);
+    try {
+      const result = await apiRequest<{ ok: boolean; payload: string; error?: string }>("/api/logs/payload");
+      if (!result.ok) {
+        throw new Error(result.error ?? "Unable to read logs.");
+      }
+      await navigator.clipboard.writeText(result.payload);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to copy logs.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function clearLogs() {
+    await runAction("clear-logs", () =>
+      apiRequest<ApiResult>("/api/logs/clear", {
+        method: "POST"
+      })
+    );
+  }
+
+  async function clearModFiles() {
+    if (!window.confirm("Clear cached downloaded mod files?")) {
+      return;
+    }
+    await runAction("clear-mod-files", () =>
+      apiRequest<ApiResult>("/api/mod-files/clear", {
+        method: "POST"
+      })
+    );
+  }
+
+  async function resetToStock() {
+    if (!window.confirm("Reset PatchOpsIII-managed files and settings to stock?")) {
+      return;
+    }
+    await runAction("reset-stock", () =>
+      apiRequest<ApiResult>("/api/reset-stock", {
+        method: "POST"
+      })
+    );
+  }
+
   async function loadBrowse(path?: string) {
     setBrowseError(null);
     try {
@@ -215,12 +465,18 @@ function App() {
     }
   }
 
-  async function openBrowseMenu() {
+  async function openBrowseMenu(mode: "game" | "dump" = "game") {
+    setBrowseMode(mode);
     setBrowseOpen(true);
-    await loadBrowse(state?.gameDir ?? undefined);
+    await loadBrowse(mode === "dump" ? enhancedDumpSource || state?.gameDir || undefined : state?.gameDir ?? undefined);
   }
 
   async function selectBrowsePath(path: string) {
+    if (browseMode === "dump") {
+      setEnhancedDumpSource(path);
+      setBrowseOpen(false);
+      return;
+    }
     await runAction("directory", () =>
       apiRequest<ApiResult>("/api/game-directory", {
         method: "POST",
@@ -254,7 +510,36 @@ function App() {
     }
   }, [state?.activeLaunchProfile]);
 
-  const activeProfileLabel = state?.launchProfiles.find((item) => item.id === selectedProfile)?.label ?? "Default (None)";
+  useEffect(() => {
+    if (!state?.t7) {
+      return;
+    }
+    setT7Gamertag(state.t7.plainName);
+    setT7ColorCode(state.t7.colorCode);
+    setT7Password(state.t7.networkPassword);
+  }, [state?.t7]);
+
+  useEffect(() => {
+    if (state?.enhanced.dumpSource !== undefined) {
+      setEnhancedDumpSource(state.enhanced.dumpSource);
+    }
+  }, [state?.enhanced.dumpSource]);
+
+  useEffect(() => {
+    if (state?.dxvk.settings) {
+      setDxvkSettings(state.dxvk.settings);
+    }
+  }, [state?.dxvk.settings]);
+
+  const activeLaunchProfileLabel =
+    state?.activeLaunchProfile === "custom"
+      ? "Custom"
+      : state?.activeLaunchProfile === "default"
+        ? undefined
+        : state?.launchProfiles.find((item) => item.id === state.activeLaunchProfile)?.label;
+  const selectedLaunchProfile = state?.launchProfiles.find((profile) => profile.id === selectedProfile);
+  const selectedProfileInstallable = Boolean(selectedLaunchProfile && selectedLaunchProfile.id !== "default" && selectedLaunchProfile.id !== "offline");
+  const workshopOptionsDisabled = Boolean(state?.enhanced.installed);
 
   return (
     <main className="app-shell">
@@ -267,7 +552,7 @@ function App() {
           </div>
         </div>
         <div className="top-actions">
-          <button className="tool-button" onClick={() => runAction("refresh", refresh)} disabled={busy === "refresh"}>
+          <button className="tool-button" onClick={checkForUpdates} disabled={busy === "update-check"}>
             <RefreshCw size={17} />
             Check for Updates
           </button>
@@ -285,7 +570,7 @@ function App() {
         </label>
         <button
           className="tool-button browse"
-          onClick={() => void openBrowseMenu()}
+          onClick={() => void openBrowseMenu("game")}
         >
           <FolderOpen size={17} />
           Browse...
@@ -313,17 +598,16 @@ function App() {
                 <StatusRow label="T7 Patch" ok={state.mods.t7Patch} />
                 <StatusRow label="DXVK-GPLAsync" ok={state.mods.dxvk} />
                 <StatusRow label="BO3 Enhanced" ok={state.mods.enhanced} />
-                <StatusRow label="BO3 Reforged" ok={state.mods.reforged} />
                 <StatusRow
                   label="Launch Option"
                   ok={state.activeLaunchProfile !== "default"}
-                  detail={state.activeLaunchProfile === "custom" ? "Custom" : state.activeLaunchProfile === "default" ? undefined : activeProfileLabel}
+                  detail={activeLaunchProfileLabel}
                 />
                 <StatusRow label="Quality of Life" ok={state.qol.d3dcompiler || state.qol.intro || state.qol.allIntros} />
               </Panel>
 
               <div className="dashboard-split">
-                <Panel title="Quality of Life">
+                <Panel title="Quality of Life" className="qol-panel">
                   <label className="check-row">
                     <input
                       type="checkbox"
@@ -350,7 +634,13 @@ function App() {
                   <div className="radio-list">
                     {state.launchProfiles.map((profile) => (
                       <label key={profile.id} className="radio-row">
-                        <input type="radio" name="launch-profile" checked={selectedProfile === profile.id} onChange={() => setSelectedProfile(profile.id)} />
+                        <input
+                          type="radio"
+                          name="launch-profile"
+                          checked={selectedProfile === profile.id}
+                          disabled={workshopOptionsDisabled && profile.id !== "default" && profile.id !== "offline"}
+                          onChange={() => setSelectedProfile(profile.id)}
+                        />
                         <span>{profile.label}</span>
                         {profile.id !== "default" && profile.id !== "offline" && (
                           <b className={cx("profile-state", profile.installed && "installed", !profile.installed && profile.subscribed && "subscribed", !profile.subscribed && "not-subscribed")}>
@@ -361,11 +651,13 @@ function App() {
                     ))}
                   </div>
                   <div className="button-row">
-                    <button className="small-button">Install Selected Mod</button>
+                    <button className="small-button" disabled={!selectedProfileInstallable || workshopOptionsDisabled || busy === "workshop-install"} onClick={installSelectedProfile}>
+                      Install Selected Mod
+                    </button>
                     <button className="small-button" onClick={() => runAction("refresh", refresh)}>
                       Refresh
                     </button>
-                    <button className="small-button" onClick={applyProfile}>
+                    <button className="small-button" disabled={workshopOptionsDisabled && selectedProfile !== "default" && selectedProfile !== "offline"} onClick={applyProfile}>
                       Apply
                     </button>
                   </div>
@@ -375,38 +667,294 @@ function App() {
           )}
 
             {activeView === "t7" && state && (
-              <Panel title="T7 Patch">
-                <ModuleRow icon={Shield} title="T7 Patch" active={state.mods.t7Patch} />
+              <Panel title="T7 Patch" className="t7-panel">
+                <div className="t7-layout">
+                  <div className="t7-summary">
+                    <ModuleRow icon={ShieldCheck} title="T7 Patch" active={state.t7.installed} />
+                    <StatusPill label="Config" value={state.t7.confExists ? "t7patch.conf found" : "Config missing"} ok={state.t7.confExists} />
+                    <StatusPill label="Game Mode" value={state.t7.mode} ok={state.t7.mode !== "Unknown"} />
+                  </div>
+
+                  <div className="t7-actions">
+                    <button className="tool-button primary" disabled={busy === "t7-install"} onClick={installT7Patch}>
+                      <Download size={16} />
+                      Install / Update T7 Patch
+                    </button>
+                    <button className="tool-button" disabled={!state.t7.installed || busy === "t7-uninstall"} onClick={uninstallT7Patch}>
+                      <Trash2 size={16} />
+                      Uninstall T7 Patch
+                    </button>
+                  </div>
+
+                  <div className="t7-settings-grid">
+                    <section className="t7-card">
+                      <h3>
+                        <UserRound size={16} />
+                        Gamertag
+                      </h3>
+                      <div className="field-grid">
+                        <label>
+                          Current
+                          <input readOnly value={state.t7.plainName || "None"} />
+                        </label>
+                        <label>
+                          Name
+                          <input value={t7Gamertag} onChange={(event) => setT7Gamertag(event.target.value)} disabled={!state.t7.confExists} maxLength={20} />
+                        </label>
+                      </div>
+                      <div className="color-grid" aria-label="Gamertag color">
+                        {gamertagColors.map((color) => (
+                          <button
+                            key={color.code || "default"}
+                            className={cx("color-chip", t7ColorCode === color.code && "active")}
+                            disabled={!state.t7.confExists}
+                            onClick={() => setT7ColorCode(color.code)}
+                            title={color.label}
+                          >
+                            <span style={{ background: color.swatch }} />
+                            {color.label}
+                          </button>
+                        ))}
+                      </div>
+                      <button className="small-button action-button" disabled={!state.t7.confExists || busy === "t7-gamertag"} onClick={updateT7Gamertag}>
+                        <Save size={15} />
+                        Update Gamertag
+                      </button>
+                    </section>
+
+                    <section className="t7-card">
+                      <h3>
+                        <KeyRound size={16} />
+                        Network
+                      </h3>
+                      <div className="field-grid">
+                        <label>
+                          Current Password
+                          <div className="input-action">
+                            <input readOnly type={showT7Password ? "text" : "password"} value={state.t7.networkPassword} placeholder="None" />
+                            <button type="button" className="icon-action" onClick={() => setShowT7Password((current) => !current)} title={showT7Password ? "Hide password" : "Show password"}>
+                              <KeyRound size={15} />
+                            </button>
+                          </div>
+                        </label>
+                        <label>
+                          Password
+                          <div className="input-action">
+                            <input type={showT7PasswordEdit ? "text" : "password"} value={t7Password} onChange={(event) => setT7Password(event.target.value)} placeholder="Enter network password" />
+                            <button type="button" className="icon-action" onClick={() => setShowT7PasswordEdit((current) => !current)} title={showT7PasswordEdit ? "Hide password" : "Show password"}>
+                              <KeyRound size={15} />
+                            </button>
+                          </div>
+                        </label>
+                      </div>
+                      <div className="setting-row compact-setting">
+                        <span>Friends Only Mode</span>
+                        <Toggle checked={state.t7.friendsOnly} disabled={!state.t7.confExists} onChange={updateT7FriendsOnly} />
+                      </div>
+                      <button className="small-button action-button" disabled={busy === "t7-password"} onClick={updateT7Password}>
+                        <Save size={15} />
+                        Update Password
+                      </button>
+                    </section>
+                  </div>
+                </div>
               </Panel>
             )}
 
             {activeView === "enhanced" && (
-              <Panel title="Enhanced">
-                <ModuleRow icon={Gem} title="BO3 Enhanced" active={Boolean(state?.mods.enhanced)} />
-              </Panel>
-            )}
+              <Panel title="Enhanced" className="enhanced-panel">
+                {state && (
+                  <div className="enhanced-layout">
+                    <div className="t7-summary">
+                      <ModuleRow icon={Gem} title="BO3 Enhanced" active={state.enhanced.installed} />
+                      <StatusPill label="Launch Override" value={state.enhanced.launchOptionsActive ? "Active" : "Inactive"} ok={state.enhanced.launchOptionsActive} />
+                      <StatusPill label="Detected" value={state.enhanced.detectedAt ? "Tracked" : "Not tracked"} ok={Boolean(state.enhanced.detectedAt)} />
+                    </div>
 
-            {activeView === "reforged" && state && (
-              <Panel title="Reforged">
-                <ModuleRow icon={Diamond} title="BO3 Reforged" active={state.mods.reforged} />
+                    <section className="enhanced-card">
+                      <h3>
+                        <Download size={16} />
+                        Install Source
+                      </h3>
+                      <div className="field-grid">
+                        <label>
+                          Dump Source
+                          <div className="input-action">
+                            <input
+                              value={enhancedDumpSource}
+                              onChange={(event) => setEnhancedDumpSource(event.target.value)}
+                              placeholder="DUMP.zip or extracted dump folder"
+                            />
+                            <button type="button" className="small-button" onClick={() => void openBrowseMenu("dump")}>
+                              <FolderOpen size={15} />
+                              Browse
+                            </button>
+                          </div>
+                        </label>
+                      </div>
+                      <p className="info-note">
+                        PatchOpsIII requires a manually supplied UWP game dump for BO3 Enhanced.
+                        <a href="https://youtu.be/rBZZTcSJ9_s?si=41p0r_Enten3h5AQ" target="_blank" rel="noreferrer">
+                          <ExternalLink size={14} />
+                          Dump guide
+                        </a>
+                      </p>
+                      <div className="t7-actions">
+                        <button className="tool-button primary" disabled={!enhancedDumpSource.trim() || busy === "enhanced-install"} onClick={installEnhanced}>
+                          <Download size={16} />
+                          Install / Update BO3 Enhanced
+                        </button>
+                        <button className="tool-button" disabled={!state.enhanced.installed || busy === "enhanced-uninstall"} onClick={uninstallEnhanced}>
+                          <Trash2 size={16} />
+                          Uninstall BO3 Enhanced
+                        </button>
+                      </div>
+                    </section>
+
+                    <div className="enhanced-details-grid">
+                      <StatusPill label="Game Directory" value={state.gameDetected ? "Detected" : "Missing"} ok={state.gameDetected} />
+                      <StatusPill label="Dump Source" value={enhancedDumpSource.trim() ? "Selected" : "Required"} ok={Boolean(enhancedDumpSource.trim())} />
+                      <StatusPill label="Workshop Mods" value={state.enhanced.installed ? "Disabled" : "Available"} ok={!state.enhanced.installed} />
+                    </div>
+                  </div>
+                )}
               </Panel>
             )}
 
             {activeView === "graphics" && state && (
-              <Panel title="Graphics">
-                <SliderControl label="FOV" value={state.graphics.fov} min={60} max={120} onCommit={(value) => setConfig("fov", value)} />
-                <SliderControl label="Max FPS" value={state.graphics.maxFps} min={30} max={1000} onCommit={(value) => setConfig("maxFps", value)} />
-                <ToggleRow label="Vertical sync" checked={state.graphics.vsync} onChange={(value) => setConfig("vsync", value)} />
-                <ToggleRow label="FPS counter" checked={state.graphics.drawFps} onChange={(value) => setConfig("drawFps", value)} />
-              </Panel>
+              <>
+                <div className="subtab-bar" role="tablist" aria-label="Graphics sections">
+                  <button className={cx(activeGraphicsTab === "graphics" && "active")} role="tab" aria-selected={activeGraphicsTab === "graphics"} onClick={() => setActiveGraphicsTab("graphics")}>
+                    Graphics
+                  </button>
+                  <button className={cx(activeGraphicsTab === "advanced" && "active")} role="tab" aria-selected={activeGraphicsTab === "advanced"} onClick={() => setActiveGraphicsTab("advanced")}>
+                    Advanced Graphics
+                  </button>
+                  <button className={cx(activeGraphicsTab === "dxvk" && "active")} role="tab" aria-selected={activeGraphicsTab === "dxvk"} onClick={() => setActiveGraphicsTab("dxvk")}>
+                    DXVK
+                  </button>
+                </div>
+
+                {activeGraphicsTab === "graphics" && (
+                  <Panel title="Graphics">
+                    <SelectRow label="Preset" value="" options={state.presets.map((preset) => ({ value: preset, label: preset }))} placeholder="Choose preset" onChange={applyPreset} />
+                    <SelectRow label="Display Mode" value={String(state.graphics.displayMode)} options={displayModes.map((mode) => ({ value: String(mode.value), label: mode.label }))} onChange={(value) => setConfig("displayMode", Number(value))} />
+                    <TextRow label="Resolution" value={state.graphics.resolution} onCommit={(value) => setConfig("resolution", value)} />
+                    <NumberRow label="Refresh Rate" value={state.graphics.refreshRate} min={1} max={240} onCommit={(value) => setConfig("refreshRate", value)} />
+                    <SliderControl label="FOV" value={state.graphics.fov} min={65} max={120} onCommit={(value) => setConfig("fov", value)} />
+                    <NumberRow label="Max FPS" value={state.graphics.maxFps} min={0} max={1000} onCommit={(value) => setConfig("maxFps", value)} />
+                    <NumberRow label="Render Resolution %" value={state.graphics.renderResolution} min={50} max={200} step={10} onCommit={(value) => setConfig("renderResolution", value)} />
+                    <ToggleRow label="Vertical sync" checked={state.graphics.vsync} onChange={(value) => setConfig("vsync", value)} />
+                    <ToggleRow label="FPS counter" checked={state.graphics.drawFps} onChange={(value) => setConfig("drawFps", value)} />
+                  </Panel>
+                )}
+
+                {activeGraphicsTab === "advanced" && (
+                  <Panel title="Advanced Graphics">
+                    <ToggleRow label="Smooth framerate" checked={state.advanced.smoothFramerate} onChange={(value) => setConfig("smoothFramerate", value)} />
+                    <ToggleRow label="Expose hidden graphics" checked={state.advanced.unlockOptions} onChange={(value) => setConfig("unlockOptions", value)} />
+                    <ToggleRow label="Reduce CPU pressure" checked={state.advanced.reduceCpu} onChange={(value) => setConfig("reduceCpu", value)} />
+                    <NumberRow label="Frame latency" value={state.advanced.maxFrameLatency} min={0} max={4} onCommit={(value) => setConfig("maxFrameLatency", value)} />
+                    <ToggleRow label="Limit VRAM target" checked={state.advanced.vramLimited} onChange={(value) => setVramTarget(value)} />
+                    <NumberRow label="VRAM target %" value={state.advanced.vramTarget} min={75} max={100} disabled={!state.advanced.vramLimited} onCommit={(value) => setVramTarget(true, value)} />
+                    <ToggleRow label="Lock config.ini" checked={state.advanced.configReadonly} onChange={setConfigReadonly} />
+                  </Panel>
+                )}
+
+                {activeGraphicsTab === "dxvk" && (
+                  <Panel title="DXVK-GPLAsync" className="dxvk-panel">
+                    <div className="dxvk-head">
+                      <StatusPill label="Status" value={state.dxvk.installed ? "Installed" : "Not installed"} ok={state.dxvk.installed} />
+                      <StatusPill label="dxvk.conf" value={state.dxvk.confExists ? "Configured" : "Missing"} ok={state.dxvk.confExists} />
+                      <div className="button-row dxvk-actions">
+                        <button className="small-button" disabled={busy === "dxvk-install"} onClick={installDxvk}>
+                          <Download size={15} />
+                          Install
+                        </button>
+                        <button className="small-button" disabled={!state.dxvk.installed || busy === "dxvk-uninstall"} onClick={uninstallDxvk}>
+                          <Trash2 size={15} />
+                          Uninstall
+                        </button>
+                        <button className="small-button" disabled={busy === "dxvk-config"} onClick={() => applyDxvkSettings()}>
+                          <Save size={15} />
+                          Apply
+                        </button>
+                      </div>
+                    </div>
+                    <SelectRow
+                      label="Preset"
+                      value=""
+                      options={Object.keys(dxvkPresets).map((preset) => ({ value: preset, label: preset }))}
+                      placeholder="Choose preset"
+                      onChange={(preset) => setDxvkSettings(dxvkPresets[preset])}
+                    />
+                    <ToggleRow label="Async shader compilation" checked={dxvkSettings.enableAsync} onChange={(value) => setDxvkSettings((current) => ({ ...current, enableAsync: value }))} />
+                    <ToggleRow label="GPL async cache" checked={dxvkSettings.gplAsyncCache} onChange={(value) => setDxvkSettings((current) => ({ ...current, gplAsyncCache: value }))} />
+                    <ToggleRow label="FPS/GPU HUD" checked={dxvkSettings.hudEnabled} onChange={(value) => setDxvkSettings((current) => ({ ...current, hudEnabled: value }))} />
+                    <NumberRow label="Compiler threads" value={dxvkSettings.numCompilerThreads} min={0} max={64} onCommit={(value) => setDxvkSettings((current) => ({ ...current, numCompilerThreads: value }))} />
+                    <SliderControl label="Frame rate cap" value={dxvkSettings.maxFrameRate} min={0} max={360} onCommit={(value) => setDxvkSettings((current) => ({ ...current, maxFrameRate: value }))} />
+                    <NumberRow label="Frame latency" value={dxvkSettings.maxFrameLatency} min={0} max={16} onCommit={(value) => setDxvkSettings((current) => ({ ...current, maxFrameLatency: value }))} />
+                    <SelectRow label="Tear Free" value={dxvkSettings.tearFree} options={["Auto", "True", "False"].map((item) => ({ value: item, label: item }))} onChange={(value) => setDxvkSettings((current) => ({ ...current, tearFree: value }))} />
+                  </Panel>
+                )}
+              </>
             )}
 
-            {activeView === "advanced" && state && (
-              <Panel title="Advanced">
-                <ToggleRow label="Smooth framerate" checked={state.advanced.smoothFramerate} onChange={(value) => setConfig("smoothFramerate", value)} />
-                <ToggleRow label="Expose hidden graphics" checked={state.advanced.unlockOptions} onChange={(value) => setConfig("unlockOptions", value)} />
-                <ToggleRow label="Reduce CPU pressure" checked={state.advanced.reduceCpu} onChange={(value) => setConfig("reduceCpu", value)} />
-                <SliderControl label="Frame latency" value={state.advanced.maxFrameLatency} min={1} max={4} onCommit={(value) => setConfig("maxFrameLatency", value)} />
+            {activeView === "tools" && state && (
+              <Panel title="Tools" className="tools-panel">
+                <div className="tools-grid">
+                  <section className="t7-card">
+                    <h3>
+                      <Clipboard size={16} />
+                      Logs
+                    </h3>
+                    <StatusPill label="Log file" value={state.logPath ? "Available" : "Missing"} ok={Boolean(state.logPath)} />
+                    <div className="tool-stack">
+                      <button className="small-button action-button" disabled={busy === "copy-logs"} onClick={copyLogs}>
+                        <Clipboard size={15} />
+                        Copy Logs
+                      </button>
+                      <button className="small-button action-button" disabled={busy === "clear-logs"} onClick={clearLogs}>
+                        <Eraser size={15} />
+                        Clear Logs
+                      </button>
+                    </div>
+                  </section>
+
+                  <section className="t7-card">
+                    <h3>
+                      <Download size={16} />
+                      Mod Cache
+                    </h3>
+                    <StatusPill label="Directory" value={state.maintenance.modFilesDir ? "Configured" : "Missing"} ok={Boolean(state.maintenance.modFilesDir)} />
+                    <button className="small-button action-button" disabled={busy === "clear-mod-files"} onClick={clearModFiles}>
+                      <Trash2 size={15} />
+                      Clear Mod Files
+                    </button>
+                  </section>
+
+                  <section className="t7-card danger-card">
+                    <h3>
+                      <RotateCcw size={16} />
+                      Reset
+                    </h3>
+                    <StatusPill label="Game Directory" value={state.gameDetected ? "Detected" : "Missing"} ok={state.gameDetected} />
+                    <button className="small-button action-button danger" disabled={!state.gameDetected || busy === "reset-stock"} onClick={resetToStock}>
+                      <RotateCcw size={15} />
+                      Reset to Stock
+                    </button>
+                  </section>
+
+                  <section className="t7-card">
+                    <h3>
+                      <Cpu size={16} />
+                      System
+                    </h3>
+                    <StatusPill label="PatchOpsIII" value={`v${state.appVersion}`} ok />
+                    <StatusPill label="Platform" value={state.platform || "Unknown"} ok={Boolean(state.platform)} />
+                    <StatusPill label="Steam User" value={state.steamUserId || "Not found"} ok={Boolean(state.steamUserId)} />
+                  </section>
+                </div>
               </Panel>
             )}
         </section>
@@ -428,8 +976,8 @@ function App() {
           <section className="browse-modal" role="dialog" aria-modal="true" aria-labelledby="browse-title" onMouseDown={(event) => event.stopPropagation()}>
             <header className="browse-head">
               <div>
-                <h2 id="browse-title">Select Game Directory</h2>
-                <p>Choose the folder that contains BlackOps3.exe or BlackOpsIII.exe.</p>
+                <h2 id="browse-title">{browseMode === "game" ? "Select Game Directory" : "Select Dump Folder"}</h2>
+                <p>{browseMode === "game" ? "Choose the folder that contains BlackOps3.exe or BlackOpsIII.exe." : "Choose an extracted dump folder, or type a DUMP.zip path above."}</p>
               </div>
               <button className="icon-action" aria-label="Close browser" onClick={() => setBrowseOpen(false)}>
                 <X size={18} />
@@ -488,8 +1036,8 @@ function App() {
 
             <footer className="browse-actions">
               <button className="tool-button" onClick={() => setBrowseOpen(false)}>Cancel</button>
-              <button className="tool-button primary" disabled={!browseData?.hasGameExecutable} onClick={() => browseData && selectBrowsePath(browseData.path)}>
-                Use Selected Folder
+              <button className="tool-button primary" disabled={browseMode === "game" && !browseData?.hasGameExecutable} onClick={() => browseData && selectBrowsePath(browseData.path)}>
+                {browseMode === "game" ? "Use Selected Folder" : "Use Dump Folder"}
               </button>
             </footer>
           </section>
@@ -548,11 +1096,99 @@ function ModuleRow({ icon: Icon, title, active }: { icon: LucideIcon; title: str
   );
 }
 
-function ToggleRow({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+function StatusPill({ label, value, ok }: { label: string; value: string; ok: boolean }) {
+  return (
+    <div className="status-pill">
+      <span>{label}</span>
+      <strong className={ok ? "ok" : ""}>{value}</strong>
+    </div>
+  );
+}
+
+function ToggleRow({ label, checked, disabled, onChange }: { label: string; checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void }) {
   return (
     <div className="setting-row">
       <span>{label}</span>
-      <Toggle checked={checked} onChange={onChange} />
+      <Toggle checked={checked} disabled={disabled} onChange={onChange} />
+    </div>
+  );
+}
+
+function SelectRow({
+  label,
+  value,
+  options,
+  placeholder,
+  onChange
+}: {
+  label: string;
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  placeholder?: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="setting-row form-row">
+      <span>{label}</span>
+      <select value={value} onChange={(event) => event.target.value && onChange(event.target.value)}>
+        {placeholder && <option value="">{placeholder}</option>}
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function TextRow({ label, value, onCommit }: { label: string; value: string; onCommit: (value: string) => void }) {
+  const [localValue, setLocalValue] = useState(value);
+  useEffect(() => setLocalValue(value), [value]);
+  return (
+    <div className="setting-row form-row">
+      <span>{label}</span>
+      <input value={localValue} onChange={(event) => setLocalValue(event.target.value)} onBlur={() => onCommit(localValue)} onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          onCommit(localValue);
+        }
+      }} />
+    </div>
+  );
+}
+
+function NumberRow({
+  label,
+  value,
+  min,
+  max,
+  step = 1,
+  disabled,
+  onCommit
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  disabled?: boolean;
+  onCommit: (value: number) => void;
+}) {
+  const [localValue, setLocalValue] = useState(value);
+  useEffect(() => setLocalValue(value), [value]);
+  return (
+    <div className="setting-row form-row number-row">
+      <span>{label}</span>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        disabled={disabled}
+        value={localValue}
+        onChange={(event) => setLocalValue(Number(event.target.value))}
+        onBlur={() => onCommit(Math.max(min, Math.min(max, localValue)))}
+      />
     </div>
   );
 }
