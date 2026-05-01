@@ -795,7 +795,7 @@ function App() {
                   </div>
 
                   <div className="t7-settings-grid">
-                    <section className="t7-card">
+                    <section className="settings-block">
                       <h3>
                         <UserRound size={16} />
                         Gamertag
@@ -830,7 +830,7 @@ function App() {
                       </button>
                     </section>
 
-                    <section className="t7-card">
+                    <section className="settings-block">
                       <h3>
                         <KeyRound size={16} />
                         Network
@@ -879,7 +879,7 @@ function App() {
                       <StatusPill label="Detected" value={state.enhanced.detectedAt ? "Tracked" : "Not tracked"} ok={Boolean(state.enhanced.detectedAt)} />
                     </div>
 
-                    <section className="enhanced-card">
+                    <section className="settings-block enhanced-source">
                       <h3>
                         <Download size={16} />
                         Install Source
@@ -919,11 +919,6 @@ function App() {
                       </div>
                     </section>
 
-                    <div className="enhanced-details-grid">
-                      <StatusPill label="Game Directory" value={state.gameDetected ? "Detected" : "Missing"} ok={state.gameDetected} />
-                      <StatusPill label="Dump Source" value={enhancedDumpSource.trim() ? "Selected" : "Required"} ok={Boolean(enhancedDumpSource.trim())} />
-                      <StatusPill label="Workshop Mods" value={state.enhanced.installed ? "Disabled" : "Available"} ok={!state.enhanced.installed} />
-                    </div>
                   </div>
                 )}
               </Panel>
@@ -1011,7 +1006,7 @@ function App() {
             {activeView === "tools" && state && (
               <Panel title="Tools" className="tools-panel">
                 <div className="tools-grid">
-                  <section className="t7-card">
+                  <section className="settings-block">
                     <h3>
                       <Clipboard size={16} />
                       Logs
@@ -1029,7 +1024,7 @@ function App() {
                     </div>
                   </section>
 
-                  <section className="t7-card">
+                  <section className="settings-block">
                     <h3>
                       <Download size={16} />
                       Mod Cache
@@ -1041,24 +1036,22 @@ function App() {
                     </button>
                   </section>
 
-                  <section className="t7-card danger-card">
+                  <section className="settings-block danger-block">
                     <h3>
                       <RotateCcw size={16} />
                       Reset
                     </h3>
-                    <StatusPill label="Game Directory" value={state.gameDetected ? "Detected" : "Missing"} ok={state.gameDetected} />
                     <button className="small-button action-button danger" disabled={!state.gameDetected || busy === "reset-stock"} onClick={resetToStock}>
                       <RotateCcw size={15} />
                       Reset to Stock
                     </button>
                   </section>
 
-                  <section className="t7-card">
+                  <section className="settings-block">
                     <h3>
                       <Cpu size={16} />
                       System
                     </h3>
-                    <StatusPill label="PatchOpsIII" value={`v${state.appVersion}`} ok />
                     <StatusPill label="Platform" value={state.platform || "Unknown"} ok={Boolean(state.platform)} />
                     <StatusPill label="Steam User" value={state.steamUserId || "Not found"} ok={Boolean(state.steamUserId)} />
                   </section>
