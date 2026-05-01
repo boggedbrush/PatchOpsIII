@@ -157,10 +157,23 @@ function TitleBar({ appVersion, updateDisabled, onCheckForUpdates }: { appVersio
     return () => removeWindowStateListener?.();
   }, []);
 
+  async function minimizeWindow() {
+    if (window.patchOpsDesktop) {
+      await window.patchOpsDesktop.minimizeWindow();
+    }
+  }
+
   async function toggleMaximize() {
-    const state = await window.patchOpsDesktop?.toggleMaximizeWindow?.();
-    if (state) {
+    if (window.patchOpsDesktop) {
+      const state = await window.patchOpsDesktop.toggleMaximizeWindow();
       setMaximized(state.maximized);
+    }
+  }
+
+  function closeWindow() {
+    if (window.patchOpsDesktop) {
+      void window.patchOpsDesktop.closeWindow();
+      return;
     }
   }
 
@@ -180,13 +193,13 @@ function TitleBar({ appVersion, updateDisabled, onCheckForUpdates }: { appVersio
       <div className="titlebar-drag" />
       {showWindowControls && (
         <div className="window-controls" aria-label="Window controls">
-          <button type="button" className="window-control" aria-label="Minimize window" onClick={() => window.patchOpsDesktop?.minimizeWindow?.()} tabIndex={hasDesktopChrome ? 0 : -1}>
+          <button type="button" className="window-control" aria-label="Minimize window" onClick={minimizeWindow}>
             <Minus size={15} strokeWidth={2.4} />
           </button>
-          <button type="button" className="window-control" aria-label={maximized ? "Restore window" : "Maximize window"} onClick={toggleMaximize} tabIndex={hasDesktopChrome ? 0 : -1}>
+          <button type="button" className="window-control" aria-label={maximized ? "Restore window" : "Maximize window"} onClick={toggleMaximize}>
             {maximized ? <Minimize2 size={13} strokeWidth={2.2} /> : <Maximize2 size={13} strokeWidth={2.2} />}
           </button>
-          <button type="button" className="window-control close" aria-label="Close window" onClick={() => window.patchOpsDesktop?.closeWindow?.()} tabIndex={hasDesktopChrome ? 0 : -1}>
+          <button type="button" className="window-control close" aria-label="Close window" onClick={closeWindow}>
             <X size={15} strokeWidth={2.4} />
           </button>
         </div>

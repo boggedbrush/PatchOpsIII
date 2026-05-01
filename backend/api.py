@@ -10,6 +10,7 @@ import shutil
 import stat
 import string
 import subprocess
+import sys
 import zipfile
 from collections import deque
 from pathlib import Path

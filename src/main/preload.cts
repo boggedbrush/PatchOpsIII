@@ -1,4 +1,6 @@
-import { contextBridge, ipcRenderer } from "electron";
+import type { IpcRendererEvent } from "electron";
+
+const { contextBridge, ipcRenderer } = require("electron") as typeof import("electron");
 
 contextBridge.exposeInMainWorld("patchOpsDesktop", {
   pickGameDirectory: () => ipcRenderer.invoke("desktop:pick-game-directory"),
@@ -9,7 +11,7 @@ contextBridge.exposeInMainWorld("patchOpsDesktop", {
   toggleMaximizeWindow: () => ipcRenderer.invoke("desktop:window-toggle-maximize"),
   closeWindow: () => ipcRenderer.invoke("desktop:window-close"),
   onWindowStateChange: (callback: (state: { maximized: boolean }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, state: { maximized: boolean }) => callback(state);
+    const listener = (_event: IpcRendererEvent, state: { maximized: boolean }) => callback(state);
     ipcRenderer.on("desktop:window-state", listener);
     return () => ipcRenderer.removeListener("desktop:window-state", listener);
   }
