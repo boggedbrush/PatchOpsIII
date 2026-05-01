@@ -108,7 +108,7 @@ export async function resolveBackendUrl() {
   if (window.patchOpsDesktop) {
     return window.patchOpsDesktop.getBackendUrl();
   }
-  return "http://127.0.0.1:8765";
+  return import.meta.env.VITE_PATCHOPSIII_BACKEND_URL ?? "http://127.0.0.1:8765";
 }
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {

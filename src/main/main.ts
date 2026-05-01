@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -10,11 +11,22 @@ const backendPort = Number(process.env.PATCHOPSIII_BACKEND_PORT ?? 8765);
 const backendUrl = `http://${backendHost}:${backendPort}`;
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcessWithoutNullStreams | null = null;
+let stoppingBackend = false;
 
 function pythonCommand() {
   if (process.env.PATCHOPSIII_PYTHON) {
     return process.env.PATCHOPSIII_PYTHON;
   }
+
+  const venvPython =
+    process.platform === "win32"
+      ? path.join(repoRoot, ".venv", "Scripts", "python.exe")
+      : path.join(repoRoot, ".venv", "bin", "python");
+
+  if (existsSync(venvPython)) {
+    return venvPython;
+  }
+
   return process.platform === "win32" ? "python" : "python3";
 }
 
@@ -22,6 +34,7 @@ function startBackend() {
   if (backendProcess) {
     return;
   }
+  stoppingBackend = false;
   backendProcess = spawn(
     pythonCommand(),
     ["-m", "uvicorn", "backend.api:app", "--host", backendHost, "--port", String(backendPort)],
@@ -39,7 +52,22 @@ function startBackend() {
   backendProcess.on("exit", (code) => {
     console.log(`[backend] exited with code ${code}`);
     backendProcess = null;
+    stoppingBackend = false;
   });
+}
+
+function stopBackend() {
+  if (!backendProcess?.pid || stoppingBackend) {
+    return;
+  }
+
+  stoppingBackend = true;
+  if (process.platform === "win32") {
+    spawnSync("taskkill", ["/pid", String(backendProcess.pid), "/t", "/f"], { stdio: "ignore" });
+    return;
+  }
+
+  backendProcess.kill("SIGTERM");
 }
 
 async function waitForBackend(timeoutMs = 12000) {
@@ -109,7 +137,10 @@ app.on("activate", () => {
   }
 });
 app.on("before-quit", () => {
-  backendProcess?.kill();
+  stopBackend();
+});
+app.on("will-quit", () => {
+  stopBackend();
 });
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

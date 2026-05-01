@@ -147,9 +147,23 @@ class ApiLogTarget:
 log_bus = LogBus()
 log_target = ApiLogTarget(log_bus)
 app = FastAPI(title="PatchOpsIII Local API", version=APP_VERSION)
+
+
+def _cors_origins() -> list[str]:
+    defaults = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "app://patchopsiii",
+    ]
+    extra = [origin.strip() for origin in os.environ.get("PATCHOPSIII_CORS_ORIGINS", "").split(",") if origin.strip()]
+    return [*defaults, *extra]
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "app://patchopsiii"],
+    allow_origins=_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

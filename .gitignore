@@ -12,6 +12,7 @@ BO3 Mod Files/
 build/
 dist/
 node_modules/
+.patchopsiii-dev/
 
 # Log files:
 *.log
