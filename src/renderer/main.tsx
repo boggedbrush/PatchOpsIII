@@ -199,6 +199,36 @@ function isVisibleLog(entry: LogEntry) {
   return entry.message !== "PatchOpsIII local API started.";
 }
 
+function logKey(entry: LogEntry) {
+  return `${entry.line}|${entry.category}|${entry.message}`;
+}
+
+function uniqueVisibleLogs(entries: LogEntry[]) {
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    if (!isVisibleLog(entry)) {
+      return false;
+    }
+    const key = logKey(entry);
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function appendUniqueLog(current: LogEntry[], entry: LogEntry) {
+  if (!isVisibleLog(entry)) {
+    return current;
+  }
+  const key = logKey(entry);
+  if (current.some((item) => logKey(item) === key)) {
+    return current;
+  }
+  return [...current.slice(-179), entry];
+}
+
 function browseErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : "";
   if (message.includes("404")) {
@@ -234,7 +264,7 @@ function App() {
   async function refresh() {
     const next = await apiRequest<PatchOpsState>("/api/status");
     setState(next);
-    setLogs(next.logs.filter(isVisibleLog));
+    setLogs(uniqueVisibleLogs(next.logs));
   }
 
   async function checkForUpdates() {
@@ -257,7 +287,7 @@ function App() {
         }
         if (apiResult.state) {
           setState(apiResult.state);
-          setLogs(apiResult.state.logs.filter(isVisibleLog));
+          setLogs(uniqueVisibleLogs(apiResult.state.logs));
         } else {
           await refresh();
         }
@@ -330,6 +360,23 @@ function App() {
         body: JSON.stringify({ enabled })
       })
     );
+  }
+
+  async function toggleAllQol(enabled: boolean) {
+    await runAction("qol-all", async () => {
+      await apiRequest<ApiResult>("/api/d3dcompiler", {
+        method: "POST",
+        body: JSON.stringify({ enabled })
+      });
+      await apiRequest<ApiResult>("/api/intro-skip", {
+        method: "POST",
+        body: JSON.stringify({ enabled })
+      });
+      return apiRequest<ApiResult>("/api/all-intros-skip", {
+        method: "POST",
+        body: JSON.stringify({ enabled })
+      });
+    });
   }
 
   async function updateT7Gamertag() {
@@ -561,9 +608,7 @@ function App() {
         const data = JSON.parse(event.data);
         if (data.type === "log") {
           const entry = data.payload as LogEntry;
-          if (isVisibleLog(entry)) {
-            setLogs((current) => [...current.slice(-179), entry]);
-          }
+          setLogs((current) => appendUniqueLog(current, entry));
         }
       };
     });
@@ -632,7 +677,10 @@ function App() {
       {error && (
         <div className="error-strip">
           <AlertTriangle size={16} />
-          {error}
+          <span>{error}</span>
+          <button type="button" className="error-dismiss" aria-label="Dismiss error" onClick={() => setError(null)}>
+            <X size={15} strokeWidth={2.4} />
+          </button>
         </div>
       )}
 
@@ -660,6 +708,14 @@ function App() {
 
               <div className="dashboard-split">
                 <Panel title="Quality of Life" className="qol-panel">
+                  <label className="check-row apply-all-row">
+                    <input
+                      type="checkbox"
+                      checked={state.qol.d3dcompiler && state.qol.intro && state.qol.allIntros}
+                      onChange={(event) => void toggleAllQol(event.target.checked)}
+                    />
+                    Apply All
+                  </label>
                   <label className="check-row">
                     <input
                       type="checkbox"

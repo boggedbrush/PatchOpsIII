@@ -439,6 +439,31 @@ button:disabled {
   flex: 0 0 auto;
 }
 
+.error-strip span {
+  min-width: 0;
+}
+
+.error-dismiss {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-left: auto;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #ffd8d4;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.error-dismiss:hover,
+.error-dismiss:focus-visible {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  outline: none;
+}
+
 .main-grid {
   display: grid;
   grid-template-columns: var(--nav-width) minmax(0, 1fr);
@@ -625,6 +650,13 @@ button:disabled {
 .radio-row {
   min-height: 30px;
   border-bottom: 1px solid var(--border);
+}
+
+.apply-all-row {
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-strong);
+  font-weight: 760;
 }
 
 .profile-state {
