@@ -958,18 +958,18 @@ function App() {
               </Panel>
             )}
         </section>
-      </section>
 
-      <Panel title="Activity Log" className="log-panel">
-        <div className="terminal">
-          {logs.slice(-8).map((entry, index) => (
-            <p key={`${entry.line}-${index}`} className={logTone(entry.category)}>
-              <span>{entry.category}</span>
-              {entry.message}
-            </p>
-          ))}
-        </div>
-      </Panel>
+        <Panel title="Activity Log" className="log-panel">
+          <div className="terminal">
+            {logs.slice(-8).map((entry, index) => (
+              <p key={`${entry.line}-${index}`} className={logTone(entry.category)}>
+                <span>{entry.category}</span>
+                {entry.message}
+              </p>
+            ))}
+          </div>
+        </Panel>
+      </section>
 
       {browseOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setBrowseOpen(false)}>

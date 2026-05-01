@@ -1,7 +1,12 @@
 import { spawn } from "node:child_process";
 import process from "node:process";
 
-const vite = spawn("bun", ["x", "vite", "--host", "127.0.0.1"], {
+const viteHost = process.env.PATCHOPSIII_VITE_HOST ?? "127.0.0.1";
+const vitePort = process.env.PATCHOPSIII_VITE_PORT ?? "5174";
+const backendPort = process.env.PATCHOPSIII_BACKEND_PORT ?? "8766";
+const viteUrl = `http://${viteHost}:${vitePort}`;
+
+const vite = spawn("bun", ["x", "vite", "--host", viteHost, "--port", vitePort, "--strictPort"], {
   stdio: "inherit",
   shell: process.platform === "win32"
 });
@@ -12,7 +17,7 @@ async function waitForVite() {
   const start = Date.now();
   while (Date.now() - start < 15000) {
     try {
-      const response = await fetch("http://127.0.0.1:5173");
+      const response = await fetch(viteUrl);
       if (response.ok) {
         return;
       }
@@ -30,7 +35,8 @@ void waitForVite()
       shell: process.platform === "win32",
       env: {
         ...process.env,
-        VITE_DEV_SERVER_URL: "http://127.0.0.1:5173"
+        PATCHOPSIII_BACKEND_PORT: backendPort,
+        VITE_DEV_SERVER_URL: viteUrl
       }
     });
 

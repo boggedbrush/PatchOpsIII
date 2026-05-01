@@ -92,11 +92,14 @@ pip install -r requirements.txt
 # install desktop frontend dependencies
 bun install
 
-# run Electron, Vite, and the Python local API
+# run Vite and the Python local API
 bun run dev
+
+# run the Electron desktop app
+bun run dev:desktop
 ```
 
-The Electron main process starts `uvicorn backend.api:app` as a local service. The renderer communicates with Python through HTTP APIs and `/ws` WebSockets; Electron IPC is reserved for desktop-specific bridge actions such as selecting a local game directory.
+The browser development server uses Vite on `127.0.0.1:5173` and the Python API on `127.0.0.1:8765`. The Electron desktop command uses Vite on `127.0.0.1:5174` and its Python API on `127.0.0.1:8766`, so both commands can run at the same time. The renderer communicates with Python through HTTP APIs and `/ws` WebSockets; Electron IPC is reserved for desktop-specific bridge actions such as selecting a local game directory.
 
 ## Forked Components
 - **BO3 Enhanced Proton fork metadata:** [bo3-enhanced-proton/README.md](bo3-enhanced-proton/README.md)

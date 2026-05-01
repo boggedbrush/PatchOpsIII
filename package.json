@@ -5,8 +5,8 @@
   "type": "module",
   "main": "dist/main/main.js",
   "scripts": {
-    "dev": "bun run build:main && bun scripts/dev.ts",
-    "dev:server": "bun scripts/dev-server.ts",
+    "dev": "bun scripts/dev-server.ts",
+    "dev:desktop": "bun run build:main && bun scripts/dev.ts",
     "build": "bun run typecheck && bun run build:main && vite build",
     "build:main": "tsc -p tsconfig.electron.json",
     "typecheck": "tsc --noEmit",

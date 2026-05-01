@@ -6,6 +6,7 @@ import process from "node:process";
 const backendHost = process.env.PATCHOPSIII_BACKEND_HOST ?? "127.0.0.1";
 const backendPort = process.env.PATCHOPSIII_BACKEND_PORT ?? "8765";
 const viteHost = process.env.PATCHOPSIII_VITE_HOST ?? "127.0.0.1";
+const vitePort = process.env.PATCHOPSIII_VITE_PORT ?? "5173";
 
 function resolvePython() {
   if (process.env.PATCHOPSIII_PYTHON) {
@@ -62,7 +63,7 @@ start("backend", resolvePython(), [
   backendPort
 ]);
 
-start("vite", "bun", ["x", "vite", "--host", viteHost]);
+start("vite", "bun", ["x", "vite", "--host", viteHost, "--port", vitePort, "--strictPort"]);
 
 process.on("SIGINT", () => shutdown(0));
 process.on("SIGTERM", () => shutdown(0));
