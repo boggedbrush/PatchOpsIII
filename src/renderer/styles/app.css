@@ -8,6 +8,7 @@
   --panel-gap: clamp(10px, 1vw, 16px);
   --content-max: 1480px;
   --titlebar-height: 32px;
+  --titlebar-content-top: 5px;
   --control-height: 36px;
   --nav-width: clamp(150px, 11vw, 184px);
   --bg: #0d0d0f;
@@ -76,7 +77,7 @@ body,
 body {
   margin: 0;
   overflow: hidden;
-  background: linear-gradient(180deg, var(--bg-deep), var(--bg));
+  background: transparent;
   color: var(--text);
   font-size: 14px;
 }
@@ -97,11 +98,14 @@ button:disabled {
 
 .titlebar {
   position: relative;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  flex: 0 0 var(--titlebar-height);
+  z-index: 2;
+  top: 0;
+  display: block;
   align-items: center;
   height: var(--titlebar-height);
   min-height: var(--titlebar-height);
+  max-height: var(--titlebar-height);
   width: 100%;
   margin-inline: 0;
   border: 0;
@@ -109,10 +113,28 @@ button:disabled {
   border-radius: 0;
   background: #050505;
   box-shadow: none;
-  overflow: hidden;
+  overflow: clip;
+  contain: layout paint;
+  line-height: 1;
   app-region: drag;
   -webkit-app-region: drag;
   user-select: none;
+}
+
+.titlebar-mica {
+  background: transparent;
+  border-bottom-color: rgba(255, 255, 255, 0.012);
+  box-shadow: none;
+}
+
+.titlebar-native-overlay {
+  position: fixed;
+  left: env(titlebar-area-x, 0);
+  top: env(titlebar-area-y, 0);
+  width: env(titlebar-area-width, 100%);
+  height: env(titlebar-area-height, var(--titlebar-height));
+  min-height: env(titlebar-area-height, var(--titlebar-height));
+  max-height: env(titlebar-area-height, var(--titlebar-height));
 }
 
 .titlebar::before {
@@ -144,6 +166,10 @@ button:disabled {
   opacity: 0.62;
 }
 
+.titlebar-mica::after {
+  opacity: 0.08;
+}
+
 .titlebar-grip {
   display: none;
 }
@@ -152,22 +178,25 @@ button:disabled {
   app-region: no-drag;
   -webkit-app-region: no-drag;
   position: absolute;
-  left: 50%;
-  top: 50%;
+  left: 8px;
+  top: 0;
   z-index: 2;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
+  height: var(--titlebar-height);
   width: max-content;
   max-width: calc(100% - 320px);
   min-width: 0;
-  padding-left: 0;
-  transform: translate(-50%, -50%);
+  padding: var(--titlebar-content-top) 0 0;
+  transform: none;
   justify-content: center;
 }
 
 .titlebar-mac .titlebar-brand {
+  left: 50%;
   max-width: calc(100% - 232px);
+  transform: translateX(-50%);
 }
 
 .titlebar-logo {
@@ -180,15 +209,17 @@ button:disabled {
 
 .titlebar-copy {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 9px;
+  height: 22px;
   min-width: 0;
   white-space: nowrap;
 }
 
 .titlebar-copy strong {
   font-size: 15px;
-  line-height: 1;
+  font-weight: 600;
+  line-height: 22px;
   letter-spacing: 0;
 }
 
@@ -198,14 +229,12 @@ button:disabled {
 }
 
 .titlebar-drag {
-  app-region: drag;
-  -webkit-app-region: drag;
-  height: 100%;
-  min-width: 24px;
+  display: none;
 }
 
 .titlebar-update {
   position: relative;
+  align-self: center;
   display: inline-grid;
   place-items: center;
   width: 42px;
@@ -261,14 +290,14 @@ button:disabled {
 }
 
 .window-controls {
-  position: relative;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
   z-index: 3;
   display: grid;
   grid-template-columns: repeat(3, 46px);
-  grid-column: 3;
-  justify-self: end;
-  align-self: stretch;
-  height: 100%;
+  height: var(--titlebar-height);
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
@@ -277,14 +306,15 @@ button:disabled {
   app-region: no-drag;
   -webkit-app-region: no-drag;
   display: inline-grid;
-  place-items: center;
+  justify-items: center;
+  align-items: start;
   width: 46px;
-  height: 100%;
+  height: var(--titlebar-height);
   border: 0;
   border-radius: 0;
   background: transparent;
   color: rgba(246, 246, 246, 0.76);
-  padding: 0;
+  padding: calc((var(--titlebar-height) - 10px) / 2) 0 0;
   transition:
     background 140ms ease,
     color 140ms ease;
@@ -329,9 +359,11 @@ button:disabled {
 }
 
 .app-shell {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
-  gap: var(--app-gap);
+  gap: 0;
   width: 100%;
   max-width: 100vw;
   height: 100%;
@@ -341,9 +373,28 @@ button:disabled {
   overflow: hidden;
 }
 
+.app-shell:has(.titlebar-native-overlay) {
+  padding-top: var(--titlebar-height);
+}
+
+.app-shell::before {
+  content: "";
+  position: absolute;
+  inset: var(--titlebar-height) 0 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, var(--bg-deep), var(--bg));
+}
+
 .app-shell > :not(.titlebar):not(.modal-backdrop) {
+  position: relative;
+  z-index: 1;
   width: min(var(--content-max), calc(100% - (var(--app-pad) * 2)));
   margin-inline: auto;
+}
+
+.app-shell > :not(.titlebar):not(.modal-backdrop):not(:last-child) {
+  margin-bottom: var(--app-gap);
 }
 
 .app-top {
@@ -444,6 +495,7 @@ button:disabled {
   gap: 12px;
   align-items: end;
   flex: 0 0 auto;
+  padding-top: 14px;
 }
 
 .directory-row label {

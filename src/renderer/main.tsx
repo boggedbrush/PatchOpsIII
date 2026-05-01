@@ -158,7 +158,8 @@ function TitleBar({ appVersion, updateDisabled, onCheckForUpdates }: { appVersio
   const [maximized, setMaximized] = useState(false);
   const isMac = platform === "darwin";
   const hasDesktopChrome = Boolean(window.patchOpsDesktop);
-  const showWindowControls = !isMac;
+  const usesNativeWindowControls = hasDesktopChrome && platform === "win32";
+  const showWindowControls = !isMac && !usesNativeWindowControls;
 
   useEffect(() => {
     let removeWindowStateListener: (() => void) | undefined;
@@ -189,7 +190,7 @@ function TitleBar({ appVersion, updateDisabled, onCheckForUpdates }: { appVersio
   }
 
   return (
-    <div className={cx("titlebar", isMac ? "titlebar-mac" : "titlebar-desktop")}>
+    <div className={cx("titlebar", isMac ? "titlebar-mac" : "titlebar-desktop", usesNativeWindowControls && "titlebar-native-overlay titlebar-mica")}>
       <div className="titlebar-grip" aria-hidden="true" />
       <div className="titlebar-brand">
         <img src={logoUrl} alt="" className="titlebar-logo" />

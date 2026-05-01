@@ -104,20 +104,27 @@ async function createWindow() {
   startBackend();
   await waitForBackend();
 
+  const isWindows = process.platform === "win32";
+  const isMac = process.platform === "darwin";
+
   mainWindow = new BrowserWindow({
     width: 1320,
     height: 860,
     minWidth: 1100,
     minHeight: 720,
     title: "PatchOpsIII",
-    backgroundColor: "#080806",
-    frame: process.platform === "darwin",
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
-    trafficLightPosition: process.platform === "darwin" ? { x: 18, y: 16 } : undefined,
+    backgroundColor: isWindows ? "#00000000" : "#080806",
+    backgroundMaterial: isWindows ? "mica" : undefined,
+    frame: isWindows || isMac,
+    roundedCorners: isWindows ? true : undefined,
+    titleBarStyle: isMac ? "hiddenInset" : isWindows ? "hidden" : "default",
+    titleBarOverlay: isWindows ? { color: "#00000000", symbolColor: "#f6f6f6", height: 32 } : undefined,
+    trafficLightPosition: isMac ? { x: 18, y: 16 } : undefined,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      transparent: isWindows
     }
   });
 
