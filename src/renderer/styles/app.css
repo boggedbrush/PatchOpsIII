@@ -1068,6 +1068,256 @@ button:disabled {
   padding: 10px 12px;
 }
 
+.content-panel > .subtab-bar {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.graphics-settings-panel .panel-body {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  overflow: visible;
+}
+
+.dxvk-panel .panel-body {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  overflow: visible;
+}
+
+.graphics-settings-shell {
+  display: grid;
+  gap: 14px;
+  padding: 0;
+}
+
+.graphics-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(270px, 100%), 1fr));
+  gap: 12px;
+}
+
+.graphics-quick-grid .setting-row {
+  grid-template-columns: minmax(92px, 0.55fr) minmax(170px, 1.45fr);
+  min-height: 54px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.025)),
+    rgba(255, 255, 255, 0.018);
+}
+
+.dxvk-control-bar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr)) minmax(360px, 0.9fr);
+  gap: 12px;
+}
+
+.dxvk-control-bar .status-pill {
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 54px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.025)),
+    rgba(255, 255, 255, 0.018);
+}
+
+.dxvk-control-bar .status-pill strong {
+  text-align: right;
+}
+
+.dxvk-control-bar .dxvk-actions {
+  align-self: stretch;
+  min-height: 54px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.025)),
+    rgba(255, 255, 255, 0.018);
+  padding: 8px;
+}
+
+.dxvk-quick-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
+}
+
+.graphics-quick-grid .recommended-row {
+  grid-template-columns: minmax(132px, 0.8fr) minmax(86px, 0.55fr) auto auto;
+}
+
+.recommended-chip {
+  min-height: 30px;
+  border: 1px solid rgba(168, 178, 190, 0.22);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted-strong);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.recommended-chip:hover {
+  border-color: rgba(253, 1, 0, 0.34);
+  color: var(--text);
+  background: rgba(253, 1, 0, 0.1);
+}
+
+.recommended-chip.secondary {
+  color: var(--muted);
+}
+
+.graphics-section-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.graphics-settings-group {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+    rgba(255, 255, 255, 0.016);
+}
+
+.graphics-settings-group h3 {
+  margin: 0;
+  padding: 14px 16px 6px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.graphics-settings-group .setting-row,
+.graphics-advanced-grid .setting-row {
+  min-height: 46px;
+  padding: 7px 16px;
+}
+
+.graphics-settings-group .setting-row:last-child,
+.graphics-advanced-grid .setting-row:last-child {
+  border-bottom: 0;
+}
+
+.graphics-settings-group .slider-row {
+  grid-template-columns: minmax(132px, 0.34fr) minmax(130px, 1fr) 44px;
+}
+
+.graphics-settings-panel .form-row select,
+.graphics-settings-panel .form-row input {
+  height: 31px;
+}
+
+.graphics-settings-panel .number-row input {
+  max-width: none;
+}
+
+.graphics-advanced-drawer {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.graphics-advanced-drawer summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  padding: 0 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.graphics-advanced-drawer summary::-webkit-details-marker {
+  display: none;
+}
+
+.graphics-advanced-drawer summary::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 140ms ease;
+}
+
+.graphics-advanced-drawer[open] summary::after {
+  transform: rotate(225deg);
+}
+
+.graphics-advanced-drawer summary span {
+  display: grid;
+  gap: 2px;
+}
+
+.graphics-advanced-drawer summary strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.graphics-advanced-drawer summary small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.graphics-advanced-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(310px, 100%), 1fr));
+  border-top: 1px solid var(--border);
+}
+
+.graphics-panel .panel-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(330px, 100%), 1fr));
+  align-items: stretch;
+}
+
+.graphics-panel .setting-row {
+  grid-template-columns: minmax(112px, 0.72fr) minmax(0, 1.28fr);
+  min-height: 50px;
+  padding: 8px 16px;
+  border-right: 1px solid var(--border);
+}
+
+.graphics-panel .setting-row:last-child {
+  border-bottom: 1px solid var(--border);
+}
+
+.graphics-panel .form-row select,
+.graphics-panel .form-row input {
+  height: 31px;
+}
+
+.graphics-panel .number-row input {
+  max-width: none;
+}
+
+.graphics-panel .slider-row {
+  grid-column: span 2;
+}
+
+.dxvk-head {
+  grid-column: 1 / -1;
+}
+
+.graphics-panel .slider-row {
+  grid-template-columns: minmax(112px, 0.32fr) minmax(160px, 1fr) 44px;
+  min-height: 50px;
+}
+
 .tools-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr));
@@ -1501,13 +1751,26 @@ button:disabled {
     border-bottom: 1px solid var(--border);
   }
 
+  .graphics-section-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dxvk-control-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .graphics-panel .slider-row,
+  .dxvk-panel .slider-row {
+    grid-column: 1 / -1;
+  }
+
   .browse-grid {
     grid-template-columns: 1fr;
   }
 
   .subtab-bar {
     width: 100%;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .browse-shortcuts {

@@ -42,7 +42,7 @@ const navItems = [
 ] as const;
 
 type ViewId = (typeof navItems)[number]["id"];
-type GraphicsTabId = "graphics" | "advanced" | "dxvk";
+type GraphicsTabId = "graphics" | "dxvk";
 type DxvkSettings = PatchOpsState["dxvk"]["settings"];
 
 type BrowseEntry = {
@@ -238,6 +238,14 @@ function browseErrorMessage(error: unknown) {
     return "Folder browser is unavailable because the local service is not running.";
   }
   return "Unable to browse folders right now.";
+}
+
+function detectedCompilerThreads() {
+  const logicalCores = navigator.hardwareConcurrency || 0;
+  if (!logicalCores) {
+    return null;
+  }
+  return Math.max(1, logicalCores - 2);
 }
 
 function App() {
@@ -651,6 +659,7 @@ function App() {
   const selectedLaunchProfile = state?.launchProfiles.find((profile) => profile.id === selectedProfile);
   const selectedProfileInstallable = Boolean(selectedLaunchProfile && selectedLaunchProfile.id !== "default" && selectedLaunchProfile.id !== "offline");
   const workshopOptionsDisabled = Boolean(state?.enhanced.installed);
+  const dxvkDetectedThreads = detectedCompilerThreads();
 
   return (
     <main className="app-shell">
@@ -928,10 +937,7 @@ function App() {
               <>
                 <div className="subtab-bar" role="tablist" aria-label="Graphics sections">
                   <button className={cx(activeGraphicsTab === "graphics" && "active")} role="tab" aria-selected={activeGraphicsTab === "graphics"} onClick={() => setActiveGraphicsTab("graphics")}>
-                    Graphics
-                  </button>
-                  <button className={cx(activeGraphicsTab === "advanced" && "active")} role="tab" aria-selected={activeGraphicsTab === "advanced"} onClick={() => setActiveGraphicsTab("advanced")}>
-                    Advanced Graphics
+                    Graphics Settings
                   </button>
                   <button className={cx(activeGraphicsTab === "dxvk" && "active")} role="tab" aria-selected={activeGraphicsTab === "dxvk"} onClick={() => setActiveGraphicsTab("dxvk")}>
                     DXVK
@@ -939,65 +945,128 @@ function App() {
                 </div>
 
                 {activeGraphicsTab === "graphics" && (
-                  <Panel title="Graphics">
-                    <SelectRow label="Preset" value="" options={state.presets.map((preset) => ({ value: preset, label: preset }))} placeholder="Choose preset" onChange={applyPreset} />
-                    <SelectRow label="Display Mode" value={String(state.graphics.displayMode)} options={displayModes.map((mode) => ({ value: String(mode.value), label: mode.label }))} onChange={(value) => setConfig("displayMode", Number(value))} />
-                    <TextRow label="Resolution" value={state.graphics.resolution} onCommit={(value) => setConfig("resolution", value)} />
-                    <NumberRow label="Refresh Rate" value={state.graphics.refreshRate} min={1} max={240} onCommit={(value) => setConfig("refreshRate", value)} />
-                    <SliderControl label="FOV" value={state.graphics.fov} min={65} max={120} onCommit={(value) => setConfig("fov", value)} />
-                    <NumberRow label="Max FPS" value={state.graphics.maxFps} min={0} max={1000} onCommit={(value) => setConfig("maxFps", value)} />
-                    <NumberRow label="Render Resolution %" value={state.graphics.renderResolution} min={50} max={200} step={10} onCommit={(value) => setConfig("renderResolution", value)} />
-                    <ToggleRow label="Vertical sync" checked={state.graphics.vsync} onChange={(value) => setConfig("vsync", value)} />
-                    <ToggleRow label="FPS counter" checked={state.graphics.drawFps} onChange={(value) => setConfig("drawFps", value)} />
-                  </Panel>
-                )}
+                  <Panel title="Graphics Settings" className="graphics-settings-panel">
+                    <div className="graphics-settings-shell">
+                      <div className="graphics-quick-grid">
+                        <SelectRow label="Preset" value="" options={state.presets.map((preset) => ({ value: preset, label: preset }))} placeholder="Choose preset" onChange={applyPreset} />
+                        <SelectRow label="Display Mode" value={String(state.graphics.displayMode)} options={displayModes.map((mode) => ({ value: String(mode.value), label: mode.label }))} onChange={(value) => setConfig("displayMode", Number(value))} />
+                        <TextRow label="Resolution" value={state.graphics.resolution} onCommit={(value) => setConfig("resolution", value)} />
+                        <NumberRow label="Refresh Rate" value={state.graphics.refreshRate} min={1} max={240} onCommit={(value) => setConfig("refreshRate", value)} />
+                      </div>
 
-                {activeGraphicsTab === "advanced" && (
-                  <Panel title="Advanced Graphics">
-                    <ToggleRow label="Smooth framerate" checked={state.advanced.smoothFramerate} onChange={(value) => setConfig("smoothFramerate", value)} />
-                    <ToggleRow label="Expose hidden graphics" checked={state.advanced.unlockOptions} onChange={(value) => setConfig("unlockOptions", value)} />
-                    <ToggleRow label="Reduce CPU pressure" checked={state.advanced.reduceCpu} onChange={(value) => setConfig("reduceCpu", value)} />
-                    <NumberRow label="Frame latency" value={state.advanced.maxFrameLatency} min={0} max={4} onCommit={(value) => setConfig("maxFrameLatency", value)} />
-                    <ToggleRow label="Limit VRAM target" checked={state.advanced.vramLimited} onChange={(value) => setVramTarget(value)} />
-                    <NumberRow label="VRAM target %" value={state.advanced.vramTarget} min={75} max={100} disabled={!state.advanced.vramLimited} onCommit={(value) => setVramTarget(true, value)} />
-                    <ToggleRow label="Lock config.ini" checked={state.advanced.configReadonly} onChange={setConfigReadonly} />
+                      <div className="graphics-section-grid">
+                        <section className="graphics-settings-group">
+                          <h3>Performance</h3>
+                          <NumberRow label="Max FPS" value={state.graphics.maxFps} min={0} max={1000} onCommit={(value) => setConfig("maxFps", value)} />
+                          <ToggleRow label="Vertical sync" checked={state.graphics.vsync} onChange={(value) => setConfig("vsync", value)} />
+                          <ToggleRow label="FPS counter" checked={state.graphics.drawFps} onChange={(value) => setConfig("drawFps", value)} />
+                        </section>
+
+                        <section className="graphics-settings-group">
+                          <h3>Quality</h3>
+                          <SliderControl label="Render Resolution" value={state.graphics.renderResolution} min={50} max={200} onCommit={(value) => setConfig("renderResolution", value)} />
+                          <SliderControl label="Field of View" value={state.graphics.fov} min={65} max={120} onCommit={(value) => setConfig("fov", value)} />
+                        </section>
+                      </div>
+
+                      <details className="graphics-advanced-drawer">
+                        <summary>
+                          <span>
+                            <strong>Advanced</strong>
+                            <small>Config, CPU, latency, and VRAM controls</small>
+                          </span>
+                        </summary>
+                        <div className="graphics-advanced-grid">
+                          <ToggleRow label="Smooth framerate" checked={state.advanced.smoothFramerate} onChange={(value) => setConfig("smoothFramerate", value)} />
+                          <ToggleRow label="Expose hidden graphics" checked={state.advanced.unlockOptions} onChange={(value) => setConfig("unlockOptions", value)} />
+                          <ToggleRow label="Reduce CPU pressure" checked={state.advanced.reduceCpu} onChange={(value) => setConfig("reduceCpu", value)} />
+                          <NumberRow label="Frame latency" value={state.advanced.maxFrameLatency} min={0} max={4} onCommit={(value) => setConfig("maxFrameLatency", value)} />
+                          <ToggleRow label="Limit VRAM target" checked={state.advanced.vramLimited} onChange={(value) => setVramTarget(value)} />
+                          <NumberRow label="VRAM target %" value={state.advanced.vramTarget} min={75} max={100} disabled={!state.advanced.vramLimited} onCommit={(value) => setVramTarget(true, value)} />
+                          <ToggleRow label="Lock config.ini" checked={state.advanced.configReadonly} onChange={setConfigReadonly} />
+                        </div>
+                      </details>
+                    </div>
                   </Panel>
                 )}
 
                 {activeGraphicsTab === "dxvk" && (
                   <Panel title="DXVK-GPLAsync" className="dxvk-panel">
-                    <div className="dxvk-head">
-                      <StatusPill label="Status" value={state.dxvk.installed ? "Installed" : "Not installed"} ok={state.dxvk.installed} />
-                      <StatusPill label="dxvk.conf" value={state.dxvk.confExists ? "Configured" : "Missing"} ok={state.dxvk.confExists} />
-                      <div className="button-row dxvk-actions">
-                        <button className="small-button" disabled={busy === "dxvk-install"} onClick={installDxvk}>
-                          <Download size={15} />
-                          Install
-                        </button>
-                        <button className="small-button" disabled={!state.dxvk.installed || busy === "dxvk-uninstall"} onClick={uninstallDxvk}>
-                          <Trash2 size={15} />
-                          Uninstall
-                        </button>
-                        <button className="small-button" disabled={busy === "dxvk-config"} onClick={() => applyDxvkSettings()}>
-                          <Save size={15} />
-                          Apply
-                        </button>
+                    <div className="graphics-settings-shell dxvk-settings-shell">
+                      <div className="dxvk-control-bar">
+                        <StatusPill label="Status" value={state.dxvk.installed ? "Installed" : "Not installed"} ok={state.dxvk.installed} />
+                        <StatusPill label="dxvk.conf" value={state.dxvk.confExists ? "Configured" : "Missing"} ok={state.dxvk.confExists} />
+                        <div className="button-row dxvk-actions">
+                          <button className="small-button" disabled={busy === "dxvk-install"} onClick={installDxvk}>
+                            <Download size={15} />
+                            Install
+                          </button>
+                          <button className="small-button" disabled={!state.dxvk.installed || busy === "dxvk-uninstall"} onClick={uninstallDxvk}>
+                            <Trash2 size={15} />
+                            Uninstall
+                          </button>
+                          <button className="small-button" disabled={busy === "dxvk-config"} onClick={() => applyDxvkSettings()}>
+                            <Save size={15} />
+                            Apply
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="graphics-quick-grid dxvk-quick-grid">
+                        <SelectRow
+                          label="Preset"
+                          value=""
+                          options={Object.keys(dxvkPresets).map((preset) => ({ value: preset, label: preset }))}
+                          placeholder="Choose preset"
+                          onChange={(preset) => setDxvkSettings(dxvkPresets[preset])}
+                        />
+                        <div className="setting-row form-row number-row recommended-row">
+                          <span>Compiler threads</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={64}
+                            value={dxvkSettings.numCompilerThreads}
+                            onChange={(event) => setDxvkSettings((current) => ({ ...current, numCompilerThreads: Number(event.target.value) }))}
+                            onBlur={() => setDxvkSettings((current) => ({ ...current, numCompilerThreads: Math.max(0, Math.min(64, current.numCompilerThreads)) }))}
+                          />
+                          <button
+                            type="button"
+                            className="recommended-chip"
+                            onClick={() => setDxvkSettings((current) => ({ ...current, numCompilerThreads: 0 }))}
+                            title={dxvkDetectedThreads ? `Auto uses about ${dxvkDetectedThreads} compiler threads on this ${navigator.hardwareConcurrency}-thread CPU` : "Auto lets DXVK choose compiler threads"}
+                          >
+                            Recommended: Auto (0)
+                          </button>
+                          {dxvkDetectedThreads && (
+                            <button
+                              type="button"
+                              className="recommended-chip secondary"
+                              onClick={() => setDxvkSettings((current) => ({ ...current, numCompilerThreads: dxvkDetectedThreads }))}
+                              title={`${navigator.hardwareConcurrency} logical CPU cores detected`}
+                            >
+                              Manual: {dxvkDetectedThreads}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="graphics-section-grid">
+                        <section className="graphics-settings-group">
+                          <h3>Shader Pipeline</h3>
+                          <ToggleRow label="Async shader compilation" checked={dxvkSettings.enableAsync} onChange={(value) => setDxvkSettings((current) => ({ ...current, enableAsync: value }))} />
+                          <ToggleRow label="GPL async cache" checked={dxvkSettings.gplAsyncCache} onChange={(value) => setDxvkSettings((current) => ({ ...current, gplAsyncCache: value }))} />
+                          <ToggleRow label="FPS/GPU HUD" checked={dxvkSettings.hudEnabled} onChange={(value) => setDxvkSettings((current) => ({ ...current, hudEnabled: value }))} />
+                        </section>
+
+                        <section className="graphics-settings-group">
+                          <h3>Frame Pacing</h3>
+                          <SliderControl label="Frame rate cap" value={dxvkSettings.maxFrameRate} min={0} max={360} onCommit={(value) => setDxvkSettings((current) => ({ ...current, maxFrameRate: value }))} />
+                          <NumberRow label="Frame latency" value={dxvkSettings.maxFrameLatency} min={0} max={16} onCommit={(value) => setDxvkSettings((current) => ({ ...current, maxFrameLatency: value }))} />
+                          <SelectRow label="Tear Free" value={dxvkSettings.tearFree} options={["Auto", "True", "False"].map((item) => ({ value: item, label: item }))} onChange={(value) => setDxvkSettings((current) => ({ ...current, tearFree: value }))} />
+                        </section>
                       </div>
                     </div>
-                    <SelectRow
-                      label="Preset"
-                      value=""
-                      options={Object.keys(dxvkPresets).map((preset) => ({ value: preset, label: preset }))}
-                      placeholder="Choose preset"
-                      onChange={(preset) => setDxvkSettings(dxvkPresets[preset])}
-                    />
-                    <ToggleRow label="Async shader compilation" checked={dxvkSettings.enableAsync} onChange={(value) => setDxvkSettings((current) => ({ ...current, enableAsync: value }))} />
-                    <ToggleRow label="GPL async cache" checked={dxvkSettings.gplAsyncCache} onChange={(value) => setDxvkSettings((current) => ({ ...current, gplAsyncCache: value }))} />
-                    <ToggleRow label="FPS/GPU HUD" checked={dxvkSettings.hudEnabled} onChange={(value) => setDxvkSettings((current) => ({ ...current, hudEnabled: value }))} />
-                    <NumberRow label="Compiler threads" value={dxvkSettings.numCompilerThreads} min={0} max={64} onCommit={(value) => setDxvkSettings((current) => ({ ...current, numCompilerThreads: value }))} />
-                    <SliderControl label="Frame rate cap" value={dxvkSettings.maxFrameRate} min={0} max={360} onCommit={(value) => setDxvkSettings((current) => ({ ...current, maxFrameRate: value }))} />
-                    <NumberRow label="Frame latency" value={dxvkSettings.maxFrameLatency} min={0} max={16} onCommit={(value) => setDxvkSettings((current) => ({ ...current, maxFrameLatency: value }))} />
-                    <SelectRow label="Tear Free" value={dxvkSettings.tearFree} options={["Auto", "True", "False"].map((item) => ({ value: item, label: item }))} onChange={(value) => setDxvkSettings((current) => ({ ...current, tearFree: value }))} />
                   </Panel>
                 )}
               </>
@@ -1306,7 +1375,11 @@ function SliderControl({ label, value, min, max, onCommit }: { label: string; va
   );
 }
 
-createRoot(document.getElementById("root")!).render(
+const rootElement = document.getElementById("root")! as HTMLElement & { _patchOpsRoot?: ReturnType<typeof createRoot> };
+const root = rootElement._patchOpsRoot ?? createRoot(rootElement);
+rootElement._patchOpsRoot = root;
+
+root.render(
   <React.StrictMode>
     <App />
   </React.StrictMode>
