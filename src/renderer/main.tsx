@@ -92,7 +92,6 @@ const gamertagColors = [
   { code: "^4", label: "Blue", swatch: "#5ac8fa" },
   { code: "^5", label: "Cyan", swatch: "#64d2ff" },
   { code: "^6", label: "Pink", swatch: "#ff2d55" },
-  { code: "^7", label: "White", swatch: "#ffffff" },
   { code: "^8", label: "Mid Blue", swatch: "#0a84ff" },
   { code: "^9", label: "Cinnabar", swatch: "#ff6b35" },
   { code: "^0", label: "Black", swatch: "#151518" }
@@ -312,6 +311,8 @@ function App() {
   const [t7Gamertag, setT7Gamertag] = useState("");
   const [t7ColorCode, setT7ColorCode] = useState("");
   const [t7Password, setT7Password] = useState("");
+  const [t7NetworkPasswordEnabled, setT7NetworkPasswordEnabled] = useState(false);
+  const [t7PasswordTouched, setT7PasswordTouched] = useState(false);
   const [showT7Password, setShowT7Password] = useState(false);
   const [showT7PasswordEdit, setShowT7PasswordEdit] = useState(false);
   const [enhancedDumpSource, setEnhancedDumpSource] = useState("");
@@ -471,6 +472,22 @@ function App() {
       apiRequest<ApiResult>("/api/t7-config", {
         method: "POST",
         body: JSON.stringify({ networkPassword: t7Password })
+      })
+    );
+    setT7PasswordTouched(false);
+  }
+
+  async function updateT7NetworkPasswordEnabled(enabled: boolean) {
+    setT7NetworkPasswordEnabled(enabled);
+    setError(null);
+    if (enabled) {
+      return;
+    }
+    setT7PasswordTouched(true);
+    await runAction("t7-password-toggle", () =>
+      apiRequest<ApiResult>("/api/t7-config", {
+        method: "POST",
+        body: JSON.stringify({ networkPassword: "" })
       })
     );
   }
@@ -729,8 +746,11 @@ function App() {
     }
     setT7Gamertag(state.t7.plainName);
     setT7ColorCode(state.t7.colorCode);
-    setT7Password(state.t7.networkPassword);
-  }, [state?.t7]);
+    if (!t7PasswordTouched) {
+      setT7Password(state.t7.networkPassword);
+      setT7NetworkPasswordEnabled(Boolean(state.t7.networkPassword));
+    }
+  }, [state?.t7, t7PasswordTouched]);
 
   useEffect(() => {
     if (state?.enhanced.dumpSource !== undefined) {
@@ -752,6 +772,9 @@ function App() {
         : state?.launchProfiles.find((item) => item.id === state.activeLaunchProfile)?.label;
   const selectedLaunchProfile = state?.launchProfiles.find((profile) => profile.id === selectedProfile);
   const selectedProfileInstallable = Boolean(selectedLaunchProfile && selectedLaunchProfile.id !== "default" && selectedLaunchProfile.id !== "offline");
+  const selectedT7Color = gamertagColors.find((color) => color.code === t7ColorCode) ?? gamertagColors[0];
+  const t7PreviewName = t7Gamertag.trim() || state?.t7.plainName || "None";
+  const t7PasswordControlsDisabled = !state?.t7.confExists || !t7NetworkPasswordEnabled;
   const dxvkDetectedThreads = detectedCompilerThreads();
   const backendReady = backendStatus === "ready";
 
@@ -885,36 +908,32 @@ function App() {
           )}
 
             {activeView === "t7" && state && (
-              <Panel title="T7 Patch" className="t7-panel">
-                <div className="t7-layout">
-                  <div className="t7-summary">
+              <>
+                <Panel title="T7 Patch" className="t7-overview-panel">
+                  <div className="t7-overview-grid">
                     <ModuleRow icon={ShieldCheck} title="T7 Patch" active={state.t7.installed} />
                     <StatusPill label="Config" value={state.t7.confExists ? "t7patch.conf found" : "Config missing"} ok={state.t7.confExists} />
                     <StatusPill label="Game Mode" value={state.t7.mode} ok={state.t7.mode !== "Unknown"} />
+                    <div className="t7-actions">
+                      <button className="tool-button primary" disabled={busy === "t7-install"} onClick={installT7Patch}>
+                        <Download size={16} />
+                        Install / Update T7 Patch
+                      </button>
+                      <button className="tool-button" disabled={!state.t7.installed || busy === "t7-uninstall"} onClick={uninstallT7Patch}>
+                        <Trash2 size={16} />
+                        Uninstall T7 Patch
+                      </button>
+                    </div>
                   </div>
+                </Panel>
 
-                  <div className="t7-actions">
-                    <button className="tool-button primary" disabled={busy === "t7-install"} onClick={installT7Patch}>
-                      <Download size={16} />
-                      Install / Update T7 Patch
-                    </button>
-                    <button className="tool-button" disabled={!state.t7.installed || busy === "t7-uninstall"} onClick={uninstallT7Patch}>
-                      <Trash2 size={16} />
-                      Uninstall T7 Patch
-                    </button>
-                  </div>
-
-                  <div className="t7-settings-grid">
-                    <section className="settings-block">
-                      <h3>
-                        <UserRound size={16} />
-                        Gamertag
-                      </h3>
+                <div className="t7-dashboard-split">
+                  <Panel title="Gamertag" className="t7-gamertag-panel">
+                    <div className="t7-card-content">
+                      <div className="gamertag-preview">
+                        <strong style={{ color: selectedT7Color.swatch }}>{t7PreviewName}</strong>
+                      </div>
                       <div className="field-grid">
-                        <label>
-                          Current
-                          <input readOnly value={state.t7.plainName || "None"} />
-                        </label>
                         <label>
                           Name
                           <input value={t7Gamertag} onChange={(event) => setT7Gamertag(event.target.value)} disabled={!state.t7.confExists} maxLength={20} />
@@ -938,19 +957,45 @@ function App() {
                         <Save size={15} />
                         Update Gamertag
                       </button>
-                    </section>
+                    </div>
+                  </Panel>
 
-                    <section className="settings-block">
-                      <h3>
-                        <KeyRound size={16} />
-                        Network
-                      </h3>
+                  <Panel title="Security" className="t7-network-panel">
+                    <div className="t7-card-content">
+                      <div className="setting-row compact-setting">
+                        <span>Friends Only Mode</span>
+                        <Toggle label="Friends Only Mode" checked={state.t7.friendsOnly} disabled={!state.t7.confExists} onChange={updateT7FriendsOnly} />
+                      </div>
+                      <div
+                        className="setting-row compact-setting clickable-setting"
+                        role="button"
+                        tabIndex={state.t7.confExists && busy !== "t7-password-toggle" ? 0 : -1}
+                        onClick={() => {
+                          if (state.t7.confExists && busy !== "t7-password-toggle") {
+                            void updateT7NetworkPasswordEnabled(!t7NetworkPasswordEnabled);
+                          }
+                        }}
+                        onKeyDown={(event) => {
+                          if ((event.key === "Enter" || event.key === " ") && state.t7.confExists && busy !== "t7-password-toggle") {
+                            event.preventDefault();
+                            void updateT7NetworkPasswordEnabled(!t7NetworkPasswordEnabled);
+                          }
+                        }}
+                      >
+                        <span>Network Password</span>
+                        <Toggle
+                          label="Network Password"
+                          checked={t7NetworkPasswordEnabled}
+                          disabled={!state.t7.confExists || busy === "t7-password-toggle"}
+                          onChange={updateT7NetworkPasswordEnabled}
+                        />
+                      </div>
                       <div className="field-grid">
                         <label>
                           Current Password
                           <div className="input-action">
-                            <input readOnly type={showT7Password ? "text" : "password"} value={state.t7.networkPassword} placeholder="None" />
-                            <button type="button" className="icon-action" onClick={() => setShowT7Password((current) => !current)} title={showT7Password ? "Hide password" : "Show password"}>
+                            <input readOnly disabled={t7PasswordControlsDisabled} type={showT7Password ? "text" : "password"} value={state.t7.networkPassword} placeholder="None" />
+                            <button type="button" className="icon-action" disabled={t7PasswordControlsDisabled} onClick={() => setShowT7Password((current) => !current)} title={showT7Password ? "Hide password" : "Show password"}>
                               <KeyRound size={15} />
                             </button>
                           </div>
@@ -958,25 +1003,24 @@ function App() {
                         <label>
                           Password
                           <div className="input-action">
-                            <input type={showT7PasswordEdit ? "text" : "password"} value={t7Password} onChange={(event) => setT7Password(event.target.value)} placeholder="Enter network password" />
-                            <button type="button" className="icon-action" onClick={() => setShowT7PasswordEdit((current) => !current)} title={showT7PasswordEdit ? "Hide password" : "Show password"}>
+                            <input disabled={t7PasswordControlsDisabled} type={showT7PasswordEdit ? "text" : "password"} value={t7Password} onChange={(event) => {
+                              setT7Password(event.target.value);
+                              setT7PasswordTouched(true);
+                            }} placeholder="Enter network password" />
+                            <button type="button" className="icon-action" disabled={t7PasswordControlsDisabled} onClick={() => setShowT7PasswordEdit((current) => !current)} title={showT7PasswordEdit ? "Hide password" : "Show password"}>
                               <KeyRound size={15} />
                             </button>
                           </div>
                         </label>
                       </div>
-                      <div className="setting-row compact-setting">
-                        <span>Friends Only Mode</span>
-                        <Toggle checked={state.t7.friendsOnly} disabled={!state.t7.confExists} onChange={updateT7FriendsOnly} />
-                      </div>
-                      <button className="small-button action-button" disabled={busy === "t7-password"} onClick={updateT7Password}>
+                      <button className="small-button action-button" disabled={!state.t7.confExists || !t7NetworkPasswordEnabled || busy === "t7-password"} onClick={updateT7Password}>
                         <Save size={15} />
-                        Update Password
+                        Update Security
                       </button>
-                    </section>
-                  </div>
+                    </div>
+                  </Panel>
                 </div>
-              </Panel>
+              </>
             )}
 
             {activeView === "enhanced" && (
