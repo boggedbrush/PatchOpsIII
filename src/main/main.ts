@@ -14,6 +14,14 @@ let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcessWithoutNullStreams | null = null;
 let stoppingBackend = false;
 
+function windowIconPath() {
+  const candidates =
+    process.platform === "win32"
+      ? [path.join(appRoot, "PatchOpsIII.ico")]
+      : [path.join(appRoot, "icon-512.png"), path.join(appRoot, "website", "assets", "img", "icon-512.png")];
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
 function sendWindowState() {
   mainWindow?.webContents.send("desktop:window-state", {
     maximized: mainWindow.isMaximized()
@@ -119,6 +127,7 @@ async function createWindow() {
     titleBarStyle: isMac ? "hiddenInset" : isWindows ? "hidden" : "default",
     titleBarOverlay: isWindows ? { color: "#00000000", symbolColor: "#f6f6f6", height: 32 } : undefined,
     trafficLightPosition: isMac ? { x: 18, y: 16 } : undefined,
+    icon: windowIconPath(),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,

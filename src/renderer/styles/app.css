@@ -7,8 +7,8 @@
   --app-gap: clamp(10px, 0.82vw, 20px);
   --panel-gap: clamp(12px, 0.86vw, 22px);
   --content-max: 100%;
-  --titlebar-height: clamp(36px, 3.4vh, 46px);
-  --titlebar-content-top: 4px;
+  --titlebar-height: 32px;
+  --titlebar-content-top: 5px;
   --ui-font: clamp(14px, calc(10px + 0.16vw + 0.22vh), 20px);
   --font-xs: clamp(12px, 0.76em, 15px);
   --font-sm: clamp(13px, 0.86em, 17px);
@@ -203,17 +203,17 @@ img {
   app-region: no-drag;
   -webkit-app-region: no-drag;
   position: absolute;
-  left: 8px;
+  left: 10px;
   top: 0;
   z-index: 2;
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
   height: var(--titlebar-height);
   width: max-content;
   max-width: calc(100% - 320px);
   min-width: 0;
-  padding: var(--titlebar-content-top) 0 0;
+  padding: 0;
   transform: none;
   justify-content: center;
 }
@@ -225,25 +225,25 @@ img {
 }
 
 .titlebar-logo {
-  width: clamp(24px, 1.5em, 32px);
-  height: clamp(24px, 1.5em, 32px);
+  width: 18px;
+  height: 18px;
   flex: 0 0 auto;
-  border-radius: 6px;
+  border-radius: 4px;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
 
 .titlebar-copy {
   display: flex;
   align-items: center;
-  gap: 9px;
-  min-height: 28px;
+  gap: 8px;
+  min-height: 18px;
   min-width: 0;
   white-space: nowrap;
 }
 
 .titlebar-copy strong {
-  font-size: clamp(15px, 0.72em, 18px);
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 400;
   line-height: 1;
   letter-spacing: 0;
 }
@@ -262,15 +262,15 @@ img {
   align-self: center;
   display: inline-grid;
   place-items: center;
-  width: clamp(52px, 3.4vw, 78px);
-  height: clamp(28px, 2.6vh, 34px);
+  width: 48px;
+  height: 20px;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--muted);
   padding: 0;
-  font-size: clamp(11px, 0.62em, 15px);
-  font-weight: 760;
+  font-size: 11px;
+  font-weight: 700;
   line-height: 1;
   app-region: no-drag;
   -webkit-app-region: no-drag;
@@ -2059,7 +2059,7 @@ img {
   }
 
   .titlebar-copy strong {
-    font-size: 15px;
+    font-size: 13px;
   }
 
   .titlebar-update {
@@ -2079,8 +2079,8 @@ img {
   }
 
   .titlebar-logo {
-    width: 22px;
-    height: 22px;
+    width: 18px;
+    height: 18px;
   }
 
   .window-controls {
@@ -2321,12 +2321,12 @@ img {
   }
 
   .titlebar-copy strong {
-    font-size: 16px;
+    font-size: 13px;
   }
 
   .titlebar-logo {
-    width: 24px;
-    height: 24px;
+    width: 18px;
+    height: 18px;
   }
 
   .main-grid {

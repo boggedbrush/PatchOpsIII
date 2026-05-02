@@ -42,6 +42,14 @@
       {
         "from": "presets.json",
         "to": "presets.json"
+      },
+      {
+        "from": "PatchOpsIII.ico",
+        "to": "PatchOpsIII.ico"
+      },
+      {
+        "from": "website/assets/img/icon-512.png",
+        "to": "icon-512.png"
       }
     ],
     "win": {
