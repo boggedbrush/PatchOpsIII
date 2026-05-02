@@ -18,6 +18,7 @@ from typing import Any
 
 import requests
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -134,6 +135,10 @@ class LogBus:
 class ApiLogTarget:
     def __init__(self, bus: LogBus) -> None:
         self.bus = bus
+        self.loop: asyncio.AbstractEventLoop | None = None
+
+    def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        self.loop = loop
 
     def handle_write_log(self, *, full_message: str, category: str, plain_message: str, **_: str) -> None:
         entry = {"message": plain_message, "category": category, "line": full_message}
@@ -141,7 +146,10 @@ class ApiLogTarget:
             loop = asyncio.get_running_loop()
             loop.create_task(self.bus.publish(entry))
         except RuntimeError:
-            self.bus._recent.append(entry)
+            if self.loop and self.loop.is_running():
+                self.loop.call_soon_threadsafe(lambda: self.loop and self.loop.create_task(self.bus.publish(entry)))
+            else:
+                self.bus._recent.append(entry)
 
 
 log_bus = LogBus()
@@ -223,16 +231,55 @@ class PresetPayload(BaseModel):
     name: str
 
 
-def _load_settings() -> dict[str, Any]:
+_settings_cache: tuple[float | None, dict[str, Any]] | None = None
+_game_dir_cache: tuple[float | None, str | None] | None = None
+_preset_names_cache: tuple[float | None, list[str]] | None = None
+_presets_cache: tuple[float | None, dict[str, Any]] | None = None
+
+
+def _file_mtime(path: Path) -> float | None:
     try:
-        return json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+        return path.stat().st_mtime
+    except OSError:
+        return None
+
+
+async def _blocking(func, /, *args, **kwargs):
+    return await run_in_threadpool(func, *args, **kwargs)
+
+
+async def _current_state_async() -> dict[str, Any]:
+    return await _blocking(_current_state)
+
+
+async def _find_game_directory_async() -> str | None:
+    return await _blocking(_find_game_directory)
+
+
+async def _config_path_async(game_dir: str | None = None) -> Path | None:
+    return await _blocking(_config_path, game_dir)
+
+
+def _load_settings() -> dict[str, Any]:
+    global _settings_cache
+    mtime = _file_mtime(SETTINGS_PATH)
+    if _settings_cache and _settings_cache[0] == mtime:
+        return dict(_settings_cache[1])
+    try:
+        loaded = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+        settings = loaded if isinstance(loaded, dict) else {}
     except Exception:
-        return {}
+        settings = {}
+    _settings_cache = (mtime, dict(settings))
+    return settings
 
 
 def _save_settings(settings: dict[str, Any]) -> None:
+    global _settings_cache, _game_dir_cache
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     SETTINGS_PATH.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+    _settings_cache = (_file_mtime(SETTINGS_PATH), dict(settings))
+    _game_dir_cache = None
 
 
 def _has_game_executable(directory: str | Path | None) -> bool:
@@ -243,14 +290,26 @@ def _has_game_executable(directory: str | Path | None) -> bool:
 
 
 def _find_game_directory() -> str | None:
+    global _game_dir_cache
+    settings_mtime = _file_mtime(SETTINGS_PATH)
+    if _game_dir_cache and _game_dir_cache[0] == settings_mtime:
+        cached = _game_dir_cache[1]
+        if cached is None or _has_game_executable(cached):
+            return cached
+        _game_dir_cache = None
+
     saved = _load_settings().get("game_dir")
     if isinstance(saved, str) and _has_game_executable(saved):
-        return str(Path(saved))
+        found = str(Path(saved))
+        _game_dir_cache = (settings_mtime, found)
+        return found
 
     for library in get_steam_library_paths():
         candidate = Path(library) / "steamapps" / "common" / "Call of Duty Black Ops III"
         if _has_game_executable(candidate):
-            return str(candidate)
+            found = str(candidate)
+            _game_dir_cache = (settings_mtime, found)
+            return found
 
     system = platform.system()
     home = Path.home()
@@ -273,7 +332,10 @@ def _find_game_directory() -> str | None:
         )
     for candidate in candidates:
         if _has_game_executable(candidate):
-            return str(candidate)
+            found = str(candidate)
+            _game_dir_cache = (settings_mtime, found)
+            return found
+    _game_dir_cache = (settings_mtime, None)
     return None
 
 
@@ -318,18 +380,23 @@ def _config_bool(content: str, key: str, enabled_value: str = "1", default: str 
 
 
 def _write_config_value(game_dir: str, key: str, value: str | int | float | bool, comment: str) -> None:
+    _write_config_values(game_dir, [(key, value, comment)])
+    write_log(f"Set {key} to {value}.", "Success", log_target)
+
+
+def _write_config_values(game_dir: str, updates: list[tuple[str, str | int | float | bool, str]]) -> None:
     config = _config_path(game_dir)
     if not config or not config.exists():
         raise FileNotFoundError(f"config.ini not found at {config}")
     text = config.read_text(encoding="utf-8", errors="ignore")
-    replacement = f'{key} = "{value}" // {comment}'
-    pattern = re.compile(rf'^\s*{re.escape(key)}\s*=.*$', re.MULTILINE)
-    if pattern.search(text):
-        text = pattern.sub(replacement, text)
-    else:
-        text = f"{text.rstrip()}\n{replacement}\n"
+    for key, value, comment in updates:
+        replacement = f'{key} = "{value}" // {comment}'
+        pattern = re.compile(rf'^\s*{re.escape(key)}\s*=.*$', re.MULTILINE)
+        if pattern.search(text):
+            text = pattern.sub(replacement, text)
+        else:
+            text = f"{text.rstrip()}\n{replacement}\n"
     config.write_text(text, encoding="utf-8")
-    write_log(f"Set {key} to {value}.", "Success", log_target)
 
 
 def _config_is_readonly(game_dir: str | None) -> bool:
@@ -338,11 +405,28 @@ def _config_is_readonly(game_dir: str | None) -> bool:
 
 
 def _preset_names() -> list[str]:
+    global _preset_names_cache
+    mtime = _file_mtime(PRESETS_PATH)
+    if _preset_names_cache and _preset_names_cache[0] == mtime:
+        return list(_preset_names_cache[1])
     try:
-        data = json.loads(PRESETS_PATH.read_text(encoding="utf-8"))
+        data = _load_presets()
     except Exception:
         return []
-    return list(data.keys()) if isinstance(data, dict) else []
+    names = list(data.keys()) if isinstance(data, dict) else []
+    _preset_names_cache = (mtime, list(names))
+    return names
+
+
+def _load_presets() -> dict[str, Any]:
+    global _presets_cache
+    mtime = _file_mtime(PRESETS_PATH)
+    if _presets_cache and _presets_cache[0] == mtime:
+        return dict(_presets_cache[1])
+    data = json.loads(PRESETS_PATH.read_text(encoding="utf-8"))
+    presets = data if isinstance(data, dict) else {}
+    _presets_cache = (mtime, dict(presets))
+    return presets
 
 
 def _qol_status(game_dir: str | None) -> dict[str, bool]:
@@ -967,6 +1051,27 @@ def _directory_entries(directory: Path) -> list[dict[str, Any]]:
     return entries[:300]
 
 
+def _browse_payload(path: str | None = None) -> dict[str, Any]:
+    selected = path or _load_settings().get("game_dir") or str(Path.home())
+    try:
+        current = Path(str(selected)).expanduser()
+        if not current.exists() or not current.is_dir():
+            current = Path.home()
+        current = current.resolve()
+    except Exception:
+        current = Path.home().resolve()
+
+    parent = current.parent if current.parent != current else None
+    return {
+        "path": str(current),
+        "parent": str(parent) if parent else None,
+        "hasGameExecutable": _has_game_executable(current),
+        "roots": _browse_roots(),
+        "shortcuts": _browse_shortcuts(),
+        "entries": _directory_entries(current),
+    }
+
+
 def _restore_backup(target: Path, success_message: str) -> bool:
     backup = existing_backup_path(str(target))
     if backup and os.path.exists(backup):
@@ -1027,18 +1132,21 @@ def _reset_to_stock(game_dir: str) -> None:
     except Exception as exc:
         write_log(f"Quality of Life reset step failed: {exc}", "Warning", log_target)
 
-    for key, value, comment in (
-        ("SmoothFramerate", "0", "0 or 1"),
-        ("VideoMemory", "1", "0.75 to 1"),
-        ("StreamMinResident", "0", "0 or 1"),
-        ("MaxFrameLatency", "1", "0 to 4"),
-        ("SerializeRender", "0", "0 to 2"),
-        ("RestrictGraphicsOptions", "1", "0 or 1"),
-    ):
-        try:
-            _write_config_value(game_dir, key, value, comment)
-        except Exception as exc:
-            write_log(f"Failed to reset {key}: {exc}", "Warning", log_target)
+    try:
+        _write_config_values(
+            game_dir,
+            [
+                ("SmoothFramerate", "0", "0 or 1"),
+                ("VideoMemory", "1", "0.75 to 1"),
+                ("StreamMinResident", "0", "0 or 1"),
+                ("MaxFrameLatency", "1", "0 to 4"),
+                ("SerializeRender", "0", "0 to 2"),
+                ("RestrictGraphicsOptions", "1", "0 or 1"),
+            ],
+        )
+        write_log("Reset stock graphics and advanced config values.", "Success", log_target)
+    except Exception as exc:
+        write_log(f"Config reset step failed: {exc}", "Warning", log_target)
 
     try:
         apply_launch_options("", log_target)
@@ -1059,9 +1167,37 @@ def _log_payload() -> str:
     return f"PatchOpsIII {APP_VERSION} - {platform_label} logs:\n```\n{body or '(no log entries found)'}\n```"
 
 
+def _clear_mod_files() -> None:
+    MOD_FILES_DIR.mkdir(parents=True, exist_ok=True)
+    for item in MOD_FILES_DIR.iterdir():
+        if item.is_dir():
+            shutil.rmtree(item)
+        else:
+            item.unlink()
+    write_log(f"Cleared mod files in {MOD_FILES_DIR}", "Success", log_target)
+
+
+def _apply_preset_values(game_dir: str, preset_name: str) -> None:
+    presets = _load_presets()
+    preset = presets[preset_name]
+    updates: list[tuple[str, str | int | float | bool, str]] = []
+    for key, item in preset.items():
+        if key == "ReduceStutter":
+            dll = Path(game_dir) / "d3dcompiler_46.dll"
+            backup = Path(patchops_backup_path(str(dll)))
+            if str(item[0]) == "1" and dll.exists() and not backup.exists():
+                dll.rename(backup)
+            continue
+        value, comment = item
+        updates.append((key, value, comment))
+    if updates:
+        _write_config_values(game_dir, updates)
+    write_log(f"Applied preset '{preset_name}'.", "Success", log_target)
+
+
 @app.on_event("startup")
 async def startup() -> None:
-    pass
+    log_target.set_loop(asyncio.get_running_loop())
 
 
 @app.get("/api/health")
@@ -1071,29 +1207,12 @@ async def health() -> dict[str, Any]:
 
 @app.get("/api/status")
 async def status() -> dict[str, Any]:
-    return _current_state()
+    return await _current_state_async()
 
 
 @app.get("/api/browse")
 async def browse(path: str | None = None) -> dict[str, Any]:
-    selected = path or _load_settings().get("game_dir") or str(Path.home())
-    try:
-        current = Path(str(selected)).expanduser()
-        if not current.exists() or not current.is_dir():
-            current = Path.home()
-        current = current.resolve()
-    except Exception:
-        current = Path.home().resolve()
-
-    parent = current.parent if current.parent != current else None
-    return {
-        "path": str(current),
-        "parent": str(parent) if parent else None,
-        "hasGameExecutable": _has_game_executable(current),
-        "roots": _browse_roots(),
-        "shortcuts": _browse_shortcuts(),
-        "entries": _directory_entries(current),
-    }
+    return await _blocking(_browse_payload, path)
 
 
 @app.post("/api/game-directory")
@@ -1105,12 +1224,12 @@ async def set_game_directory(payload: GameDirectoryPayload) -> dict[str, Any]:
     settings["game_dir"] = str(Path(payload.path))
     _save_settings(settings)
     write_log(f"Game directory set to {payload.path}", "Success", log_target)
-    return {"ok": True, "state": _current_state()}
+    return {"ok": True, "state": await _current_state_async()}
 
 
 @app.post("/api/launch")
 async def launch_game() -> dict[str, Any]:
-    launch_game_via_steam(app_id, log_target)
+    await _blocking(launch_game_via_steam, app_id, log_target)
     return {"ok": True}
 
 
@@ -1119,9 +1238,9 @@ async def launch_options(payload: LaunchOptionsPayload) -> dict[str, Any]:
     if payload.options not in SUPPORTED_LAUNCH_OPTIONS:
         error = "Unsupported launch option."
         write_log(error, "Warning", log_target)
-        return {"ok": False, "error": error, "state": _current_state()}
-    ok = apply_launch_options(payload.options, log_target, preserve_fs_game=payload.preserve_fs_game)
-    return {"ok": bool(ok), "state": _current_state()}
+        return {"ok": False, "error": error, "state": await _current_state_async()}
+    ok = await _blocking(apply_launch_options, payload.options, log_target, preserve_fs_game=payload.preserve_fs_game)
+    return {"ok": bool(ok), "state": await _current_state_async()}
 
 
 @app.post("/api/workshop-install")
@@ -1130,27 +1249,27 @@ async def workshop_install(payload: WorkshopInstallPayload) -> dict[str, Any]:
     if not profile:
         return {"ok": False, "error": "Select an installable Workshop mod."}
     try:
-        ok = apply_launch_options(profile["launch_option"], log_target, preserve_fs_game=False)
+        ok = await _blocking(apply_launch_options, profile["launch_option"], log_target, preserve_fs_game=False)
         if not ok:
             return {"ok": False, "error": "Failed to apply launch options."}
         url = f"steam://openurl/https://steamcommunity.com/sharedfiles/filedetails/?id={profile['workshop_id']}"
-        _open_external_url(url)
+        await _blocking(_open_external_url, url)
         write_log(f"Opened {profile['name']} Workshop page in Steam.", "Info", log_target)
     except Exception as exc:
         write_log(f"Workshop install flow failed: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "state": _current_state()}
+    return {"ok": True, "state": await _current_state_async()}
 
 
 @app.post("/api/update-check")
 async def update_check() -> dict[str, Any]:
     try:
-        result = _check_for_update()
+        result = await _blocking(_check_for_update)
         if result["available"]:
             write_log(f"Update available: {result['latestVersion']}", "Success", log_target)
         else:
             write_log("No updates available.", "Info", log_target)
-        return {"ok": True, "update": result, "state": _current_state()}
+        return {"ok": True, "update": result, "state": await _current_state_async()}
     except Exception as exc:
         write_log(f"Update check failed: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
@@ -1158,59 +1277,59 @@ async def update_check() -> dict[str, Any]:
 
 @app.post("/api/config")
 async def set_config(payload: ConfigValuePayload) -> dict[str, Any]:
-    game_dir = _find_game_directory()
+    game_dir = await _find_game_directory_async()
     if not game_dir:
         return {"ok": False, "error": "Game directory is not set."}
     try:
-        _write_config_value(game_dir, payload.key, payload.value, payload.comment)
+        await _blocking(_write_config_value, game_dir, payload.key, payload.value, payload.comment)
     except Exception as exc:
         write_log(str(exc), "Error", log_target)
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "state": _current_state()}
+    return {"ok": True, "state": await _current_state_async()}
 
 
 @app.post("/api/dxvk-install")
 async def install_dxvk(payload: DxvkConfigPayload) -> dict[str, Any]:
-    game_dir = _find_game_directory()
+    game_dir = await _find_game_directory_async()
     if not game_dir:
         return {"ok": False, "error": "Game directory is not set."}
     try:
-        _install_dxvk(game_dir, payload)
+        await _blocking(_install_dxvk, game_dir, payload)
     except Exception as exc:
         write_log(f"DXVK-GPLAsync install failed: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "state": _current_state()}
+    return {"ok": True, "state": await _current_state_async()}
 
 
 @app.post("/api/dxvk-uninstall")
 async def uninstall_dxvk() -> dict[str, Any]:
-    game_dir = _find_game_directory()
+    game_dir = await _find_game_directory_async()
     if not game_dir:
         return {"ok": False, "error": "Game directory is not set."}
     try:
-        _uninstall_dxvk(game_dir)
+        await _blocking(_uninstall_dxvk, game_dir)
     except Exception as exc:
         write_log(f"DXVK-GPLAsync uninstall failed: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "state": _current_state()}
+    return {"ok": True, "state": await _current_state_async()}
 
 
 @app.post("/api/dxvk-config")
 async def dxvk_config(payload: DxvkConfigPayload) -> dict[str, Any]:
-    game_dir = _find_game_directory()
+    game_dir = await _find_game_directory_async()
     if not game_dir:
         return {"ok": False, "error": "Game directory is not set."}
     try:
-        _write_dxvk_conf(game_dir, _dxvk_payload_to_settings(payload))
+        await _blocking(_write_dxvk_conf, game_dir, _dxvk_payload_to_settings(payload))
     except Exception as exc:
         write_log(f"Failed to update DXVK settings: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "state": _current_state()}
+    return {"ok": True, "state": await _current_state_async()}
 
 
 @app.post("/api/t7-config")
 async def set_t7_config(payload: T7ConfigPayload) -> dict[str, Any]:
-    game_dir = _find_game_directory()
+    game_dir = await _find_game_directory_async()
     if not game_dir:
         return {"ok": False, "error": "Game directory is not set."}
 
@@ -1224,104 +1343,93 @@ async def set_t7_config(payload: T7ConfigPayload) -> dict[str, Any]:
                 return {"ok": False, "error": "Gamertag cannot be empty."}
             if len(plain_name) > 20:
                 return {"ok": False, "error": "Gamertag cannot exceed 20 characters."}
-            update_t7patch_conf(game_dir, new_name=f"{payload.colorCode}{plain_name}", log_widget=log_target)
+            await _blocking(update_t7patch_conf, game_dir, new_name=f"{payload.colorCode}{plain_name}", log_widget=log_target)
 
         if payload.networkPassword is not None:
             password = payload.networkPassword.strip()
             if not t7_conf.exists():
                 return {"ok": False, "error": "t7patch.conf was not found. Install T7 Patch before changing the network password."}
-            update_t7patch_conf(game_dir, new_password=password, log_widget=log_target)
+            await _blocking(update_t7patch_conf, game_dir, new_password=password, log_widget=log_target)
 
         if payload.friendsOnly is not None:
             if not t7_conf.exists():
                 return {"ok": False, "error": "t7patch.conf was not found. Install T7 Patch before changing Friends Only mode."}
-            update_t7patch_conf(game_dir, friends_only=payload.friendsOnly, log_widget=log_target)
+            await _blocking(update_t7patch_conf, game_dir, friends_only=payload.friendsOnly, log_widget=log_target)
     except Exception as exc:
         write_log(f"Failed to update T7 Patch settings: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
 
-    return {"ok": True, "state": _current_state()}
+    return {"ok": True, "state": await _current_state_async()}
 
 
 @app.post("/api/t7-install")
 async def install_t7_patch() -> dict[str, Any]:
-    game_dir = _find_game_directory()
+    game_dir = await _find_game_directory_async()
     if not game_dir:
         return {"ok": False, "error": "Game directory is not set."}
     try:
-        _install_t7_patch(game_dir)
+        await _blocking(_install_t7_patch, game_dir)
     except Exception as exc:
         write_log(f"T7 Patch install failed: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "state": _current_state()}
+    return {"ok": True, "state": await _current_state_async()}
 
 
 @app.post("/api/t7-uninstall")
 async def uninstall_t7_patch() -> dict[str, Any]:
-    game_dir = _find_game_directory()
+    game_dir = await _find_game_directory_async()
     if not game_dir:
         return {"ok": False, "error": "Game directory is not set."}
     try:
-        _uninstall_t7_patch(game_dir)
+        await _blocking(_uninstall_t7_patch, game_dir)
     except Exception as exc:
         write_log(f"T7 Patch uninstall failed: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "state": _current_state()}
+    return {"ok": True, "state": await _current_state_async()}
 
 
 @app.post("/api/enhanced-install")
 async def install_enhanced(payload: EnhancedInstallPayload) -> dict[str, Any]:
-    game_dir = _find_game_directory()
+    game_dir = await _find_game_directory_async()
     if not game_dir:
         return {"ok": False, "error": "Game directory is not set."}
     try:
-        _install_enhanced(game_dir, payload.dumpSource)
+        await _blocking(_install_enhanced, game_dir, payload.dumpSource)
     except Exception as exc:
         write_log(f"BO3 Enhanced install failed: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "state": _current_state()}
+    return {"ok": True, "state": await _current_state_async()}
 
 
 @app.post("/api/enhanced-uninstall")
 async def uninstall_enhanced() -> dict[str, Any]:
-    game_dir = _find_game_directory()
+    game_dir = await _find_game_directory_async()
     if not game_dir:
         return {"ok": False, "error": "Game directory is not set."}
     try:
-        _uninstall_enhanced(game_dir)
+        await _blocking(_uninstall_enhanced, game_dir)
     except Exception as exc:
         write_log(f"BO3 Enhanced uninstall failed: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "state": _current_state()}
+    return {"ok": True, "state": await _current_state_async()}
 
 
 @app.post("/api/presets/apply")
 async def apply_preset(payload: PresetPayload) -> dict[str, Any]:
-    game_dir = _find_game_directory()
+    game_dir = await _find_game_directory_async()
     if not game_dir:
         return {"ok": False, "error": "Game directory is not set."}
     try:
-        presets = json.loads(PRESETS_PATH.read_text(encoding="utf-8"))
-        preset = presets[payload.name]
-        for key, item in preset.items():
-            if key == "ReduceStutter":
-                dll = Path(game_dir) / "d3dcompiler_46.dll"
-                backup = Path(patchops_backup_path(str(dll)))
-                if str(item[0]) == "1" and dll.exists() and not backup.exists():
-                    dll.rename(backup)
-                continue
-            value, comment = item
-            _write_config_value(game_dir, key, value, comment)
-        write_log(f"Applied preset '{payload.name}'.", "Success", log_target)
+        await _blocking(_apply_preset_values, game_dir, payload.name)
     except Exception as exc:
         write_log(f"Failed to apply preset: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "state": _current_state()}
+    return {"ok": True, "state": await _current_state_async()}
 
 
 @app.post("/api/intro-skip")
 async def intro_skip(payload: TogglePayload) -> dict[str, Any]:
-    game_dir = _find_game_directory()
+    game_dir = await _find_game_directory_async()
     if not game_dir:
         return {"ok": False, "error": "Game directory is not set."}
     video_dir = Path(game_dir) / "video"
@@ -1330,22 +1438,22 @@ async def intro_skip(payload: TogglePayload) -> dict[str, Any]:
     try:
         if payload.enabled:
             if intro.exists():
-                intro.rename(backup)
+                await _blocking(intro.rename, backup)
             write_log("Intro video skipped.", "Success", log_target)
         else:
-            existing = existing_backup_path(str(intro))
+            existing = await _blocking(existing_backup_path, str(intro))
             if existing:
-                Path(existing).rename(intro)
+                await _blocking(Path(existing).rename, intro)
             write_log("Intro video restored.", "Success", log_target)
     except Exception as exc:
         write_log(f"Failed to update intro video: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "state": _current_state()}
+    return {"ok": True, "state": await _current_state_async()}
 
 
 @app.post("/api/d3dcompiler")
 async def d3dcompiler(payload: TogglePayload) -> dict[str, Any]:
-    game_dir = _find_game_directory()
+    game_dir = await _find_game_directory_async()
     if not game_dir:
         return {"ok": False, "error": "Game directory is not set."}
 
@@ -1354,28 +1462,28 @@ async def d3dcompiler(payload: TogglePayload) -> dict[str, Any]:
     try:
         if payload.enabled:
             if dll.exists():
-                dll.rename(backup)
+                await _blocking(dll.rename, backup)
                 write_log("Renamed d3dcompiler_46.dll to reduce stuttering.", "Success", log_target)
-            elif existing_backup_path(str(dll)):
+            elif await _blocking(existing_backup_path, str(dll)):
                 write_log("Already using latest d3dcompiler.", "Success", log_target)
             else:
                 return {"ok": False, "error": "d3dcompiler_46.dll was not found."}
         else:
-            existing = existing_backup_path(str(dll))
+            existing = await _blocking(existing_backup_path, str(dll))
             if existing:
-                Path(existing).rename(dll)
+                await _blocking(Path(existing).rename, dll)
                 write_log("Restored d3dcompiler_46.dll.", "Success", log_target)
             else:
                 return {"ok": False, "error": "No d3dcompiler backup was found."}
     except Exception as exc:
         write_log(f"Failed to update d3dcompiler_46.dll: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "state": _current_state()}
+    return {"ok": True, "state": await _current_state_async()}
 
 
 @app.post("/api/all-intros-skip")
 async def all_intros_skip(payload: TogglePayload) -> dict[str, Any]:
-    game_dir = _find_game_directory()
+    game_dir = await _find_game_directory_async()
     if not game_dir:
         return {"ok": False, "error": "Game directory is not set."}
 
@@ -1386,15 +1494,16 @@ async def all_intros_skip(payload: TogglePayload) -> dict[str, Any]:
     try:
         if payload.enabled:
             changed = 0
-            for mkv_file in video_dir.glob("*.mkv"):
+            for mkv_file in await _blocking(lambda: list(video_dir.glob("*.mkv"))):
                 backup = Path(patchops_backup_path(str(mkv_file)))
                 if not backup.exists():
-                    mkv_file.rename(backup)
+                    await _blocking(mkv_file.rename, backup)
                     changed += 1
             write_log("All intro videos skipped." if changed else "Intro videos were already skipped.", "Success", log_target)
         else:
             changed = 0
-            for backup_file in list(video_dir.glob(f"*.mkv{PATCHOPS_BACKUP_SUFFIX}")) + list(video_dir.glob(f"*.mkv{LEGACY_BACKUP_SUFFIX}")):
+            backup_files = await _blocking(lambda: list(video_dir.glob(f"*.mkv{PATCHOPS_BACKUP_SUFFIX}")) + list(video_dir.glob(f"*.mkv{LEGACY_BACKUP_SUFFIX}")))
+            for backup_file in backup_files:
                 original_name = backup_file.name
                 if original_name.endswith(PATCHOPS_BACKUP_SUFFIX):
                     original_name = original_name[: -len(PATCHOPS_BACKUP_SUFFIX)]
@@ -1402,94 +1511,92 @@ async def all_intros_skip(payload: TogglePayload) -> dict[str, Any]:
                     original_name = original_name[: -len(LEGACY_BACKUP_SUFFIX)]
                 target = video_dir / original_name
                 if not target.exists():
-                    backup_file.rename(target)
+                    await _blocking(backup_file.rename, target)
                     changed += 1
             write_log("Intro videos restored." if changed else "No intro video backups were found.", "Success", log_target)
     except Exception as exc:
         write_log(f"Failed to update intro videos: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "state": _current_state()}
+    return {"ok": True, "state": await _current_state_async()}
 
 
 @app.post("/api/config-readonly")
 async def config_readonly(payload: TogglePayload) -> dict[str, Any]:
-    path = _config_path()
+    path = await _config_path_async()
     if not path or not path.exists():
         return {"ok": False, "error": "config.ini was not found."}
     try:
         if payload.enabled:
-            path.chmod(stat.S_IREAD)
+            await _blocking(path.chmod, stat.S_IREAD)
         else:
-            path.chmod(stat.S_IWRITE | stat.S_IREAD)
+            await _blocking(path.chmod, stat.S_IWRITE | stat.S_IREAD)
         write_log(f"config.ini set to {'read-only' if payload.enabled else 'writable'}.", "Success", log_target)
     except Exception as exc:
         write_log(f"Failed to change config.ini permissions: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "state": _current_state()}
+    return {"ok": True, "state": await _current_state_async()}
 
 
 @app.post("/api/vram-target")
 async def vram_target(payload: VramPayload) -> dict[str, Any]:
-    game_dir = _find_game_directory()
+    game_dir = await _find_game_directory_async()
     if not game_dir:
         return {"ok": False, "error": "Game directory is not set."}
     try:
         if payload.limited:
             decimal_value = payload.target / 100
-            _write_config_value(game_dir, "VideoMemory", decimal_value, "0.75 to 1")
-            _write_config_value(game_dir, "StreamMinResident", "1", "0 or 1")
+            await _blocking(_write_config_values, game_dir, [
+                ("VideoMemory", decimal_value, "0.75 to 1"),
+                ("StreamMinResident", "1", "0 or 1"),
+            ])
             write_log(f"Limited VRAM usage set to {payload.target}%.", "Success", log_target)
         else:
-            _write_config_value(game_dir, "VideoMemory", "1", "0.75 to 1")
-            _write_config_value(game_dir, "StreamMinResident", "0", "0 or 1")
+            await _blocking(_write_config_values, game_dir, [
+                ("VideoMemory", "1", "0.75 to 1"),
+                ("StreamMinResident", "0", "0 or 1"),
+            ])
             write_log("Enabled full VRAM usage.", "Success", log_target)
     except Exception as exc:
         write_log(f"Failed to update VRAM target: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "state": _current_state()}
+    return {"ok": True, "state": await _current_state_async()}
 
 
 @app.get("/api/logs/payload")
 async def logs_payload() -> dict[str, Any]:
-    return {"ok": True, "payload": _log_payload()}
+    return {"ok": True, "payload": await _blocking(_log_payload)}
 
 
 @app.post("/api/logs/clear")
 async def logs_clear() -> dict[str, Any]:
-    if not clear_log_file():
+    if not await _blocking(clear_log_file):
         return {"ok": False, "error": "Failed to clear log file."}
     log_bus._recent.clear()
     write_log("Logs cleared.", "Success", log_target)
-    return {"ok": True, "state": _current_state()}
+    return {"ok": True, "state": await _current_state_async()}
 
 
 @app.post("/api/mod-files/clear")
 async def clear_mod_files() -> dict[str, Any]:
     try:
-        MOD_FILES_DIR.mkdir(parents=True, exist_ok=True)
-        for item in MOD_FILES_DIR.iterdir():
-            if item.is_dir():
-                shutil.rmtree(item)
-            else:
-                item.unlink()
-        write_log(f"Cleared mod files in {MOD_FILES_DIR}", "Success", log_target)
+        await _blocking(_clear_mod_files)
     except Exception as exc:
         write_log(f"Failed to clear mod files: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "state": _current_state()}
+    return {"ok": True, "state": await _current_state_async()}
 
 
 @app.post("/api/reset-stock")
 async def reset_stock() -> dict[str, Any]:
-    game_dir = _find_game_directory()
+    game_dir = await _find_game_directory_async()
     if not game_dir:
         return {"ok": False, "error": "Game directory is not set."}
     try:
-        _reset_to_stock(game_dir)
+        await _blocking(_reset_to_stock, game_dir)
     except Exception as exc:
         write_log(f"Reset to stock failed: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
-    return {"ok": True, "state": _current_state()}
+    return {"ok": True, "state": await _current_state_async()}
 
 
 @app.websocket("/ws")

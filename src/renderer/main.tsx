@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Toggle } from "./components/Toggle";
-import { apiRequest, makeSocket, type ApiResult, type LogEntry, type PatchOpsState } from "./lib/api";
+import { apiRequest, makeSocket, resolveBackendUrl, type ApiResult, type LogEntry, type PatchOpsState } from "./lib/api";
 import "./styles/app.css";
 
 const logoUrl = new URL("../../website/assets/img/patchopsiii.png", import.meta.url).href;
@@ -47,6 +47,7 @@ const navItems = [
 type ViewId = (typeof navItems)[number]["id"];
 type GraphicsTabId = "graphics" | "dxvk";
 type DxvkSettings = PatchOpsState["dxvk"]["settings"];
+type BackendStatus = "starting" | "ready" | "failed";
 
 type BrowseEntry = {
   name: string;
@@ -273,8 +274,30 @@ function detectedCompilerThreads() {
   return Math.max(1, logicalCores - 2);
 }
 
+function backendUnavailableMessage(status: BackendStatus) {
+  return status === "failed" ? "PatchOpsIII local API is unavailable. Restart PatchOpsIII and try again." : "PatchOpsIII local API is still starting.";
+}
+
+async function waitForBackendReady(timeoutMs = 12000) {
+  const start = Date.now();
+  const backendUrl = await resolveBackendUrl();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const response = await fetch(`${backendUrl}/api/health`, { cache: "no-store" });
+      if (response.ok) {
+        return;
+      }
+    } catch {
+      // The backend process may still be extracting or importing.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error("PatchOpsIII local API did not become ready.");
+}
+
 function App() {
   const [state, setState] = useState<PatchOpsState | null>(null);
+  const [backendStatus, setBackendStatus] = useState<BackendStatus>("starting");
   const [activeView, setActiveView] = useState<ViewId>("dashboard");
   const [activeGraphicsTab, setActiveGraphicsTab] = useState<GraphicsTabId>("graphics");
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -309,6 +332,10 @@ function App() {
   }
 
   async function runAction<T>(id: string, action: () => Promise<ApiResult<T> | PatchOpsState | unknown>) {
+    if (backendStatus !== "ready") {
+      setError(backendUnavailableMessage(backendStatus));
+      return;
+    }
     setBusy(id);
     setError(null);
     try {
@@ -544,6 +571,10 @@ function App() {
   }
 
   async function copyLogs() {
+    if (backendStatus !== "ready") {
+      setError(backendUnavailableMessage(backendStatus));
+      return;
+    }
     setBusy("copy-logs");
     setError(null);
     try {
@@ -591,6 +622,19 @@ function App() {
   }
 
   async function loadBrowse(path?: string) {
+    if (backendStatus !== "ready") {
+      setBrowseError(backendUnavailableMessage(backendStatus));
+      setBrowseData((current) => current ?? {
+        path: path ?? "",
+        parent: null,
+        hasGameExecutable: false,
+        roots: [],
+        shortcuts: [],
+        entries: []
+      });
+      setBrowseInput(path ?? "");
+      return;
+    }
     setBrowseError(null);
     try {
       const query = path ? `?path=${encodeURIComponent(path)}` : "";
@@ -633,19 +677,44 @@ function App() {
   }
 
   useEffect(() => {
-    void refresh().catch((err) => setError(err.message));
+    let cancelled = false;
     let socket: WebSocket | null = null;
-    void makeSocket().then((ws) => {
-      socket = ws;
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.type === "log") {
-          const entry = data.payload as LogEntry;
-          setLogs((current) => appendUniqueLog(current, entry));
+    async function boot() {
+      setBackendStatus("starting");
+      try {
+        await waitForBackendReady();
+        if (cancelled) {
+          return;
         }
-      };
-    });
-    return () => socket?.close();
+        setBackendStatus("ready");
+        await refresh();
+        if (cancelled) {
+          return;
+        }
+        socket = await makeSocket();
+        if (cancelled) {
+          socket.close();
+          return;
+        }
+        socket.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          if (data.type === "log") {
+            const entry = data.payload as LogEntry;
+            setLogs((current) => appendUniqueLog(current, entry));
+          }
+        };
+      } catch (err) {
+        if (!cancelled) {
+          setBackendStatus("failed");
+          setError(err instanceof Error ? err.message : backendUnavailableMessage("failed"));
+        }
+      }
+    }
+    void boot();
+    return () => {
+      cancelled = true;
+      socket?.close();
+    };
   }, []);
 
   useEffect(() => {
@@ -684,10 +753,11 @@ function App() {
   const selectedLaunchProfile = state?.launchProfiles.find((profile) => profile.id === selectedProfile);
   const selectedProfileInstallable = Boolean(selectedLaunchProfile && selectedLaunchProfile.id !== "default" && selectedLaunchProfile.id !== "offline");
   const dxvkDetectedThreads = detectedCompilerThreads();
+  const backendReady = backendStatus === "ready";
 
   return (
     <main className="app-shell">
-      <TitleBar appVersion={state?.appVersion ?? "1.2.2"} updateDisabled={busy === "update-check"} onCheckForUpdates={checkForUpdates} />
+      <TitleBar appVersion={state?.appVersion ?? "1.2.2"} updateDisabled={!backendReady || busy === "update-check"} onCheckForUpdates={checkForUpdates} />
 
       <div className="directory-row">
         <label>
@@ -696,16 +766,24 @@ function App() {
         </label>
         <button
           className="tool-button browse"
+          disabled={!backendReady}
           onClick={() => void openBrowseMenu("game")}
         >
           <FolderOpen size={17} />
           Browse...
         </button>
-        <button className="tool-button primary launch" onClick={() => runAction("launch", () => apiRequest<ApiResult>("/api/launch", { method: "POST" }))}>
+        <button className="tool-button primary launch" disabled={!backendReady} onClick={() => runAction("launch", () => apiRequest<ApiResult>("/api/launch", { method: "POST" }))}>
           <PlaySquare size={16} />
           Launch Game
         </button>
       </div>
+
+      {backendStatus !== "ready" && (
+        <div className="error-strip">
+          <AlertTriangle size={16} />
+          <span>{backendStatus === "starting" ? "PatchOpsIII local API is starting..." : backendUnavailableMessage("failed")}</span>
+        </div>
+      )}
 
       {error && (
         <div className="error-strip">

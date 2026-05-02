@@ -17,6 +17,7 @@ LAUNCH_COUNTER_FILENAME = "launch_counter.txt"
 EXE_VARIANT_STATE_FILENAME = ".patchops_exe_variant.json"
 PATCHOPS_BACKUP_SUFFIX = ".patchops.bak"
 LEGACY_BACKUP_SUFFIX = ".bak"
+_steam_library_paths_cache = None
 
 
 def patchops_backup_path(path):
@@ -390,12 +391,29 @@ def _extract_library_paths_from_vdf(library_vdf_path):
 
 
 def get_steam_library_paths():
+    global _steam_library_paths_cache
+    roots = _candidate_steam_roots()
+    cache_key = []
+    for root in roots:
+        library_vdf = os.path.join(root, "steamapps", "libraryfolders.vdf")
+        try:
+            mtime = os.path.getmtime(library_vdf)
+        except OSError:
+            mtime = None
+        cache_key.append((os.path.normcase(os.path.normpath(root)), mtime))
+
+    cache_key = tuple(cache_key)
+    if _steam_library_paths_cache and _steam_library_paths_cache[0] == cache_key:
+        return list(_steam_library_paths_cache[1])
+
     libraries = []
-    for root in _candidate_steam_roots():
+    for root in roots:
         libraries.append(root)
         library_vdf = os.path.join(root, "steamapps", "libraryfolders.vdf")
         libraries.extend(_extract_library_paths_from_vdf(library_vdf))
-    return _dedupe_existing_dirs(libraries)
+    resolved = _dedupe_existing_dirs(libraries)
+    _steam_library_paths_cache = (cache_key, list(resolved))
+    return resolved
 
 
 def _workshop_item_installed_in_library(steam_library, game_app_id, workshop_id):

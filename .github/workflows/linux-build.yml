@@ -44,6 +44,10 @@ jobs:
         shell: bash
         working-directory: .
     env:
+      BUN_VERSION: "1.3.13"
+      ELECTRON_VERSION: "31.7.7"
+      ELECTRON_BUILDER_VERSION: "26.8.1"
+      PYTHON_VERSION: "3.12"
       APPIMAGE_PATH: dist/packages/PatchOpsIII.AppImage
       ZSYNC_PATH: dist/packages/PatchOpsIII.AppImage.zsync
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -54,13 +58,46 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: ${{ env.BUN_VERSION }}
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
           cache-dependency-path: requirements.txt
+      - name: Cache Bun install cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: linux-bun-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            linux-bun-${{ runner.arch }}-${{ env.BUN_VERSION }}-
+      - name: Cache Electron downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/electron
+          key: linux-electron-${{ runner.arch }}-${{ env.ELECTRON_VERSION }}
+          restore-keys: |
+            linux-electron-${{ runner.arch }}-
+      - name: Cache electron-builder downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/electron-builder
+          key: linux-electron-builder-${{ runner.arch }}-${{ env.ELECTRON_BUILDER_VERSION }}-${{ env.ELECTRON_VERSION }}
+          restore-keys: |
+            linux-electron-builder-${{ runner.arch }}-${{ env.ELECTRON_BUILDER_VERSION }}-
+            linux-electron-builder-${{ runner.arch }}-
+      - name: Cache Python virtual environment
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: linux-venv-${{ runner.arch }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            linux-venv-${{ runner.arch }}-${{ env.PYTHON_VERSION }}-
+      - name: Install Linux packaging prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils zsync
       - name: Install Python backend dependencies
         run: |
           python -m venv .venv
@@ -71,10 +108,6 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Build Electron AppImage
         run: bun run dist:linux
-      - name: Install zsync
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y zsync
       - name: Generate AppImage zsync metadata
         run: |
           if [ ! -f "$APPIMAGE_PATH" ]; then

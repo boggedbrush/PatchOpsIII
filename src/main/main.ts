@@ -102,7 +102,6 @@ async function waitForBackend(timeoutMs = 12000) {
 
 async function createWindow() {
   startBackend();
-  await waitForBackend();
 
   const isWindows = process.platform === "win32";
   const isMac = process.platform === "darwin";
@@ -142,6 +141,10 @@ async function createWindow() {
   } else {
     await mainWindow.loadFile(path.join(rendererRoot, "dist/renderer/index.html"));
   }
+
+  void waitForBackend().catch((error) => {
+    console.error(`[backend] ${error instanceof Error ? error.message : String(error)}`);
+  });
 }
 
 ipcMain.handle("desktop:pick-game-directory", async () => {

@@ -97,11 +97,18 @@ export type ApiResult<T = unknown> = {
   state?: PatchOpsState;
 } & T;
 
+let cachedBackendUrl: string | null = null;
+
 export async function resolveBackendUrl() {
-  if (window.patchOpsDesktop) {
-    return window.patchOpsDesktop.getBackendUrl();
+  if (cachedBackendUrl) {
+    return cachedBackendUrl;
   }
-  return import.meta.env.VITE_PATCHOPSIII_BACKEND_URL ?? "http://127.0.0.1:8765";
+  if (window.patchOpsDesktop) {
+    cachedBackendUrl = await window.patchOpsDesktop.getBackendUrl();
+    return cachedBackendUrl;
+  }
+  cachedBackendUrl = import.meta.env.VITE_PATCHOPSIII_BACKEND_URL ?? "http://127.0.0.1:8765";
+  return cachedBackendUrl;
 }
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
