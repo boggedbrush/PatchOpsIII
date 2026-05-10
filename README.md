@@ -32,7 +32,7 @@
 - [Star History](#star-history)
 
 ## Overview
-PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popular community tools and quality-of-life tweaks in a single polished interface. The Python application ships with dark/light themes, tabbed navigation (Mods, Graphics, Advanced), and Nuitka builds for Windows and Linux. Whether you are securing your game with T7 Patch, smoothing shader compilation stutter with DXVK, or fine-tuning launch options, PatchOpsIII consolidates every workflow into one cohesive experience.
+PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popular community tools and quality-of-life tweaks in a single polished Electron interface backed by a local Python API. Whether you are securing your game with T7 Patch, smoothing shader compilation stutter with DXVK, or fine-tuning launch options, PatchOpsIII consolidates every workflow into one cohesive experience.
 
 ## Key Features
 
@@ -41,7 +41,7 @@ PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popul
 - **T7 Patch Management:** Install, update, configure gamertags and colors, apply network passwords, toggle Friends Only mode, deploy LPC fixes, and cleanly uninstall.
 - **DXVK-GPLAsync Integration:** Deploy and remove Vulkan-based shader compilation to smooth frametimes by reducing shader cache stutter.
 - **Workshop Helper:** One-click access to curated Steam Workshop mods and documentation.
-- **Launch Profiles:** Preset command-line configurations for Offline play, [All-around Enhancement Lite](https://steamcommunity.com/sharedfiles/filedetails/?id=2994481309), and [Ultimate Experience Mod](https://steamcommunity.com/sharedfiles/filedetails/?id=2942053577).
+- **Launch Profiles:** Preset command-line configurations for Default, Play Offline, [All-around Enhancement Lite](https://steamcommunity.com/sharedfiles/filedetails/?id=2994481309), and [Ultimate Experience Mod](https://steamcommunity.com/sharedfiles/filedetails/?id=2942053577).
 
 ### Graphics Tab
 - **Preset Loader:** Apply curated JSON presets to instantly switch between visual configurations.
@@ -64,21 +64,25 @@ PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popul
 4. **Dependencies:** The packaged build bundles all required Python dependencies; no additional setup is needed.
 
 ### Developer Setup
+PatchOpsIII uses a React + TypeScript renderer wrapped by Electron. Bun is the JavaScript runtime/package manager, while Python runs the local backend API.
+
 ```bash
-# clone the repository
- git clone https://github.com/boggedbrush/PatchOpsIII.git
- cd PatchOpsIII
+# install Python service dependencies
+python -m venv .venv
+source .venv/bin/activate  # On Windows use: .venv\Scripts\activate
+pip install -r requirements.txt
 
-# create a virtual environment
- python -m venv .venv
- source .venv/bin/activate  # On Windows use: .venv\Scripts\activate
+# install desktop frontend dependencies
+bun install
 
-# install dependencies
- pip install -r requirements.txt
+# run Vite and the Python local API
+bun run dev
 
-# run the application
- python main.py
+# run the Electron desktop app
+bun run dev:desktop
 ```
+
+The browser development server uses Vite on `127.0.0.1:5173` and the Python API on `127.0.0.1:8765`. The Electron desktop command uses Vite on `127.0.0.1:5174` and its Python API on `127.0.0.1:8766`, so both commands can run at the same time. The renderer communicates with Python through HTTP APIs and `/ws` WebSockets; Electron IPC is reserved for desktop-specific bridge actions such as selecting a local game directory.
 
 ## Forked Components
 - **BO3 Enhanced Proton fork metadata:** [bo3-enhanced-proton/README.md](bo3-enhanced-proton/README.md)
@@ -102,11 +106,10 @@ PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popul
   </tr>
   <tr>
     <td align="center"><img src="https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/enhanced.png" alt="BO3 Enhanced" /><br/><sub>Enhanced</sub></td>
-    <td align="center"><img src="https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/reforged.png" alt="BO3 Reforged" /><br/><sub>Reforged</sub></td>
+    <td align="center"><img src="https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/graphics.png" alt="Graphics" /><br/><sub>Graphics</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/graphics.png" alt="Graphics" /><br/><sub>Graphics</sub></td>
-    <td align="center"><img src="https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/dxvk.png" alt="DXVK" /><br/><sub>DXVK</sub></td>
+    <td align="center" colspan="2"><img src="https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/dxvk.png" alt="DXVK" /><br/><sub>DXVK</sub></td>
   </tr>
   <tr>
     <td align="center" colspan="2"><img src="https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/advanced.png" alt="Advanced" /><br/><sub>Advanced</sub></td>
