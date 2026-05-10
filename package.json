@@ -1,0 +1,98 @@
+{
+  "name": "patchopsiii-electron",
+  "version": "v1.3.0-beta",
+  "description": "Electron control center for Call of Duty: Black Ops III maintenance, mod setup, and performance tuning.",
+  "author": "boggedbrush",
+  "private": true,
+  "type": "module",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "dev": "bun scripts/dev-server.ts",
+    "dev:desktop": "bun run build:main && bun scripts/dev.ts",
+    "dev:cleanup": "bun scripts/dev-cleanup.ts",
+    "build": "bun run typecheck && bun run build:main && vite build",
+    "build:main": "bun scripts/clean-main.ts && tsc -p tsconfig.electron.json",
+    "dist": "bun run build && bun x electron-builder@26.8.1",
+    "build:backend:linux": "bun scripts/check-backend-build.ts linux && .venv/bin/python -m PyInstaller --onefile --name patchops-backend --distpath dist/backend --workpath build/pyinstaller --specpath build/pyinstaller --hidden-import uvicorn.logging --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.protocols.websockets --hidden-import uvicorn.protocols.websockets.auto --hidden-import uvicorn.lifespan --hidden-import uvicorn.lifespan.on backend/api.py",
+    "build:backend:win": "bun scripts/check-backend-build.ts win && .venv/Scripts/python.exe -m PyInstaller --onefile --name patchops-backend --distpath dist/backend --workpath build/pyinstaller --specpath build/pyinstaller --hidden-import uvicorn.logging --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.protocols.websockets --hidden-import uvicorn.protocols.websockets.auto --hidden-import uvicorn.lifespan --hidden-import uvicorn.lifespan.on backend/api.py",
+    "dist:linux": "bun run build && bun run build:backend:linux && bun x electron-builder@26.8.1 --linux AppImage --publish never",
+    "dist:win": "bun run build && bun run build:backend:win && bun x electron-builder@26.8.1 --win portable --publish never",
+    "typecheck": "tsc --noEmit",
+    "start": "bun run build:main && electron ."
+  },
+  "build": {
+    "appId": "com.patchopsiii.app",
+    "productName": "PatchOpsIII",
+    "directories": {
+      "output": "dist/packages"
+    },
+    "electronLanguages": [
+      "en-US"
+    ],
+    "files": [
+      "dist/main/**",
+      "dist/renderer/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/backend",
+        "to": "backend-bin"
+      },
+      {
+        "from": "presets.json",
+        "to": "presets.json"
+      },
+      {
+        "from": "PatchOpsIII.ico",
+        "to": "PatchOpsIII.ico"
+      },
+      {
+        "from": "website/assets/img/icon-512.png",
+        "to": "icon-512.png"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "PatchOpsIII.ico",
+      "artifactName": "PatchOpsIII.exe"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "website/assets/img/icon-512.png",
+      "category": "Utility",
+      "artifactName": "PatchOpsIII.AppImage"
+    }
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "@types/bun": "^1.1.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "electron": "^31.0.0",
+    "electron-builder": "^26.8.1",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "^4.0.0",
+    "vite": "^5.4.0",
+    "typescript": "^5.6.0"
+  }
+}

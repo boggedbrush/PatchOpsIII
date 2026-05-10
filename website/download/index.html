@@ -152,7 +152,7 @@
             <article class="card">
               <h2>Linux / Steam Deck</h2>
               <p class="muted">
-                Download the AppImage and install it with
+                Download the Electron AppImage and install it with
                 <a href="https://flathub.org/apps/it.mijorus.gearlever" rel="noreferrer">Gear Lever</a> (recommended for
                 Linux and Steam Deck).
               </p>
@@ -163,7 +163,7 @@
                     data-download-linux
 	                  rel="noreferrer"
 	                >
-	                  AppImage Download
+                  Linux AppImage Download
 	                </a>
 	              </div>
 	              <div class="code-block">
@@ -207,7 +207,7 @@
       <section class="section">
         <div class="container">
           <h2>Developer setup</h2>
-          <p class="muted">Clone the repo, create a virtual environment, install dependencies, then run the app.</p>
+          <p class="muted">Clone the repo, create a virtual environment, install dependencies, then run the Electron app.</p>
           <div class="code-block">
             <div class="code-head">
               <span>Local run</span>
@@ -218,7 +218,8 @@ cd PatchOpsIII
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\\Scripts\\activate
 pip install -r requirements.txt
-python main.py</code></pre>
+bun install
+bun run dev:desktop</code></pre>
           </div>
         </div>
       </section>
