@@ -37,7 +37,7 @@ PatchOpsIII enables users to:
 
 This management only needs to run once and does not require `t7patch.exe` to remain open in the background. Implementing the T7 Patch is crucial for maintaining game security and performance, as it safeguards against known exploits and enhances overall stability.  
 
-You can learn more about the T7 Patch [here](https://github.com/shiversoftdev/t7patch).  
+You can learn more about the maintained T7 Patch [here](https://github.com/Scroptss/T7Patch).  
 
 #### 1.3 DXVK-GPLAsync Management  
 **Shader compilation stuttering** is a common issue in PC gaming, causing noticeable delays when new shaders are compiled during gameplay. DXVK-GPLAsync offers a solution by converting **DirectX** calls to **Vulkan** with asynchronous shader compilation, reducing stutters for consistently smooth frametimes.
