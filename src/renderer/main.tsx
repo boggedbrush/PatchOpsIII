@@ -157,6 +157,7 @@ function TitleBar({ appVersion, updateDisabled, onCheckForUpdates }: { appVersio
   const [platform, setPlatform] = useState(initialDesktopPlatform);
   const [maximized, setMaximized] = useState(false);
   const isMac = platform === "darwin";
+  const displayVersion = appVersion.toLowerCase().startsWith("v") ? appVersion : `v${appVersion}`;
   const hasDesktopChrome = Boolean(window.patchOpsDesktop);
   const usesNativeWindowControls = hasDesktopChrome && platform === "win32";
   const showWindowControls = !isMac && !usesNativeWindowControls;
@@ -197,7 +198,7 @@ function TitleBar({ appVersion, updateDisabled, onCheckForUpdates }: { appVersio
         <div className="titlebar-copy">
           <strong>PatchOpsIII</strong>
           <button type="button" className="titlebar-update" title="Check for Updates" aria-label="Check for Updates" onClick={onCheckForUpdates} disabled={updateDisabled}>
-            <span className="titlebar-version">v{appVersion}</span>
+            <span className="titlebar-version">{displayVersion}</span>
             <RefreshCw className="titlebar-update-icon" size={13} strokeWidth={2.4} aria-hidden="true" />
           </button>
         </div>
@@ -801,7 +802,7 @@ function App() {
 
   return (
     <main className="app-shell">
-      <TitleBar appVersion={state?.appVersion ?? "1.2.2"} updateDisabled={!backendReady || busy === "update-check"} onCheckForUpdates={checkForUpdates} />
+      <TitleBar appVersion={state?.appVersion ?? "v1.3.0-beta"} updateDisabled={!backendReady || busy === "update-check"} onCheckForUpdates={checkForUpdates} />
 
       <div className="directory-row">
         <label>
