@@ -13,20 +13,48 @@ T7_INSTALL_MARKERS = (
     "t7patchloader.dll",
     "t7patch.dll",
 )
-T7PATCH_RELEASE_TAG_API = "https://api.github.com/repos/shiversoftdev/t7patch/releases/tags/Current"
+T7PATCH_CORE_REPOSITORY = "Scroptss/T7Patch"
+T7PATCH_CORE_TAG = "v3.02"
+T7PATCH_LEGACY_REPOSITORY = "shiversoftdev/t7patch"
+T7PATCH_LEGACY_TAG = "Current"
 
-# Trusted hashes for the pinned T7Patch "Current" assets.
-# If upstream starts publishing digests in release metadata, those are preferred automatically.
-TRUSTED_T7PATCH_ASSET_SHA256 = {
+
+def _github_release_tag_api(repo_name: str, tag_name: str) -> str:
+    return f"https://api.github.com/repos/{repo_name}/releases/tags/{tag_name}"
+
+
+def _github_release_asset_url(repo_name: str, tag_name: str, asset_name: str) -> str:
+    return f"https://github.com/{repo_name}/releases/download/{tag_name}/{asset_name}"
+
+
+# The maintained Feb 2026-compatible patch now lives in Scroptss/T7Patch. LPC is
+# still sourced from the legacy release because the new fork does not publish it.
+T7PATCH_ASSETS = {
     "Linux.Steamdeck.and.Manual.Windows.Install.zip": {
-        "388491c01643b0abd51f13290d0c36dec9737fcfbb0ed5e2f5ef6804e1b73dcb",
+        "download_url": _github_release_asset_url(
+            T7PATCH_CORE_REPOSITORY,
+            T7PATCH_CORE_TAG,
+            "Linux.Steamdeck.and.Manual.Windows.Install.zip",
+        ),
+        "release_api": _github_release_tag_api(T7PATCH_CORE_REPOSITORY, T7PATCH_CORE_TAG),
+        "trusted_sha256": {
+            "e34411e70d3c99773445ab758851304d7f6a80867a987ec7f4a1a1df72b11bb1",
+        },
     },
     "LPC.1.zip": {
-        "c94855841a233c9dcdea2799c12693fed8554d0e59fe68257ae66ffbdf2fa58b",
+        "download_url": _github_release_asset_url(
+            T7PATCH_LEGACY_REPOSITORY,
+            T7PATCH_LEGACY_TAG,
+            "LPC.1.zip",
+        ),
+        "release_api": _github_release_tag_api(T7PATCH_LEGACY_REPOSITORY, T7PATCH_LEGACY_TAG),
+        "trusted_sha256": {
+            "c94855841a233c9dcdea2799c12693fed8554d0e59fe68257ae66ffbdf2fa58b",
+        },
     },
 }
 
-_t7patch_release_digests_cache = None
+_t7patch_release_digests_cache = {}
 defender_warning_logged = False
 
 # === Core T7 Patch functions (unchanged) ===
@@ -187,14 +215,13 @@ def restore_lpc_backups(game_dir, log_widget):
         write_log(f"Error restoring LPC backups: {e}", "Error", log_widget)
 
 
-def _fetch_t7patch_release_digests():
-    global _t7patch_release_digests_cache
-    if _t7patch_release_digests_cache is not None:
-        return _t7patch_release_digests_cache
-
+def _fetch_t7patch_release_digests(release_api):
+    cached = _t7patch_release_digests_cache.get(release_api)
+    if cached is not None:
+        return cached
     digests = {}
     try:
-        response = requests.get(T7PATCH_RELEASE_TAG_API, timeout=30)
+        response = requests.get(release_api, timeout=30)
         response.raise_for_status()
         data = response.json()
         for asset in data.get("assets") or []:
@@ -209,16 +236,20 @@ def _fetch_t7patch_release_digests():
         # Network/API failures should not break installs if a trusted pinned hash exists.
         digests = {}
 
-    _t7patch_release_digests_cache = digests
+    _t7patch_release_digests_cache[release_api] = digests
     return digests
 
 
 def _expected_asset_sha256(asset_name, log_widget):
-    api_digest = _fetch_t7patch_release_digests().get(asset_name)
+    asset_meta = T7PATCH_ASSETS.get(asset_name)
+    if not asset_meta:
+        return set()
+
+    api_digest = _fetch_t7patch_release_digests(asset_meta["release_api"]).get(asset_name)
     if api_digest:
         return {api_digest.lower()}
 
-    trusted = {value.lower() for value in TRUSTED_T7PATCH_ASSET_SHA256.get(asset_name, set()) if value}
+    trusted = {value.lower() for value in asset_meta.get("trusted_sha256", set()) if value}
     if trusted:
         write_log(
             f"Release metadata digest unavailable for {asset_name}; using pinned trusted hash.",
@@ -254,7 +285,7 @@ def download_file(url, filename, log_widget, expected_sha256=None):
 
 def install_lpc_files(game_dir, mod_files_dir, log_widget):
     """Download and install LPC files"""
-    zip_url = "https://github.com/shiversoftdev/t7patch/releases/download/Current/LPC.1.zip"
+    zip_url = T7PATCH_ASSETS["LPC.1.zip"]["download_url"]
     zip_dest = os.path.join(mod_files_dir, "LPC.zip")
     temp_dir = os.path.join(mod_files_dir, "LPC_temp")
     lpc_dir = os.path.join(game_dir, "LPC")

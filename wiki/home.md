@@ -33,6 +33,8 @@ C:\Program Files (x86)\Steam\steamapps\common\Call of Duty Black Ops III
 
 PatchOpsIII manages the community T7 Patch workflow through backend helpers that no longer depend on Qt widgets. Supported controls include install/update, uninstall, gamertag configuration, password configuration, Friends Only mode, and LPC install handling.
 
+Patch downloads use the maintained [Scroptss/T7Patch](https://github.com/Scroptss/T7Patch) v3.02 release for core T7Patch files, while LPC files still come from the legacy release because the maintained fork does not publish that asset.
+
 ### BO3 Enhanced
 
 PatchOpsIII includes BO3 Enhanced install, uninstall, verification, status, and launch support. Enhanced is the primary supported compatibility surface for users who need that mod path.
