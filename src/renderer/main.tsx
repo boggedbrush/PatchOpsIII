@@ -458,6 +458,14 @@ function App() {
     );
   }
 
+  function resetT7GamertagEdits() {
+    if (!state?.t7) {
+      return;
+    }
+    setT7Gamertag(state.t7.plainName);
+    setT7ColorCode(state.t7.colorCode);
+  }
+
   async function applyPreset(name: string) {
     await runAction("preset", () =>
       apiRequest<ApiResult>("/api/presets/apply", {
@@ -474,6 +482,15 @@ function App() {
         body: JSON.stringify({ networkPassword: t7Password })
       })
     );
+    setT7PasswordTouched(false);
+  }
+
+  function resetT7SecurityEdits() {
+    if (!state?.t7) {
+      return;
+    }
+    setT7Password(state.t7.networkPassword);
+    setT7NetworkPasswordEnabled(Boolean(state.t7.networkPassword));
     setT7PasswordTouched(false);
   }
 
@@ -775,6 +792,10 @@ function App() {
   const selectedT7Color = gamertagColors.find((color) => color.code === t7ColorCode) ?? gamertagColors[0];
   const t7PreviewName = t7Gamertag.trim() || state?.t7.plainName || "None";
   const t7PasswordControlsDisabled = !state?.t7.confExists || !t7NetworkPasswordEnabled;
+  const savedT7Color = gamertagColors.find((color) => color.code === state?.t7.colorCode) ?? gamertagColors[0];
+  const savedT7Name = state?.t7.plainName || "None";
+  const t7GamertagPending = Boolean(state?.t7 && (t7Gamertag !== state.t7.plainName || t7ColorCode !== state.t7.colorCode));
+  const t7SecurityPending = Boolean(state?.t7 && (t7NetworkPasswordEnabled !== Boolean(state.t7.networkPassword) || t7Password !== state.t7.networkPassword));
   const dxvkDetectedThreads = detectedCompilerThreads();
   const backendReady = backendStatus === "ready";
 
@@ -953,10 +974,35 @@ function App() {
                           </button>
                         ))}
                       </div>
-                      <button className="small-button action-button" disabled={!state.t7.confExists || busy === "t7-gamertag"} onClick={updateT7Gamertag}>
-                        <Save size={15} />
-                        Update Gamertag
-                      </button>
+                      <div className="t7-state-grid">
+                        <div className="saved-gamertag-state">
+                          <span>Currently Saved</span>
+                          <div className="saved-gamertag-line">
+                            <strong>{savedT7Name}</strong>
+                            <i
+                              aria-label={`${savedT7Color.label} saved color`}
+                              className="saved-color-swatch"
+                              style={{ backgroundColor: savedT7Color.swatch }}
+                            />
+                            <em>{savedT7Name.length}/20</em>
+                          </div>
+                        </div>
+                        <div className="inline-state">
+                          <span>
+                            Status
+                            <strong className={t7GamertagPending ? "warn" : "ok"}>{t7GamertagPending ? "Unsaved" : "Saved"}</strong>
+                          </span>
+                        </div>
+                      </div>
+                      <div className="button-row t7-card-actions">
+                        <button className="small-button" disabled={!t7GamertagPending || busy === "t7-gamertag"} onClick={resetT7GamertagEdits}>
+                          Reset Edits
+                        </button>
+                        <button className="small-button action-button" disabled={!state.t7.confExists || busy === "t7-gamertag"} onClick={updateT7Gamertag}>
+                          <Save size={15} />
+                          Update Gamertag
+                        </button>
+                      </div>
                     </div>
                   </Panel>
 
@@ -1013,10 +1059,33 @@ function App() {
                           </div>
                         </label>
                       </div>
-                      <button className="small-button action-button" disabled={!state.t7.confExists || !t7NetworkPasswordEnabled || busy === "t7-password"} onClick={updateT7Password}>
-                        <Save size={15} />
-                        Update Security
-                      </button>
+                      <div className="t7-state-grid">
+                        <div>
+                          <span>Friends Only</span>
+                          <strong className={state.t7.friendsOnly ? "ok" : ""}>{state.t7.friendsOnly ? "Enabled" : "Disabled"}</strong>
+                        </div>
+                        <div>
+                          <span>Password</span>
+                          <strong className={state.t7.networkPassword ? "ok" : ""}>{state.t7.networkPassword ? "Set" : "Not set"}</strong>
+                        </div>
+                        <div>
+                          <span>Input</span>
+                          <strong>{t7NetworkPasswordEnabled ? "Enabled" : "Disabled"}</strong>
+                        </div>
+                        <div>
+                          <span>Status</span>
+                          <strong className={t7SecurityPending ? "warn" : "ok"}>{t7SecurityPending ? "Unsaved" : "Saved"}</strong>
+                        </div>
+                      </div>
+                      <div className="button-row t7-card-actions">
+                        <button className="small-button" disabled={!t7SecurityPending || busy === "t7-password" || busy === "t7-password-toggle"} onClick={resetT7SecurityEdits}>
+                          Reset Edits
+                        </button>
+                        <button className="small-button action-button" disabled={!state.t7.confExists || !t7NetworkPasswordEnabled || busy === "t7-password"} onClick={updateT7Password}>
+                          <Save size={15} />
+                          Update Security
+                        </button>
+                      </div>
                     </div>
                   </Panel>
                 </div>

@@ -732,7 +732,7 @@ img {
 }
 
 .content-panel > .t7-dashboard-split {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
 }
 
 .content-panel > .subtab-bar {
@@ -1074,7 +1074,7 @@ img {
   padding: clamp(12px, 0.96vw, 24px);
 }
 
-.t7-overview-panel {
+.content-panel > .t7-overview-panel {
   flex: 0 0 auto;
 }
 
@@ -1084,8 +1084,7 @@ img {
 
 .t7-overview-grid {
   display: grid;
-  grid-template-columns: minmax(210px, 1fr) repeat(2, minmax(180px, 1fr));
-  grid-template-rows: auto auto;
+  grid-template-columns: minmax(190px, 1fr) repeat(2, minmax(160px, 0.8fr)) minmax(340px, 1.4fr);
   min-height: 100%;
 }
 
@@ -1098,13 +1097,9 @@ img {
   border-right: 0;
 }
 
-.t7-overview-grid > :nth-child(3) {
-  border-right: 0;
-}
-
 .t7-overview-grid .module-row,
 .t7-overview-grid .status-pill {
-  min-height: clamp(48px, 5.2vh, 72px);
+  min-height: clamp(42px, 4.4vh, 58px);
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -1126,10 +1121,10 @@ img {
 }
 
 .t7-overview-grid .t7-actions {
-  grid-column: 1 / -1;
+  grid-column: auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-content: center;
-  padding: clamp(10px, 0.82vw, 18px);
-  border-top: 1px solid var(--border);
+  padding: clamp(8px, 0.7vw, 14px);
 }
 
 .t7-dashboard-split {
@@ -1137,7 +1132,7 @@ img {
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
   gap: var(--panel-gap);
   min-height: 0;
-  align-items: stretch;
+  align-items: start;
 }
 
 .t7-dashboard-split .panel {
@@ -1151,9 +1146,9 @@ img {
 
 .t7-card-content {
   display: grid;
-  grid-template-rows: auto minmax(max-content, 1fr) auto;
-  align-content: stretch;
-  gap: clamp(14px, 1.08vw, 24px);
+  grid-template-rows: auto auto auto auto auto;
+  align-content: start;
+  gap: clamp(12px, 0.9vw, 20px);
   min-height: 100%;
   padding: clamp(14px, 1vw, 26px);
 }
@@ -1163,7 +1158,7 @@ img {
 }
 
 .t7-gamertag-panel .t7-card-content {
-  grid-template-rows: auto auto auto auto;
+  grid-template-rows: auto auto auto auto auto;
 }
 
 .gamertag-preview {
@@ -1198,15 +1193,129 @@ img {
 
 .t7-card-content .color-grid {
   align-content: start;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   grid-auto-rows: minmax(clamp(38px, 4.2vh, 58px), auto);
+}
+
+.t7-card-content .color-chip {
+  overflow-wrap: normal;
+  white-space: nowrap;
 }
 
 .t7-card-content .action-button {
   align-self: end;
 }
 
+.t7-card-actions {
+  grid-template-columns: minmax(120px, 0.7fr) minmax(160px, 1fr);
+  padding-top: 0;
+}
+
+.t7-state-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: clamp(8px, 0.64vw, 14px);
+  align-self: end;
+}
+
+.t7-network-panel .t7-state-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.t7-state-grid > div {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 5px);
+  background: rgba(255, 255, 255, 0.026);
+  padding: clamp(8px, 0.62vw, 14px);
+}
+
+.t7-state-grid span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: var(--font-xs);
+  font-weight: 760;
+}
+
+.t7-state-grid strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-strong);
+  font-size: var(--font-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.t7-state-grid strong.ok {
+  color: var(--ok);
+}
+
+.t7-state-grid strong.warn {
+  color: var(--warning);
+}
+
+.saved-gamertag-state {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.saved-gamertag-line {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.saved-gamertag-state > span {
+  flex: 0 0 auto;
+  margin-bottom: 0;
+}
+
+.saved-gamertag-line strong {
+  flex: 0 1 auto;
+}
+
+.saved-color-swatch {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+}
+
+.saved-gamertag-line em {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--muted-strong);
+  font-size: var(--font-xs);
+  font-style: normal;
+  font-weight: 760;
+}
+
+.t7-state-grid > .inline-state {
+  display: block;
+  align-items: center;
+}
+
+.t7-state-grid > .inline-state span {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 0;
+}
+
+.t7-state-grid > .inline-state span strong {
+  display: inline;
+  flex: 0 0 auto;
+}
+
 .t7-network-panel .t7-card-content {
-  grid-template-rows: auto auto auto 1fr;
+  grid-template-rows: auto auto auto auto auto;
 }
 
 .t7-network-panel .compact-setting {
@@ -2486,6 +2595,11 @@ img {
     padding-inline: 8px;
   }
 
+  .t7-state-grid,
+  .t7-card-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .check-row,
   .radio-row {
     min-height: clamp(32px, 4vh, 42px);
@@ -2563,6 +2677,10 @@ img {
   .t7-card-content .color-chip {
     min-height: 28px;
     padding-inline: 7px;
+  }
+
+  .t7-state-grid > div {
+    padding: 7px 9px;
   }
 
   .status-row {
