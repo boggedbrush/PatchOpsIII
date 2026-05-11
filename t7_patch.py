@@ -465,15 +465,8 @@ def _describe_game_build(game_dir):
             "profile": T7PATCH_PROFILE_CURRENT,
         }
 
-    if detect_enhanced_install(game_dir):
-        return {
-            "label": "Enhanced",
-            "state": "good",
-            "profile": T7PATCH_PROFILE_CURRENT,
-        }
-
     exe_path = _find_bo3_executable(game_dir)
-    exe_hash = file_sha256(exe_path).lower() if exe_path else None
+    exe_hash = (file_sha256(exe_path) or "").lower() if exe_path else None
     if exe_hash == DEFAULT_STEAM_EXE_SHA256.lower():
         return {
             "label": "Current EXE",
@@ -485,6 +478,18 @@ def _describe_game_build(game_dir):
             "label": "Legacy EXE",
             "state": "info",
             "profile": T7PATCH_PROFILE_LEGACY,
+        }
+    if detect_enhanced_install(game_dir):
+        return {
+            "label": "Enhanced",
+            "state": "good",
+            "profile": T7PATCH_PROFILE_CURRENT,
+        }
+    if exe_hash:
+        return {
+            "label": "Custom EXE",
+            "state": "warning",
+            "profile": T7PATCH_PROFILE_CURRENT,
         }
 
     variant = read_exe_variant(game_dir)

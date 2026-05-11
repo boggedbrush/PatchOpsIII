@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   AlertTriangle,
+  CheckCircle2,
   Clipboard,
   Cpu,
   Download,
@@ -34,10 +35,12 @@ const captionIconUrls = {
   minimize: new URL("./assets/caption-buttons/minimize.svg", import.meta.url).href,
   restore: new URL("./assets/caption-buttons/restore.svg", import.meta.url).href
 };
+const untrustedExeWarningStorageKey = "patchopsiii.hideUntrustedExeWarning";
 
 const navItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "t7", label: "T7 Patch", icon: ShieldCheck },
+  { id: "exe", label: "EXE Swapper", icon: RefreshCw },
   { id: "enhanced", label: "Enhanced", icon: Gem },
   // removed for now as the developer has decided to turn this mod into a paid service
   { id: "graphics", label: "Graphics", icon: Image },
@@ -309,6 +312,15 @@ function App() {
   const [browseInput, setBrowseInput] = useState("");
   const [browseError, setBrowseError] = useState<string | null>(null);
   const [browseMode, setBrowseMode] = useState<"game" | "dump">("game");
+  const [untrustedExeWarningAcknowledged, setUntrustedExeWarningAcknowledged] = useState(false);
+  const [hideUntrustedExeWarning, setHideUntrustedExeWarning] = useState(() => {
+    try {
+      return window.localStorage.getItem(untrustedExeWarningStorageKey) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [hideUntrustedExeWarningPending, setHideUntrustedExeWarningPending] = useState(false);
   const [t7Gamertag, setT7Gamertag] = useState("");
   const [t7ColorCode, setT7ColorCode] = useState("");
   const [t7Password, setT7Password] = useState("");
@@ -558,6 +570,30 @@ function App() {
     );
   }
 
+  async function useLegacyExe() {
+    await runAction("exe-legacy", () =>
+      apiRequest<ApiResult>("/api/exe-swap/legacy", {
+        method: "POST"
+      })
+    );
+  }
+
+  async function useCurrentExe() {
+    await runAction("exe-current", () =>
+      apiRequest<ApiResult>("/api/exe-swap/current", {
+        method: "POST"
+      })
+    );
+  }
+
+  async function useEnhancedExe() {
+    await runAction("exe-enhanced", () =>
+      apiRequest<ApiResult>("/api/exe-swap/enhanced", {
+        method: "POST"
+      })
+    );
+  }
+
   async function applyDxvkSettings(nextSettings = dxvkSettings) {
     await runAction("dxvk-config", () =>
       apiRequest<ApiResult>("/api/dxvk-config", {
@@ -782,12 +818,44 @@ function App() {
     }
   }, [state?.dxvk.settings]);
 
-  const activeLaunchProfileLabel =
-    state?.activeLaunchProfile === "custom"
-      ? "Custom"
-      : state?.activeLaunchProfile === "default"
-        ? undefined
-        : state?.launchProfiles.find((item) => item.id === state.activeLaunchProfile)?.label;
+  const untrustedExeDetected = Boolean(state?.gameDetected && state.exeSwap.integrityStatus === "unverified");
+
+  useEffect(() => {
+    if (!untrustedExeDetected) {
+      setUntrustedExeWarningAcknowledged(false);
+      setHideUntrustedExeWarningPending(false);
+    }
+  }, [untrustedExeDetected]);
+
+  function persistUntrustedExePreference() {
+    if (!hideUntrustedExeWarningPending) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(untrustedExeWarningStorageKey, "1");
+    } catch {
+      // Preference persistence is best-effort; safety checks remain active.
+    }
+    setHideUntrustedExeWarning(true);
+  }
+
+  function exitFromUntrustedExeWarning() {
+    persistUntrustedExePreference();
+    if (window.patchOpsDesktop) {
+      void window.patchOpsDesktop.closeWindow();
+      return;
+    }
+    window.close();
+    window.setTimeout(() => {
+      window.location.href = "about:blank";
+    }, 100);
+  }
+
+  function continueFromUntrustedExeWarning() {
+    persistUntrustedExePreference();
+    setUntrustedExeWarningAcknowledged(true);
+  }
+
   const selectedLaunchProfile = state?.launchProfiles.find((profile) => profile.id === selectedProfile);
   const selectedProfileInstallable = Boolean(selectedLaunchProfile && selectedLaunchProfile.id !== "default" && selectedLaunchProfile.id !== "offline");
   const selectedT7Color = gamertagColors.find((color) => color.code === t7ColorCode) ?? gamertagColors[0];
@@ -799,6 +867,12 @@ function App() {
   const t7SecurityPending = Boolean(state?.t7 && (t7NetworkPasswordEnabled !== Boolean(state.t7.networkPassword) || t7Password !== state.t7.networkPassword));
   const dxvkDetectedThreads = detectedCompilerThreads();
   const backendReady = backendStatus === "ready";
+  const showUntrustedExeWarning = untrustedExeDetected && !hideUntrustedExeWarning && !untrustedExeWarningAcknowledged;
+  const activeExeProfile = state?.exeSwap.profile;
+  const activeExeTrusted = Boolean(state?.exeSwap.trustedExecutable);
+  const compatibleDisabled = !state?.gameDetected || !activeExeTrusted || activeExeProfile === "legacy" || busy === "exe-legacy";
+  const latestDisabled = !state?.gameDetected || !activeExeTrusted || !state?.exeSwap.latestAvailable || activeExeProfile === "current" || busy === "exe-current";
+  const enhancedDisabled = !state?.gameDetected || !activeExeTrusted || !state?.exeSwap.enhancedAvailable || activeExeProfile === "enhanced" || busy === "exe-enhanced";
 
   return (
     <main className="app-shell">
@@ -854,12 +928,6 @@ function App() {
                 <StatusRow label="T7 Patch" ok={state.mods.t7Patch} />
                 <StatusRow label="DXVK-GPLAsync" ok={state.mods.dxvk} />
                 <StatusRow label="BO3 Enhanced" ok={state.mods.enhanced} />
-                <StatusRow
-                  label="Launch Option"
-                  ok={state.activeLaunchProfile !== "default"}
-                  detail={activeLaunchProfileLabel}
-                />
-                <StatusRow label="Quality of Life" ok={state.qol.d3dcompiler || state.qol.intro || state.qol.allIntros} />
               </Panel>
 
               <div className="dashboard-split">
@@ -905,6 +973,7 @@ function App() {
                           onChange={() => setSelectedProfile(profile.id)}
                         />
                         <span>{profile.label}</span>
+                        {state.activeLaunchProfile === profile.id && <b className="profile-active-badge">Active</b>}
                         {profile.id !== "default" && profile.id !== "offline" && (
                           <b className={cx("profile-state", profile.installed && "installed", !profile.installed && profile.subscribed && "subscribed", !profile.subscribed && "not-subscribed")}>
                             {profile.state}
@@ -935,7 +1004,6 @@ function App() {
                   <div className="t7-overview-grid">
                     <ModuleRow icon={ShieldCheck} title="T7 Patch" active={state.t7.installed} />
                     <StatusPill label="Config" value={state.t7.confExists ? "t7patch.conf found" : "Config missing"} ok={state.t7.confExists} />
-                    <StatusPill label="Game Mode" value={state.t7.mode} ok={state.t7.mode !== "Unknown"} />
                     <div className="t7-actions">
                       <button className="tool-button primary" disabled={busy === "t7-install"} onClick={installT7Patch}>
                         <Download size={16} />
@@ -1091,6 +1159,94 @@ function App() {
                   </Panel>
                 </div>
               </>
+            )}
+
+            {activeView === "exe" && state && (
+              <Panel title="EXE Swapper" className="exe-swap-panel">
+                <div className="exe-swap-layout">
+                  <section className="exe-swap-hero">
+                    <div className="exe-swap-title">
+                      <RefreshCw size={20} />
+                      <div>
+                        <span>Active build</span>
+                        <strong>
+                          {state.exeSwap.trustedExecutable && state.exeSwap.profile === "legacy"
+                            ? `Compatible Build (${state.exeSwap.activeBuildId})`
+                            : state.exeSwap.trustedExecutable && state.exeSwap.profile === "current"
+                              ? `Latest Build (${state.exeSwap.activeBuildId})`
+                              : state.exeSwap.trustedExecutable && state.exeSwap.profile === "enhanced"
+                                ? `BO3 Enhanced (${state.exeSwap.activeBuildId})`
+                                : "Unverified EXE"}
+                        </strong>
+                      </div>
+                    </div>
+                    <div className="exe-swap-status-grid">
+                      <StatusPill label={`Latest · ${state.exeSwap.currentBuildDate}`} value={state.exeSwap.currentBuildId} ok={state.exeSwap.trustedExecutable && state.exeSwap.profile === "current"} />
+                      <StatusPill label={`Compatible · ${state.exeSwap.legacyBuildDate}`} value={state.exeSwap.legacyBuildId} ok={state.exeSwap.legacyActive} />
+                      <StatusPill label="Enhanced" value={state.exeSwap.enhancedExeActive ? "Active" : state.exeSwap.enhancedAvailable ? "Available" : "Not found"} ok={state.exeSwap.enhancedAvailable} />
+                    </div>
+                  </section>
+
+                  <section className="exe-swap-options" aria-label="EXE build comparison">
+                    <div className={cx("exe-swap-option", activeExeProfile === "legacy" && activeExeTrusted && "active", compatibleDisabled && "disabled")}>
+                      <header>
+                        <div>
+                          <h3>Compatible Build</h3>
+                          <p>March 3, 2023 game build</p>
+                        </div>
+                        <span className={cx("option-badge", activeExeProfile === "legacy" && activeExeTrusted && "active")}>{activeExeProfile === "legacy" && activeExeTrusted ? "Active" : "Best for mods"}</span>
+                      </header>
+                      <div className="exe-swap-pros">
+                        <span className="pro"><CheckCircle2 size={15} /><strong>Vanilla experience:</strong> Supported</span>
+                        <span className="pro"><CheckCircle2 size={15} /><strong>Modded experience:</strong> Best support</span>
+                        <span className="warn"><AlertTriangle size={15} /><strong>Performance:</strong> Standard Steam performance</span>
+                      </div>
+                      <button className="tool-button primary" disabled={compatibleDisabled} onClick={useLegacyExe}>
+                        <Download size={16} />
+                        Use Compatible Build
+                      </button>
+                    </div>
+
+                    <div className={cx("exe-swap-option", activeExeProfile === "current" && activeExeTrusted && "active", latestDisabled && "disabled")}>
+                      <header>
+                        <div>
+                          <h3>Latest Build</h3>
+                          <p>February 19, 2026 Steam build</p>
+                        </div>
+                        <span className={cx("option-badge", activeExeProfile === "current" && activeExeTrusted && "active")}>{activeExeProfile === "current" && activeExeTrusted ? "Active" : "Steam default"}</span>
+                      </header>
+                      <div className="exe-swap-pros">
+                        <span className="pro"><CheckCircle2 size={15} /><strong>Vanilla experience:</strong> Best Steam match</span>
+                        <span className="warn"><AlertTriangle size={15} /><strong>Modded experience:</strong> May or may not work</span>
+                        <span className="warn"><AlertTriangle size={15} /><strong>Performance:</strong> Standard Steam performance</span>
+                      </div>
+                      <button className="tool-button" disabled={latestDisabled} onClick={useCurrentExe}>
+                        <RotateCcw size={16} />
+                        Use Latest Build
+                      </button>
+                    </div>
+
+                    <div className={cx("exe-swap-option", activeExeProfile === "enhanced" && activeExeTrusted && "active", enhancedDisabled && "disabled")}>
+                      <header>
+                        <div>
+                          <h3>BO3 Enhanced</h3>
+                          <p>Windows Store build modded for Steam</p>
+                        </div>
+                        <span className={cx("option-badge", activeExeProfile === "enhanced" && activeExeTrusted && "active")}>{activeExeProfile === "enhanced" && activeExeTrusted ? "Active" : state.exeSwap.enhancedAvailable ? "Best performance" : "Not installed"}</span>
+                      </header>
+                      <div className="exe-swap-pros">
+                        <span className="pro"><CheckCircle2 size={15} /><strong>Vanilla experience:</strong> Supported</span>
+                        <span className="con"><X size={15} /><strong>Modded experience:</strong> Most mods unlikely</span>
+                        <span className="pro"><CheckCircle2 size={15} /><strong>Performance:</strong> Highest performance</span>
+                      </div>
+                      <button className="tool-button" disabled={enhancedDisabled} onClick={useEnhancedExe}>
+                        <Gem size={16} />
+                        Use BO3 Enhanced
+                      </button>
+                    </div>
+                  </section>
+                </div>
+              </Panel>
             )}
 
             {activeView === "enhanced" && (
@@ -1425,6 +1581,37 @@ function App() {
                 {browseMode === "game" ? "Use Selected Folder" : "Use Dump Folder"}
               </button>
             </footer>
+          </section>
+        </div>
+      )}
+
+      {showUntrustedExeWarning && (
+        <div className="modal-backdrop untrusted-exe-backdrop" role="presentation">
+          <section className="untrusted-exe-modal" role="alertdialog" aria-modal="true" aria-labelledby="untrusted-exe-title" aria-describedby="untrusted-exe-message">
+            <div className="untrusted-exe-mark">
+              <AlertTriangle size={32} />
+            </div>
+            <div className="untrusted-exe-copy">
+              <h2 id="untrusted-exe-title">WARNING</h2>
+              <p id="untrusted-exe-message">
+                The current Black Ops III EXE cannot be verified and is unsupported with PatchOpsIII. This could mean that you have a pirated copy of the game, have not updated the game, or your files could be compromised.
+              </p>
+              <p>
+                It is recommended to completely uninstall the game and all related files, then reinstall Black Ops III through Steam.
+              </p>
+            </div>
+            <label className="check-row untrusted-exe-check">
+              <input type="checkbox" checked={hideUntrustedExeWarningPending} onChange={(event) => setHideUntrustedExeWarningPending(event.target.checked)} />
+              <span>Do not tell me again</span>
+            </label>
+            <div className="untrusted-exe-actions">
+              <button type="button" className="tool-button" onClick={exitFromUntrustedExeWarning}>
+                Exit
+              </button>
+              <button type="button" className="tool-button primary" onClick={continueFromUntrustedExeWarning}>
+                Continue
+              </button>
+            </div>
           </section>
         </div>
       )}

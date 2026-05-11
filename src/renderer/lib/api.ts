@@ -32,6 +32,34 @@ export type PatchOpsState = {
     launchOptionsActive: boolean;
     dumpSource: string;
   };
+  exeSwap: {
+    profile: string;
+    modeLabel: string;
+    patchLabel: string;
+    displayLabel: string;
+    state: string;
+    activeBuildId: string;
+    activeBuildDate: string;
+    currentBuildId: string;
+    currentBuildDate: string;
+    legacyBuildId: string;
+    legacyBuildDate: string;
+    enhancedBuildId: string;
+    enhancedBuildDate: string;
+    executable: string;
+    executableName: string;
+    executableHash: string;
+    trustedExecutable: boolean;
+    integrityStatus: string;
+    integrityMessage: string;
+    backupAvailable: boolean;
+    latestAvailable: boolean;
+    compatibleAvailable: boolean;
+    enhancedAvailable: boolean;
+    legacyActive: boolean;
+    enhancedExeActive: boolean;
+    enhancedActive: boolean;
+  };
   t7: {
     installed: boolean;
     confExists: boolean;
