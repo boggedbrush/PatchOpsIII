@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld("patchOpsDesktop", {
   minimizeWindow: () => ipcRenderer.invoke("desktop:window-minimize"),
   toggleMaximizeWindow: () => ipcRenderer.invoke("desktop:window-toggle-maximize"),
   closeWindow: () => ipcRenderer.invoke("desktop:window-close"),
+  focusWindow: () => ipcRenderer.invoke("desktop:window-focus"),
+  openExternal: (url: string) => ipcRenderer.invoke("desktop:open-external", url),
   onWindowStateChange: (callback: (state: { maximized: boolean }) => void) => {
     const listener = (_event: IpcRendererEvent, state: { maximized: boolean }) => callback(state);
     ipcRenderer.on("desktop:window-state", listener);

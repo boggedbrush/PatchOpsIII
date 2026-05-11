@@ -12,7 +12,7 @@ from utils import (
 )
 
 DEFAULT_STEAM_EXE_SHA256 = "9ba98dba41e18ef47de6c63937340f8eae7cb251f8fbc2e78d70047b64aa15b5"
-REFORGED_TRUSTED_SHA256 = {
+COMPATIBLE_BUILD_SHA256 = {
     "66b95eb4667bd5b3b3d230e7bed1d29ccd261d48ca2699f01216c863be24ff44",
 }
 T7_INSTALL_MARKERS = (
@@ -24,7 +24,7 @@ T7PATCH_CORE_TAG = "v3.02"
 T7PATCH_LEGACY_REPOSITORY = "shiversoftdev/t7patch"
 T7PATCH_LEGACY_TAG = "Current"
 T7PATCH_PROFILE_CURRENT = "current"
-T7PATCH_PROFILE_LEGACY = "legacy"
+T7PATCH_PROFILE_COMPATIBLE = "compatible"
 
 
 def _github_release_tag_api(repo_name: str, tag_name: str) -> str:
@@ -35,7 +35,7 @@ def _github_release_asset_url(repo_name: str, tag_name: str, asset_name: str) ->
     return f"https://github.com/{repo_name}/releases/download/{tag_name}/{asset_name}"
 
 
-# The maintained Feb 2026-compatible patch now lives in Scroptss/T7Patch. LPC is
+# The maintained Feb 2026 T7Patch release now lives in Scroptss/T7Patch. LPC is
 # still sourced from the legacy release because the new fork does not publish it.
 T7PATCH_ASSETS = {
     "current_archive": {
@@ -50,7 +50,7 @@ T7PATCH_ASSETS = {
             "e34411e70d3c99773445ab758851304d7f6a80867a987ec7f4a1a1df72b11bb1",
         },
     },
-    "legacy_archive": {
+    "compatible_archive": {
         "asset_name": "Linux.Steamdeck.and.Manual.Windows.Install.zip",
         "download_url": _github_release_asset_url(
             T7PATCH_LEGACY_REPOSITORY,
@@ -62,7 +62,7 @@ T7PATCH_ASSETS = {
             "388491c01643b0abd51f13290d0c36dec9737fcfbb0ed5e2f5ef6804e1b73dcb",
         },
     },
-    "legacy_lpc": {
+    "lpc_archive": {
         "asset_name": "LPC.1.zip",
         "download_url": _github_release_asset_url(
             T7PATCH_LEGACY_REPOSITORY,
@@ -81,13 +81,13 @@ T7PATCH_PROFILES = {
         "patch_label": f"T7 Patch {T7PATCH_CORE_TAG}",
         "archive_asset": "current_archive",
     },
-    T7PATCH_PROFILE_LEGACY: {
-        "mode_label": "Legacy EXE",
+    T7PATCH_PROFILE_COMPATIBLE: {
+        "mode_label": "Compatible EXE",
         "patch_label": "T7 Patch 2.04",
-        "archive_asset": "legacy_archive",
+        "archive_asset": "compatible_archive",
     },
 }
-T7PATCH_LEGACY_ONLY_FILES = {"discord_game_sdk.dll", "zbr2.dll"}
+T7PATCH_COMPATIBLE_ONLY_FILES = {"discord_game_sdk.dll", "zbr2.dll"}
 
 _t7patch_release_digests_cache = {}
 defender_warning_logged = False
@@ -321,7 +321,7 @@ def download_file(url, filename, log_widget, expected_sha256=None):
 
 def install_lpc_files(game_dir, mod_files_dir, log_widget):
     """Download and install LPC files"""
-    zip_url = T7PATCH_ASSETS["legacy_lpc"]["download_url"]
+    zip_url = T7PATCH_ASSETS["lpc_archive"]["download_url"]
     zip_dest = os.path.join(mod_files_dir, "LPC.zip")
     temp_dir = os.path.join(mod_files_dir, "LPC_temp")
     lpc_dir = os.path.join(game_dir, "LPC")
@@ -335,7 +335,7 @@ def install_lpc_files(game_dir, mod_files_dir, log_widget):
     
     try:
         # Download LPC.zip
-        expected_hashes = _expected_asset_sha256("legacy_lpc", log_widget)
+        expected_hashes = _expected_asset_sha256("lpc_archive", log_widget)
         if not expected_hashes:
             write_log(
                 "No trusted SHA-256 available for LPC.1.zip; aborting download.",
@@ -473,11 +473,11 @@ def _describe_game_build(game_dir):
             "state": "neutral",
             "profile": T7PATCH_PROFILE_CURRENT,
         }
-    if exe_hash and exe_hash in REFORGED_TRUSTED_SHA256:
+    if exe_hash and exe_hash in COMPATIBLE_BUILD_SHA256:
         return {
-            "label": "Legacy EXE",
+            "label": "Compatible EXE",
             "state": "info",
-            "profile": T7PATCH_PROFILE_LEGACY,
+            "profile": T7PATCH_PROFILE_COMPATIBLE,
         }
     if detect_enhanced_install(game_dir):
         return {
@@ -493,11 +493,11 @@ def _describe_game_build(game_dir):
         }
 
     variant = read_exe_variant(game_dir)
-    if variant == "reforged":
+    if variant == "compatible":
         return {
-            "label": "Legacy EXE",
+            "label": "Compatible EXE",
             "state": "info",
-            "profile": T7PATCH_PROFILE_LEGACY,
+            "profile": T7PATCH_PROFILE_COMPATIBLE,
         }
     if variant in {"default", "enhanced"}:
         return {

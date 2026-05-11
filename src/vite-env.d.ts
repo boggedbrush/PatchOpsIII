@@ -17,6 +17,8 @@ interface DesktopBridge {
   minimizeWindow: () => Promise<void>;
   toggleMaximizeWindow: () => Promise<{ maximized: boolean }>;
   closeWindow: () => Promise<void>;
+  focusWindow: () => Promise<void>;
+  openExternal: (url: string) => Promise<void>;
   onWindowStateChange: (callback: (state: { maximized: boolean }) => void) => () => void;
 }
 

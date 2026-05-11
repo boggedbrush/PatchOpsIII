@@ -185,6 +185,17 @@ ipcMain.handle("desktop:window-toggle-maximize", () => {
   return state;
 });
 ipcMain.handle("desktop:window-close", () => mainWindow?.close());
+ipcMain.handle("desktop:window-focus", () => {
+  if (!mainWindow) {
+    return;
+  }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.show();
+  mainWindow.focus();
+});
+ipcMain.handle("desktop:open-external", (_event, url: string) => shell.openExternal(url));
 
 app.whenReady().then(createWindow);
 app.on("activate", () => {

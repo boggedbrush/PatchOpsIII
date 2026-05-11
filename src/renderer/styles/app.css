@@ -2273,6 +2273,88 @@ img {
   width: min(180px, 100%);
 }
 
+.depot-backdrop {
+  z-index: 58;
+  background:
+    radial-gradient(760px 440px at 48% 16%, rgba(253, 1, 0, 0.14), transparent 64%),
+    rgba(0, 0, 0, 0.78);
+}
+
+.depot-modal {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: clamp(14px, 1.2vw, 22px);
+  width: min(720px, 100%);
+  max-width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: #111112;
+  box-shadow: 0 28px 100px rgba(0, 0, 0, 0.72);
+  padding: clamp(18px, 1.8vw, 28px);
+}
+
+.depot-mark {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border: 1px solid rgba(253, 1, 0, 0.36);
+  border-radius: 12px;
+  background: rgba(253, 1, 0, 0.12);
+  color: var(--accent);
+}
+
+.depot-copy {
+  min-width: 0;
+}
+
+.depot-copy h2 {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: clamp(24px, 3vw, 36px);
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.depot-copy p {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: var(--font-sm);
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.depot-copy code {
+  display: block;
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--text);
+  padding: 12px 14px;
+  font-size: var(--font-sm);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.depot-copy .depot-watch {
+  margin-top: 12px;
+  color: var(--ok);
+}
+
+.depot-actions {
+  grid-column: 2;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.depot-actions .tool-button {
+  min-width: 132px;
+}
+
 .browse-modal {
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr) auto;
@@ -2621,19 +2703,23 @@ img {
 }
 
 @media (max-width: 640px) {
+  .depot-modal,
   .untrusted-exe-modal {
     grid-template-columns: 1fr;
   }
 
+  .depot-actions,
   .untrusted-exe-check,
   .untrusted-exe-actions {
     grid-column: 1;
   }
 
+  .depot-actions,
   .untrusted-exe-actions {
     justify-content: stretch;
   }
 
+  .depot-actions .tool-button,
   .untrusted-exe-actions .tool-button {
     flex: 1 1 160px;
     width: auto;

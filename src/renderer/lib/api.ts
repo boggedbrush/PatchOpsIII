@@ -42,8 +42,8 @@ export type PatchOpsState = {
     activeBuildDate: string;
     currentBuildId: string;
     currentBuildDate: string;
-    legacyBuildId: string;
-    legacyBuildDate: string;
+    compatibleBuildId: string;
+    compatibleBuildDate: string;
     enhancedBuildId: string;
     enhancedBuildDate: string;
     executable: string;
@@ -56,7 +56,7 @@ export type PatchOpsState = {
     latestAvailable: boolean;
     compatibleAvailable: boolean;
     enhancedAvailable: boolean;
-    legacyActive: boolean;
+    compatibleActive: boolean;
     enhancedExeActive: boolean;
     enhancedActive: boolean;
   };
@@ -123,6 +123,8 @@ export type ApiResult<T = unknown> = {
   ok: boolean;
   error?: string;
   state?: PatchOpsState;
+  depotRequired?: boolean;
+  depotCommand?: string;
 } & T;
 
 let cachedBackendUrl: string | null = null;

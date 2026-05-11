@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   AlertTriangle,
@@ -70,6 +70,12 @@ type BrowseState = {
   roots: BrowseLocation[];
   shortcuts: BrowseLocation[];
   entries: BrowseEntry[];
+};
+
+type DepotPromptState = {
+  command: string;
+  copied: boolean;
+  watching: boolean;
 };
 
 const configMap = {
@@ -321,6 +327,8 @@ function App() {
     }
   });
   const [hideUntrustedExeWarningPending, setHideUntrustedExeWarningPending] = useState(false);
+  const [depotPrompt, setDepotPrompt] = useState<DepotPromptState | null>(null);
+  const depotWatchTimer = useRef<number | null>(null);
   const [t7Gamertag, setT7Gamertag] = useState("");
   const [t7ColorCode, setT7ColorCode] = useState("");
   const [t7Password, setT7Password] = useState("");
@@ -570,12 +578,112 @@ function App() {
     );
   }
 
-  async function useLegacyExe() {
-    await runAction("exe-legacy", () =>
-      apiRequest<ApiResult>("/api/exe-swap/legacy", {
+  async function useCompatibleExe() {
+    if (backendStatus !== "ready") {
+      setError(backendUnavailableMessage(backendStatus));
+      return;
+    }
+    setBusy("exe-compatible");
+    setError(null);
+    try {
+      const result = await apiRequest<ApiResult>("/api/exe-swap/compatible", {
         method: "POST"
-      })
-    );
+      });
+      if (!result.ok) {
+        if (result.depotRequired && result.depotCommand) {
+          if (result.state) {
+            setState(result.state);
+            setLogs(uniqueVisibleLogs(result.state.logs));
+          }
+          setDepotPrompt({ command: result.depotCommand, copied: false, watching: false });
+          return;
+        }
+        throw new Error(result.error ?? "Compatible EXE swap failed.");
+      }
+      if (result.state) {
+        setState(result.state);
+        setLogs(uniqueVisibleLogs(result.state.logs));
+      } else {
+        await refresh();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Compatible EXE swap failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function copyDepotCommand() {
+    if (!depotPrompt) {
+      return;
+    }
+    await navigator.clipboard.writeText(depotPrompt.command);
+    setDepotPrompt((current) => current ? { ...current, copied: true } : current);
+  }
+
+  async function continueDepotDownload() {
+    if (!depotPrompt) {
+      return;
+    }
+    setDepotPrompt((current) => current ? { ...current, watching: true } : current);
+    try {
+      if (window.patchOpsDesktop) {
+        await window.patchOpsDesktop.openExternal("steam://open/console");
+      } else {
+        window.location.href = "steam://open/console";
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to open Steam console.");
+    }
+  }
+
+  async function pollCompatibleDepot() {
+    try {
+      const depotResult = await apiRequest<ApiResult<{ available: boolean }>>("/api/exe-swap/compatible-depot");
+      if (depotResult.state) {
+        setState(depotResult.state);
+        setLogs(uniqueVisibleLogs(depotResult.state.logs));
+      }
+      if (!depotResult.ok || !depotResult.available) {
+        return;
+      }
+
+      const swapResult = await apiRequest<ApiResult>("/api/exe-swap/compatible", {
+        method: "POST"
+      });
+      if (!swapResult.ok) {
+        if (swapResult.depotRequired) {
+          if (swapResult.state) {
+            setState(swapResult.state);
+            setLogs(uniqueVisibleLogs(swapResult.state.logs));
+          }
+          return;
+        }
+        throw new Error(swapResult.error ?? "Compatible EXE swap failed.");
+      }
+      if (swapResult.state) {
+        setState(swapResult.state);
+        setLogs(uniqueVisibleLogs(swapResult.state.logs));
+      } else {
+        await refresh();
+      }
+      if (swapResult.state?.exeSwap.compatibleActive ?? true) {
+        if (depotWatchTimer.current !== null) {
+          window.clearInterval(depotWatchTimer.current);
+          depotWatchTimer.current = null;
+        }
+        setDepotPrompt(null);
+        setActiveView("exe");
+        await window.patchOpsDesktop?.focusWindow();
+      }
+    } catch (err) {
+      if (depotWatchTimer.current !== null) {
+        window.clearInterval(depotWatchTimer.current);
+        depotWatchTimer.current = null;
+      }
+      setDepotPrompt((current) => current ? { ...current, watching: false } : current);
+      setError(err instanceof Error ? err.message : "Compatible EXE swap failed.");
+    }
   }
 
   async function useCurrentExe() {
@@ -827,6 +935,22 @@ function App() {
     }
   }, [untrustedExeDetected]);
 
+  useEffect(() => {
+    if (!depotPrompt?.watching || depotWatchTimer.current !== null) {
+      return;
+    }
+    void pollCompatibleDepot();
+    depotWatchTimer.current = window.setInterval(() => {
+      void pollCompatibleDepot();
+    }, 5000);
+    return () => {
+      if (depotWatchTimer.current !== null) {
+        window.clearInterval(depotWatchTimer.current);
+        depotWatchTimer.current = null;
+      }
+    };
+  }, [depotPrompt?.watching]);
+
   function persistUntrustedExePreference() {
     if (!hideUntrustedExeWarningPending) {
       return;
@@ -870,7 +994,7 @@ function App() {
   const showUntrustedExeWarning = untrustedExeDetected && !hideUntrustedExeWarning && !untrustedExeWarningAcknowledged;
   const activeExeProfile = state?.exeSwap.profile;
   const activeExeTrusted = Boolean(state?.exeSwap.trustedExecutable);
-  const compatibleDisabled = !state?.gameDetected || !activeExeTrusted || activeExeProfile === "legacy" || busy === "exe-legacy";
+  const compatibleDisabled = !state?.gameDetected || !activeExeTrusted || activeExeProfile === "compatible" || busy === "exe-compatible";
   const latestDisabled = !state?.gameDetected || !activeExeTrusted || !state?.exeSwap.latestAvailable || activeExeProfile === "current" || busy === "exe-current";
   const enhancedDisabled = !state?.gameDetected || !activeExeTrusted || !state?.exeSwap.enhancedAvailable || activeExeProfile === "enhanced" || busy === "exe-enhanced";
 
@@ -1170,7 +1294,7 @@ function App() {
                       <div>
                         <span>Active build</span>
                         <strong>
-                          {state.exeSwap.trustedExecutable && state.exeSwap.profile === "legacy"
+                          {state.exeSwap.trustedExecutable && state.exeSwap.profile === "compatible"
                             ? `Compatible Build (${state.exeSwap.activeBuildId})`
                             : state.exeSwap.trustedExecutable && state.exeSwap.profile === "current"
                               ? `Latest Build (${state.exeSwap.activeBuildId})`
@@ -1182,26 +1306,26 @@ function App() {
                     </div>
                     <div className="exe-swap-status-grid">
                       <StatusPill label={`Latest · ${state.exeSwap.currentBuildDate}`} value={state.exeSwap.currentBuildId} ok={state.exeSwap.trustedExecutable && state.exeSwap.profile === "current"} />
-                      <StatusPill label={`Compatible · ${state.exeSwap.legacyBuildDate}`} value={state.exeSwap.legacyBuildId} ok={state.exeSwap.legacyActive} />
+                      <StatusPill label={`Compatible · ${state.exeSwap.compatibleBuildDate}`} value={state.exeSwap.compatibleBuildId} ok={state.exeSwap.compatibleActive} />
                       <StatusPill label="Enhanced" value={state.exeSwap.enhancedExeActive ? "Active" : state.exeSwap.enhancedAvailable ? "Available" : "Not found"} ok={state.exeSwap.enhancedAvailable} />
                     </div>
                   </section>
 
                   <section className="exe-swap-options" aria-label="EXE build comparison">
-                    <div className={cx("exe-swap-option", activeExeProfile === "legacy" && activeExeTrusted && "active", compatibleDisabled && "disabled")}>
+                    <div className={cx("exe-swap-option", activeExeProfile === "compatible" && activeExeTrusted && "active", compatibleDisabled && "disabled")}>
                       <header>
                         <div>
                           <h3>Compatible Build</h3>
-                          <p>March 3, 2023 game build</p>
+                          <p>March 3, 2023 Steam depot</p>
                         </div>
-                        <span className={cx("option-badge", activeExeProfile === "legacy" && activeExeTrusted && "active")}>{activeExeProfile === "legacy" && activeExeTrusted ? "Active" : "Best for mods"}</span>
+                        <span className={cx("option-badge", activeExeProfile === "compatible" && activeExeTrusted && "active")}>{activeExeProfile === "compatible" && activeExeTrusted ? "Active" : "Best for mods"}</span>
                       </header>
                       <div className="exe-swap-pros">
                         <span className="pro"><CheckCircle2 size={15} /><strong>Vanilla experience:</strong> Supported</span>
                         <span className="pro"><CheckCircle2 size={15} /><strong>Modded experience:</strong> Best support</span>
                         <span className="warn"><AlertTriangle size={15} /><strong>Performance:</strong> Standard Steam performance</span>
                       </div>
-                      <button className="tool-button primary" disabled={compatibleDisabled} onClick={useLegacyExe}>
+                      <button className="tool-button primary" disabled={compatibleDisabled} onClick={useCompatibleExe}>
                         <Download size={16} />
                         Use Compatible Build
                       </button>
@@ -1581,6 +1705,35 @@ function App() {
                 {browseMode === "game" ? "Use Selected Folder" : "Use Dump Folder"}
               </button>
             </footer>
+          </section>
+        </div>
+      )}
+
+      {depotPrompt && (
+        <div className="modal-backdrop depot-backdrop" role="presentation">
+          <section className="depot-modal" role="dialog" aria-modal="true" aria-labelledby="depot-title" aria-describedby="depot-message">
+            <div className="depot-mark">
+              <Clipboard size={28} />
+            </div>
+            <div className="depot-copy">
+              <h2 id="depot-title">Copy this</h2>
+              <p id="depot-message">Run this command in the Steam console to download the compatible depot.</p>
+              <code>{depotPrompt.command}</code>
+              {depotPrompt.watching && <p className="depot-watch">Watching for the depot. PatchOpsIII will install it and refocus when it is ready.</p>}
+            </div>
+            <div className="depot-actions">
+              <button type="button" className="tool-button" onClick={() => setDepotPrompt(null)}>
+                Cancel
+              </button>
+              <button type="button" className="tool-button" onClick={copyDepotCommand}>
+                <Clipboard size={16} />
+                {depotPrompt.copied ? "Copied" : "Copy"}
+              </button>
+              <button type="button" className="tool-button primary" onClick={continueDepotDownload}>
+                <ExternalLink size={16} />
+                Continue
+              </button>
+            </div>
           </section>
         </div>
       )}
