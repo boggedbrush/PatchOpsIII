@@ -1,0 +1,115 @@
+name: VirusTotal Release Scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to scan
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  scan-release-assets:
+    name: Scan release assets
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      VT_API_KEY: ${{ secrets.VT_API_KEY }}
+      VT_CLI_ARCHIVE: vt-cli.zip
+    steps:
+      - name: Require VirusTotal API key
+        run: |
+          if [ -z "${VT_API_KEY:-}" ]; then
+            echo "VT_API_KEY secret is required." >&2
+            exit 1
+          fi
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          gh release download "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "*.exe" \
+            --pattern "*.AppImage" \
+            --dir release-assets
+          find release-assets -maxdepth 1 -type f -print
+      - name: Determine VirusTotal CLI release
+        id: vt_release
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          url = "https://api.github.com/repos/VirusTotal/vt-cli/releases/latest"
+          with urllib.request.urlopen(url) as response:
+              data = json.load(response)
+
+          tag = data.get("tag_name")
+          if not tag:
+              raise SystemExit("Release tag missing from VirusTotal CLI metadata")
+
+          try:
+              asset_url = next(
+                  asset["browser_download_url"]
+                  for asset in data["assets"]
+                  if asset["name"] == "Linux64.zip"
+              )
+          except StopIteration as exc:
+              raise SystemExit("Linux64.zip asset not found in VirusTotal CLI release metadata") from exc
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"tag={tag}\n")
+              handle.write(f"url={asset_url}\n")
+          PY
+      - name: Cache VirusTotal CLI
+        id: cache-vt
+        uses: actions/cache@v4
+        with:
+          path: |
+            vt
+            ${{ env.VT_CLI_ARCHIVE }}
+          key: vt-${{ runner.os }}-${{ steps.vt_release.outputs.tag }}
+      - name: Download VirusTotal CLI
+        if: ${{ steps.cache-vt.outputs.cache-hit != 'true' }}
+        run: |
+          set -euo pipefail
+          curl -sSL "${{ steps.vt_release.outputs.url }}" -o "$VT_CLI_ARCHIVE"
+          unzip -q -o "$VT_CLI_ARCHIVE"
+      - name: Scan release assets
+        run: |
+          set -euo pipefail
+          chmod +x vt
+          {
+            echo "# VirusTotal release scan"
+            echo
+            echo "Release tag: \`${{ inputs.tag }}\`"
+            echo
+            echo "| Asset | SHA-256 | VirusTotal | Analysis ID |"
+            echo "| --- | --- | --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          found=0
+          while IFS= read -r -d '' asset; do
+            found=1
+            hash="$(sha256sum "$asset" | cut -d ' ' -f1)"
+            analysis_id="$(./vt scan file "$asset" --apikey "$VT_API_KEY" | awk 'NF { print $NF }' | tail -n 1)"
+            vt_url="https://www.virustotal.com/gui/file/$hash"
+            printf "| `%s` | `%s` | [Report](%s) | `%s` |\n" \
+              "$(basename "$asset")" "$hash" "$vt_url" "$analysis_id" >> "$GITHUB_STEP_SUMMARY"
+            printf "%s %s %s\n" "$(basename "$asset")" "$hash" "$analysis_id"
+          done < <(find release-assets -maxdepth 1 -type f \( -name "*.exe" -o -name "*.AppImage" \) -print0)
+
+          if [ "$found" -eq 0 ]; then
+            echo "No .exe or .AppImage assets found for ${{ inputs.tag }}." >&2
+            exit 1
+          fi
