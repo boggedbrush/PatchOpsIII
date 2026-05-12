@@ -10,6 +10,12 @@ on:
       - Testing
       - testing
   workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to build and scan
+        required: false
+        type: string
+        default: ''
   workflow_call:
     inputs:
       ref:
