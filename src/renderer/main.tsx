@@ -25,9 +25,11 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { Toggle } from "./components/Toggle";
 import { apiRequest, makeSocket, resolveBackendUrl, type ApiResult, type LogEntry, type PatchOpsState } from "./lib/api";
+import packageInfo from "../../package.json";
 import "./styles/app.css";
 
 const logoUrl = new URL("../../website/assets/img/patchopsiii.png", import.meta.url).href;
+const packageVersion = packageInfo.version;
 const captionIconUrls = {
   close: new URL("./assets/caption-buttons/close.svg", import.meta.url).href,
   maximize: new URL("./assets/caption-buttons/maximize.svg", import.meta.url).href,
@@ -275,7 +277,7 @@ function detectedCompilerThreads() {
 }
 
 function backendUnavailableMessage(status: BackendStatus) {
-  return status === "failed" ? "PatchOpsIII local API is unavailable. Restart PatchOpsIII and try again." : "PatchOpsIII local API is still starting.";
+  return status === "failed" ? "PatchOpsIII took longer than expected. Restart PatchOpsIII and try again." : "PatchOpsIII is still getting ready.";
 }
 
 async function waitForBackendReady(timeoutMs = 12000) {
@@ -295,9 +297,32 @@ async function waitForBackendReady(timeoutMs = 12000) {
   throw new Error("PatchOpsIII local API did not become ready.");
 }
 
+function StartupScreen({ status, onRetry }: { status: BackendStatus; onRetry: () => void }) {
+  const failed = status === "failed";
+  return (
+    <section className={cx("startup-screen", failed && "startup-screen-failed")} aria-live="polite">
+      <div className="startup-mark" aria-hidden="true">
+        <img src={logoUrl} alt="" />
+      </div>
+      <div className="startup-copy">
+        <strong>{failed ? "Startup took too long" : "Opening PatchOpsIII"}</strong>
+        <span>{failed ? "Try again, or close and reopen PatchOpsIII." : "Loading your settings..."}</span>
+      </div>
+      {!failed && <div className="startup-track" aria-hidden="true" />}
+      {failed && (
+        <button type="button" className="small-button startup-retry" onClick={onRetry}>
+          <RefreshCw size={16} />
+          Try Again
+        </button>
+      )}
+    </section>
+  );
+}
+
 function App() {
   const [state, setState] = useState<PatchOpsState | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>("starting");
+  const [bootAttempt, setBootAttempt] = useState(0);
   const [activeView, setActiveView] = useState<ViewId>("dashboard");
   const [activeGraphicsTab, setActiveGraphicsTab] = useState<GraphicsTabId>("graphics");
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -750,7 +775,7 @@ function App() {
       cancelled = true;
       socket?.close();
     };
-  }, []);
+  }, [bootAttempt]);
 
   useEffect(() => {
     if (state?.activeLaunchProfile) {
@@ -799,10 +824,26 @@ function App() {
   const t7SecurityPending = Boolean(state?.t7 && (t7NetworkPasswordEnabled !== Boolean(state.t7.networkPassword) || t7Password !== state.t7.networkPassword));
   const dxvkDetectedThreads = detectedCompilerThreads();
   const backendReady = backendStatus === "ready";
+  const appVersion = state?.appVersion ?? packageVersion;
+
+  function retryStartup() {
+    setError(null);
+    setBackendStatus("starting");
+    setBootAttempt((current) => current + 1);
+  }
+
+  if (!state && backendStatus !== "ready") {
+    return (
+      <main className="app-shell">
+        <TitleBar appVersion={appVersion} updateDisabled onCheckForUpdates={checkForUpdates} />
+        <StartupScreen status={backendStatus} onRetry={retryStartup} />
+      </main>
+    );
+  }
 
   return (
     <main className="app-shell">
-      <TitleBar appVersion={state?.appVersion ?? "0.0.0"} updateDisabled={!backendReady || busy === "update-check"} onCheckForUpdates={checkForUpdates} />
+      <TitleBar appVersion={appVersion} updateDisabled={!backendReady || busy === "update-check"} onCheckForUpdates={checkForUpdates} />
 
       <div className="directory-row">
         <label>
@@ -826,7 +867,7 @@ function App() {
       {backendStatus !== "ready" && (
         <div className="error-strip">
           <AlertTriangle size={16} />
-          <span>{backendStatus === "starting" ? "PatchOpsIII local API is starting..." : backendUnavailableMessage("failed")}</span>
+          <span>{backendStatus === "starting" ? "PatchOpsIII is still getting ready." : backendUnavailableMessage("failed")}</span>
         </div>
       )}
 
