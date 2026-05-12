@@ -1,81 +1,123 @@
 # PatchOpsIII v1.3.0-beta Release Notes
 
-PatchOpsIII v1.3.0-beta is a beta release focused on the new Electron desktop experience, the local API backend, and the maintained T7Patch v3.02 source update.
+## Overview
+PatchOpsIII v1.3.0-beta is a beta release with a rebuilt desktop app, smoother app controls, updated T7Patch downloads, and new Windows and Linux test builds. This release is meant for users who want to try the new PatchOpsIII experience early and report any rough edges.
 
-## Features
+---
 
-- PR #34: Electron, React, TypeScript, Bun, Vite, and Tailwind frontend overhaul.
-  - User impact: PatchOpsIII now opens as a desktop Electron control center with a responsive dashboard, titlebar controls, live logs, folder browsing, launch profiles, graphics controls, and mod management views.
-  - Validation: `bun install`, `bun run typecheck`, `bun run build`, integrated branch build validation, and final main build validation.
-  - Known limitations: This is a beta UI migration; some advanced controls remain beta-tested and should be reported through GitHub issues.
-- PR #34: Local FastAPI/WebSocket backend service.
-  - User impact: Filesystem, Steam, game config, status, update, folder browse, and live log operations now run through a local Python API used by the Electron frontend.
-  - Validation: `python -m compileall backend`, `python -m compileall .`, and `python -m py_compile t7_patch.py utils.py dxvk_manager.py bo3_enhanced.py`.
-  - Known limitations: Backend is local-only and depends on the packaged backend process starting successfully with the desktop app.
+## 🚀 Major Highlights
+- Rebuilt PatchOpsIII as a modern desktop control center.
+- Added a cleaner dashboard with live logs, folder browsing, launch profiles, graphics controls, and mod management.
+- Updated T7Patch downloads to the maintained v3.02 release.
+- Added beta Windows and Linux downloads.
+- Updated setup and usage notes for the new app.
+- Bumped application version to `v1.3.0-beta`.
 
-## Fixes
+---
 
-- PR #34: T7 reset state and runtime control refinements.
-  - User impact: T7-related dashboard state and reset controls are better aligned with installed component status.
-  - Validation: Electron typecheck/build and Python compile checks after integration with PR #32.
-  - Known limitations: T7 installation still requires valid game directory permissions and may require elevation on Windows.
+## 📝 Detailed Changes
 
-## Packaging
+### App Experience
+- Replaced the older app layout with a new desktop interface.
+- Added a responsive dashboard for game status, mod tools, graphics settings, logs, and quick actions.
+- Improved how the app handles file browsing, Steam actions, status checks, updates, and logs.
+- Added better separation between the visible app and the local helper process that performs background actions.
 
-- PR #34: Electron Builder packaging path.
-  - User impact: Windows beta packaging now produces a portable Electron executable and SHA-256 hash through the Windows build workflow; Linux builds use the Electron AppImage path.
-  - Validation: `bun run build`; Windows workflow reviewed for artifact name `PatchOpsIII-windows`, upload of `dist/packages/PatchOpsIII.exe`, and generation of `dist/packages/hash.log`.
-  - Known limitations: PR #30 standalone ZIP and optional VirusTotal scan behavior is not included in this beta because it conflicts with the Electron packaging change and was not merged.
+### T7Patch
+- Updated the main T7Patch download source to the maintained Scroptss/T7Patch v3.02 release.
+- Kept LPC files on the older source because the maintained release does not provide those files.
+- Updated documentation so users can tell which source is used for each T7Patch component.
 
-## Dependencies
+### Packaging
+- Added a Windows beta executable.
+- Added a Linux and Steam Deck beta AppImage.
+- Added SHA-256 files so downloads can be verified.
+- VirusTotal scan links are not included in this beta.
 
-- PR #34: Added frontend and desktop toolchain dependencies.
-  - User impact: Local development now requires Bun for the Electron renderer and packaging workflow.
-  - Validation: `bun install` completed on PR head, integrated branch, and final main.
-  - Known limitations: Package build scripts expect a Python virtual environment with PyInstaller for `dist:win` and `dist:linux`.
-- PR #32: Updated T7Patch source references to Scroptss/T7Patch v3.02.
-  - User impact: Core T7Patch downloads now use the maintained Scroptss v3.02 release while LPC assets remain on the legacy release because the maintained fork does not publish LPC.
-  - Validation: `python -m compileall main.py updater.py utils.py t7_patch.py dxvk_manager.py bo3_enhanced.py config.py`, `python -m py_compile t7_patch.py main.py utils.py`, and post-integration compile checks.
-  - Known limitations: LPC download source remains legacy by design.
+### Documentation
+- Updated the README and wiki for the new app experience.
+- Kept older release notes available for users on previous versions.
 
-## Documentation
+---
 
-- PR #34: README and wiki updated for Electron-first development and usage.
-  - User impact: Setup guidance now points developers toward Bun, Electron, and the local backend instead of the legacy Python Qt UI.
-  - Validation: Documentation reviewed during PR audit and integration conflict resolution.
-  - Known limitations: Historical release notes still mention removed legacy workflows.
-- PR #32: README, wiki, and release-note template refreshed for maintained T7Patch source.
-  - User impact: T7Patch links now point users toward Scroptss/T7Patch for maintained core patch files.
-  - Validation: Documentation reviewed and preserved during #34 integration.
-  - Known limitations: Legacy source references remain only where LPC asset sourcing requires them.
+## 🛠 Fixes
 
-## Internal Changes
+### Cross-Platform
+- Improved T7 status and reset controls so the dashboard better reflects what is installed.
+- Improved file, Steam, status, update, and log handling.
+- Updated T7Patch source handling to use the maintained v3.02 release.
 
-- PR #34: Removed legacy Qt frontend and moved app control flow behind the backend/API boundary.
-  - User impact: Future UI work should target the React renderer and local backend.
-  - Validation: Full final main validation with Python compile and Electron typecheck/build.
-  - Known limitations: Existing automation or scripts that call removed legacy Python UI entry points must be updated.
+### Windows
+- Added a beta Windows executable.
+- Added a SHA-256 verification file for the Windows beta download.
+- T7 installation may still require administrator permission depending on the game folder.
 
-## Known Issues
+### Linux and Steam Deck
+- Added a beta AppImage.
+- Added a SHA-256 verification file for the Linux beta download.
+- Launch option behavior is still being tested across more Linux and Steam Deck setups.
 
-- PR #34: Windows beta artifact is an Electron portable executable, not the standalone ZIP proposed in PR #30.
-  - User impact: Users should verify the published SHA-256 hash before running the beta artifact.
-  - Validation: Windows workflow reviewed for hash generation and release artifact upload behavior.
-  - Known limitations: Optional VirusTotal CLI scanning is not part of the merged Windows workflow.
-- PR #34: Full All-around Enhancement Mod remains unsupported as a launch option.
-  - User impact: Use the Lite version when launch options are configured.
-  - Validation: README known issue retained after merge.
-  - Known limitations: Upstream mod behavior may change independently of PatchOpsIII.
+---
 
-## Migration Notes
+## ⚠️ Known Issues
 
-- PR #34: Developers should migrate from the old `python main.py` Qt flow to the Electron scripts.
-  - User impact: Use `bun run dev` for the local API plus renderer and `bun run dev:desktop` for the desktop shell.
-  - Validation: `bun run typecheck` and `bun run build` passed.
-  - Known limitations: Existing local scripts that assume `main.py`, `updater.py`, or `config.py` exist need updates.
+- **Beta Build**
+  - Impact: Some controls and workflows may still need polish.
+  - Workaround: Report issues through GitHub with logs and your platform details.
+  - Status: Active beta testing.
 
-## Testing Notes
+- **Local Helper Startup**
+  - Impact: Some app actions may not work if the local helper process fails to start.
+  - Workaround: Restart PatchOpsIII and include logs in a bug report if the issue continues.
+  - Status: Being improved during beta.
 
-- PR #32: Python dependency install, targeted compileall, and py_compile passed before merge and after integration.
-- PR #34: Bun install, TypeScript typecheck, Vite/Electron build, backend compileall, and targeted Python compile checks passed before merge and after integration.
-- Final main validation: `python -m pip install -r requirements.txt`, `python -m compileall .`, `bun install`, `bun run typecheck`, and `bun run build` passed.
+- **All-around Enhancement Mod**
+  - Impact: The full All-around Enhancement Mod remains unsupported as a launch option.
+  - Workaround: Use the Lite version when launch options are configured.
+  - Status: Upstream mod behavior may change independently of PatchOpsIII.
+
+- **Launch Options Stability on Linux and Steam Deck**
+  - Impact: Launch options may not work consistently across all Linux distributions and Steam Deck setups.
+  - Workaround: If issues occur, temporarily remove custom launch options and re-apply them incrementally.
+  - Status: Behavior is being tested across more systems.
+
+---
+
+## 📥 Downloads & Verification
+
+- **Windows**
+  - Download: [PatchOpsIII v1.3.0-beta for Windows](https://github.com/boggedbrush/PatchOpsIII/releases/download/v1.3.0-beta/PatchOpsIII-Beta.exe)
+  - SHA256: `2d42210dcf7447b219dcd438f9a58c8326fe4628fa47fdbe871a77af42385e5b`
+  - SHA256 file: [PatchOpsIII-Beta.exe.sha256](https://github.com/boggedbrush/PatchOpsIII/releases/download/v1.3.0-beta/PatchOpsIII-Beta.exe.sha256)
+  - VirusTotal: Not published for this beta.
+
+- **Linux & Steam Deck**
+  - Download: [PatchOpsIII v1.3.0-beta for Linux & Steam Deck](https://github.com/boggedbrush/PatchOpsIII/releases/download/v1.3.0-beta/PatchOpsIII-Beta.AppImage)
+  - SHA256: `ea4af37f33e548027ffd4d4071293f70cf7606851a2ce445bf4cc2cedc98bb4d`
+  - SHA256 file: [PatchOpsIII-Beta.AppImage.sha256](https://github.com/boggedbrush/PatchOpsIII/releases/download/v1.3.0-beta/PatchOpsIII-Beta.AppImage.sha256)
+  - Update metadata: [PatchOpsIII-Beta.AppImage.zsync](https://github.com/boggedbrush/PatchOpsIII/releases/download/v1.3.0-beta/PatchOpsIII-Beta.AppImage.zsync)
+  - VirusTotal: Not published for this beta.
+
+---
+
+## 🧑‍💻 Acknowledgements
+PatchOpsIII builds on the work of the following projects:
+- **t7patch:** [T7Patch on GitHub](https://github.com/Scroptss/T7Patch)
+- **LPC files:** [shiversoftdev/t7patch on GitHub](https://github.com/shiversoftdev/t7patch)
+- **In memory of shiversoftdev:** Thank you for the original t7patch work and your contributions to the Black Ops III community.
+- **dxvk-gplasync:** [dxvk-gplasync on GitLab](https://gitlab.com/Ph42oN/dxvk-gplasync)
+- **ValvePython/vdf:** [ValvePython/vdf on GitHub](https://github.com/ValvePython/vdf)
+- **BO3 Enhanced:** [BO3 Enhanced on GitHub](https://github.com/shiversoftdev/BO3Enhanced)
+- **BO3 Reforged:** [BO3 Reforged](https://bo3reforged.com/)
+
+---
+
+## 🔮 Upcoming Work
+- Continue beta testing the new desktop app.
+- Improve startup reliability and release packaging.
+- Polish advanced controls, logs, folder browsing, and launch option handling.
+- Continue bug fixes and quality-of-life updates based on user reports.
+
+---
+
+If you encounter issues or have suggestions, please open an issue on the repository or share feedback with the community so we can prioritize future improvements.
