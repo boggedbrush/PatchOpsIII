@@ -32,7 +32,7 @@ PatchOpsIII v1.3.0-beta is a beta release with a rebuilt desktop app, smoother a
 - Added a Windows beta executable.
 - Added a Linux and Steam Deck beta AppImage.
 - Added SHA-256 files so downloads can be verified.
-- VirusTotal scan links are not included in this beta.
+- Added VirusTotal scan links for the Windows and Linux beta downloads.
 
 ### Documentation
 - Updated the README and wiki for the new app experience.
@@ -89,14 +89,14 @@ PatchOpsIII v1.3.0-beta is a beta release with a rebuilt desktop app, smoother a
   - Download: [PatchOpsIII v1.3.0-beta for Windows](https://github.com/boggedbrush/PatchOpsIII/releases/download/v1.3.0-beta/PatchOpsIII-Beta.exe)
   - SHA256: `2d42210dcf7447b219dcd438f9a58c8326fe4628fa47fdbe871a77af42385e5b`
   - SHA256 file: [PatchOpsIII-Beta.exe.sha256](https://github.com/boggedbrush/PatchOpsIII/releases/download/v1.3.0-beta/PatchOpsIII-Beta.exe.sha256)
-  - VirusTotal: Not published for this beta.
+  - VirusTotal: [Windows scan](https://www.virustotal.com/gui/file/2d42210dcf7447b219dcd438f9a58c8326fe4628fa47fdbe871a77af42385e5b)
 
 - **Linux & Steam Deck**
   - Download: [PatchOpsIII v1.3.0-beta for Linux & Steam Deck](https://github.com/boggedbrush/PatchOpsIII/releases/download/v1.3.0-beta/PatchOpsIII-Beta.AppImage)
   - SHA256: `ea4af37f33e548027ffd4d4071293f70cf7606851a2ce445bf4cc2cedc98bb4d`
   - SHA256 file: [PatchOpsIII-Beta.AppImage.sha256](https://github.com/boggedbrush/PatchOpsIII/releases/download/v1.3.0-beta/PatchOpsIII-Beta.AppImage.sha256)
   - Update metadata: [PatchOpsIII-Beta.AppImage.zsync](https://github.com/boggedbrush/PatchOpsIII/releases/download/v1.3.0-beta/PatchOpsIII-Beta.AppImage.zsync)
-  - VirusTotal: Not published for this beta.
+  - VirusTotal: [Linux scan](https://www.virustotal.com/gui/file/ea4af37f33e548027ffd4d4071293f70cf7606851a2ce445bf4cc2cedc98bb4d)
 
 ---
 
