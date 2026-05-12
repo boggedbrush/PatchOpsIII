@@ -50,6 +50,8 @@ jobs:
       PYTHON_VERSION: "3.12"
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
       WINDOWS_BINARY: dist\packages\PatchOpsIII.exe
+      VT_API_KEY: ${{ secrets.VT_API_KEY }}
+      VT_CLI_ARCHIVE: vt-cli-latest.zip
     steps:
       - uses: actions/checkout@v4
         with:
@@ -117,6 +119,44 @@ jobs:
           $vtUrl = "https://www.virustotal.com/gui/file/$hash"
           "hash=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "vt_url=$vtUrl" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+      - name: Determine VirusTotal CLI release
+        id: vt_release
+        if: ${{ env.VT_API_KEY != '' }}
+        run: |
+          $release = Invoke-RestMethod -Uri https://api.github.com/repos/VirusTotal/vt-cli/releases/latest
+          $tag = $release.tag_name
+          if (-not $tag) {
+            throw 'Release tag missing from VirusTotal CLI metadata'
+          }
+          $asset = $release.assets | Where-Object { $_.name -eq 'Windows64.zip' } | Select-Object -First 1
+          if (-not $asset) {
+            throw 'Windows64.zip asset not found in VirusTotal CLI release metadata'
+          }
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "url=$($asset.browser_download_url)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+      - name: Cache VirusTotal CLI
+        id: cache-vt
+        if: ${{ env.VT_API_KEY != '' }}
+        uses: actions/cache@v4
+        with:
+          path: |
+            vt.exe
+            ${{ env.VT_CLI_ARCHIVE }}
+          key: vt-${{ runner.os }}-${{ steps.vt_release.outputs.tag }}
+      - name: Download VirusTotal CLI
+        if: ${{ env.VT_API_KEY != '' && steps.cache-vt.outputs.cache-hit != 'true' }}
+        run: |
+          Invoke-WebRequest -Uri '${{ steps.vt_release.outputs.url }}' -OutFile $env:VT_CLI_ARCHIVE
+          Expand-Archive -Path $env:VT_CLI_ARCHIVE -DestinationPath . -Force
+      - name: Ensure VirusTotal CLI executable
+        if: ${{ env.VT_API_KEY != '' }}
+        run: |
+          if (-not (Test-Path 'vt.exe')) {
+            throw 'VirusTotal CLI binary vt.exe not found'
+          }
+      - name: VirusTotal scan
+        if: ${{ env.VT_API_KEY != '' }}
+        run: .\vt.exe scan file $env:WINDOWS_BINARY --apikey $env:VT_API_KEY
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:

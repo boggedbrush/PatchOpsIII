@@ -51,6 +51,8 @@ jobs:
       APPIMAGE_PATH: dist/packages/PatchOpsIII.AppImage
       ZSYNC_PATH: dist/packages/PatchOpsIII.AppImage.zsync
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      VT_API_KEY: ${{ secrets.VT_API_KEY }}
+      VT_CLI_ARCHIVE: vt-cli.zip
     steps:
       - uses: actions/checkout@v4
         with:
@@ -97,7 +99,7 @@ jobs:
       - name: Install Linux packaging prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y binutils zsync
+          sudo apt-get install -y binutils unzip zsync
       - name: Install Python backend dependencies
         run: |
           python -m venv .venv
@@ -130,6 +132,63 @@ jobs:
           vt_url="https://www.virustotal.com/gui/file/$hash"
           printf "hash=%s\n" "$hash" >> "$GITHUB_OUTPUT"
           printf "vt_url=%s\n" "$vt_url" >> "$GITHUB_OUTPUT"
+      - name: Determine VirusTotal CLI release
+        id: vt_release
+        if: ${{ env.VT_API_KEY != '' }}
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          url = "https://api.github.com/repos/VirusTotal/vt-cli/releases/latest"
+          with urllib.request.urlopen(url) as response:
+              data = json.load(response)
+
+          tag = data.get("tag_name")
+          if not tag:
+              raise SystemExit("Release tag missing from VirusTotal CLI metadata")
+
+          try:
+              asset_url = next(
+                  asset["browser_download_url"]
+                  for asset in data["assets"]
+                  if asset["name"] == "Linux64.zip"
+              )
+          except StopIteration as exc:
+              raise SystemExit("Linux64.zip asset not found in VirusTotal CLI release metadata") from exc
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"tag={tag}\n")
+              handle.write(f"url={asset_url}\n")
+          PY
+      - name: Cache VirusTotal CLI
+        id: cache-vt
+        if: ${{ env.VT_API_KEY != '' }}
+        uses: actions/cache@v4
+        with:
+          path: |
+            vt
+            ${{ env.VT_CLI_ARCHIVE }}
+          key: vt-${{ runner.os }}-${{ steps.vt_release.outputs.tag }}
+      - name: Download VirusTotal CLI
+        if: ${{ env.VT_API_KEY != '' && steps.cache-vt.outputs.cache-hit != 'true' }}
+        run: |
+          set -euo pipefail
+          curl -sSL "${{ steps.vt_release.outputs.url }}" -o "$VT_CLI_ARCHIVE"
+          unzip -q -o "$VT_CLI_ARCHIVE"
+      - name: Ensure VirusTotal CLI executable
+        if: ${{ env.VT_API_KEY != '' }}
+        run: |
+          if [ ! -f vt ]; then
+            echo 'VirusTotal CLI binary not found' >&2
+            exit 1
+          fi
+          chmod +x vt
+      - name: VirusTotal scan
+        if: ${{ env.VT_API_KEY != '' }}
+        run: ./vt scan file "$APPIMAGE_PATH" --apikey "$VT_API_KEY"
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
