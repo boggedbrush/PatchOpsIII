@@ -1544,10 +1544,8 @@ def _reset_to_stock(game_dir: str) -> None:
         except Exception as exc:
             write_log(f"Enhanced reset step failed: {exc}", "Warning", log_target)
 
-    executable = _find_bo3_executable(game_dir) or (Path(game_dir) / "BlackOps3.exe")
     try:
-        if _restore_backup(executable, "Restored original executable from backup."):
-            write_exe_variant(game_dir, "default")
+        _restore_current_exe(game_dir)
     except Exception as exc:
         write_log(f"Executable reset step failed: {exc}", "Warning", log_target)
 
