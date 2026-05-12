@@ -53,8 +53,7 @@ from bo3_enhanced import (
     validate_dump_source,
 )
 from t7_patch import (
-    T7PATCH_ASSETS,
-    _expected_asset_sha256,
+    _resolve_t7patch_asset,
     add_defender_exclusion,
     backup_lpc_files,
     check_t7_patch_status,
@@ -767,7 +766,7 @@ def _install_t7_patch(game_dir: str) -> None:
         add_defender_exclusion(game_dir, log_target)
 
     write_log("Downloading T7 Patch...", "Info", log_target)
-    zip_url = T7PATCH_ASSETS["Linux.Steamdeck.and.Manual.Windows.Install.zip"]["download_url"]
+    zip_url, expected_hashes = _resolve_t7patch_asset("Linux.Steamdeck.and.Manual.Windows.Install.zip", log_target)
     zip_dest = MOD_FILES_DIR / "T7Patch.zip"
     source_dir = MOD_FILES_DIR / "linux"
 
@@ -776,9 +775,8 @@ def _install_t7_patch(game_dir: str) -> None:
     if source_dir.exists():
         shutil.rmtree(source_dir)
 
-    expected_hashes = _expected_asset_sha256("Linux.Steamdeck.and.Manual.Windows.Install.zip", log_target)
     if not expected_hashes:
-        raise RuntimeError("No trusted SHA-256 available for T7 Patch archive.")
+        raise RuntimeError("No GitHub SHA-256 digest available for T7 Patch archive.")
     download_file(zip_url, str(zip_dest), log_target, expected_sha256=expected_hashes)
     write_log("Downloaded T7 Patch successfully.", "Success", log_target)
 

@@ -14,16 +14,20 @@ T7_INSTALL_MARKERS = (
     "t7patch.dll",
 )
 T7PATCH_CORE_REPOSITORY = "Scroptss/T7Patch"
-T7PATCH_CORE_TAG = "v3.02"
+T7PATCH_CORE_TAG = "latest"
 T7PATCH_LEGACY_REPOSITORY = "shiversoftdev/t7patch"
 T7PATCH_LEGACY_TAG = "Current"
 
 
-def _github_release_tag_api(repo_name: str, tag_name: str) -> str:
+def _github_release_api(repo_name: str, tag_name: str) -> str:
+    if tag_name == "latest":
+        return f"https://api.github.com/repos/{repo_name}/releases/latest"
     return f"https://api.github.com/repos/{repo_name}/releases/tags/{tag_name}"
 
 
 def _github_release_asset_url(repo_name: str, tag_name: str, asset_name: str) -> str:
+    if tag_name == "latest":
+        return f"https://github.com/{repo_name}/releases/latest/download/{asset_name}"
     return f"https://github.com/{repo_name}/releases/download/{tag_name}/{asset_name}"
 
 
@@ -36,10 +40,7 @@ T7PATCH_ASSETS = {
             T7PATCH_CORE_TAG,
             "Linux.Steamdeck.and.Manual.Windows.Install.zip",
         ),
-        "release_api": _github_release_tag_api(T7PATCH_CORE_REPOSITORY, T7PATCH_CORE_TAG),
-        "trusted_sha256": {
-            "e34411e70d3c99773445ab758851304d7f6a80867a987ec7f4a1a1df72b11bb1",
-        },
+        "release_api": _github_release_api(T7PATCH_CORE_REPOSITORY, T7PATCH_CORE_TAG),
     },
     "LPC.1.zip": {
         "download_url": _github_release_asset_url(
@@ -47,14 +48,14 @@ T7PATCH_ASSETS = {
             T7PATCH_LEGACY_TAG,
             "LPC.1.zip",
         ),
-        "release_api": _github_release_tag_api(T7PATCH_LEGACY_REPOSITORY, T7PATCH_LEGACY_TAG),
+        "release_api": _github_release_api(T7PATCH_LEGACY_REPOSITORY, T7PATCH_LEGACY_TAG),
         "trusted_sha256": {
             "c94855841a233c9dcdea2799c12693fed8554d0e59fe68257ae66ffbdf2fa58b",
         },
     },
 }
 
-_t7patch_release_digests_cache = {}
+_t7patch_release_assets_cache = {}
 defender_warning_logged = False
 
 # === Core T7 Patch functions (unchanged) ===
@@ -215,39 +216,47 @@ def restore_lpc_backups(game_dir, log_widget):
         write_log(f"Error restoring LPC backups: {e}", "Error", log_widget)
 
 
-def _fetch_t7patch_release_digests(release_api):
-    cached = _t7patch_release_digests_cache.get(release_api)
+def _fetch_t7patch_release_assets(release_api):
+    cached = _t7patch_release_assets_cache.get(release_api)
     if cached is not None:
         return cached
-    digests = {}
+    release_assets = {}
     try:
         response = requests.get(release_api, timeout=30)
         response.raise_for_status()
         data = response.json()
         for asset in data.get("assets") or []:
             name = str(asset.get("name") or "").strip()
-            digest_value = str(asset.get("digest") or "").strip()
-            if not name or not digest_value.lower().startswith("sha256:"):
+            if not name:
                 continue
-            candidate = digest_value.split(":", 1)[1].strip().lower()
-            if re.fullmatch(r"[a-f0-9]{64}", candidate):
-                digests[name] = candidate
+            asset_info = {
+                "download_url": str(asset.get("browser_download_url") or "").strip(),
+                "sha256": "",
+            }
+            digest_value = str(asset.get("digest") or "").strip()
+            if digest_value.lower().startswith("sha256:"):
+                candidate = digest_value.split(":", 1)[1].strip().lower()
+                if re.fullmatch(r"[a-f0-9]{64}", candidate):
+                    asset_info["sha256"] = candidate
+            release_assets[name] = asset_info
     except Exception:
-        # Network/API failures should not break installs if a trusted pinned hash exists.
-        digests = {}
+        # Network/API failures should not break legacy installs if a trusted pinned hash exists.
+        release_assets = {}
 
-    _t7patch_release_digests_cache[release_api] = digests
-    return digests
+    _t7patch_release_assets_cache[release_api] = release_assets
+    return release_assets
 
 
-def _expected_asset_sha256(asset_name, log_widget):
+def _resolve_t7patch_asset(asset_name, log_widget):
     asset_meta = T7PATCH_ASSETS.get(asset_name)
     if not asset_meta:
-        return set()
+        return "", set()
 
-    api_digest = _fetch_t7patch_release_digests(asset_meta["release_api"]).get(asset_name)
+    release_asset = _fetch_t7patch_release_assets(asset_meta["release_api"]).get(asset_name) or {}
+    download_url = release_asset.get("download_url") or asset_meta["download_url"]
+    api_digest = release_asset.get("sha256")
     if api_digest:
-        return {api_digest.lower()}
+        return download_url, {api_digest.lower()}
 
     trusted = {value.lower() for value in asset_meta.get("trusted_sha256", set()) if value}
     if trusted:
@@ -256,7 +265,7 @@ def _expected_asset_sha256(asset_name, log_widget):
             "Warning",
             log_widget,
         )
-    return trusted
+    return download_url, trusted
 
 
 def download_file(url, filename, log_widget, expected_sha256=None):
@@ -285,7 +294,7 @@ def download_file(url, filename, log_widget, expected_sha256=None):
 
 def install_lpc_files(game_dir, mod_files_dir, log_widget):
     """Download and install LPC files"""
-    zip_url = T7PATCH_ASSETS["LPC.1.zip"]["download_url"]
+    zip_url, expected_hashes = _resolve_t7patch_asset("LPC.1.zip", log_widget)
     zip_dest = os.path.join(mod_files_dir, "LPC.zip")
     temp_dir = os.path.join(mod_files_dir, "LPC_temp")
     lpc_dir = os.path.join(game_dir, "LPC")
@@ -299,7 +308,6 @@ def install_lpc_files(game_dir, mod_files_dir, log_widget):
     
     try:
         # Download LPC.zip
-        expected_hashes = _expected_asset_sha256("LPC.1.zip", log_widget)
         if not expected_hashes:
             write_log(
                 "No trusted SHA-256 available for LPC.1.zip; aborting download.",
