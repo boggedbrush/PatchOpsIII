@@ -66,6 +66,7 @@ function startBackend() {
       ...process.env,
       PATCHOPSIII_BACKEND_HOST: backendHost,
       PATCHOPSIII_BACKEND_PORT: String(backendPort),
+      PATCHOPSIII_VERSION: app.getVersion(),
       PYTHONUNBUFFERED: "1"
     }
   });

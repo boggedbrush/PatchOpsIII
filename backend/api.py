@@ -44,7 +44,6 @@ from utils import (
     write_exe_variant,
     write_log,
 )
-from version import APP_VERSION
 from bo3_enhanced import (
     detect_enhanced_install,
     download_latest_enhanced,
@@ -101,6 +100,26 @@ GITHUB_RELEASE_PAGE_URL = "https://github.com/boggedbrush/PatchOpsIII/releases/l
 SUPPORTED_LAUNCH_OPTIONS = {"", "+set fs_game offlinemp"} | {
     profile["launch_option"] for profile in WORKSHOP_PROFILES.values()
 }
+
+
+def _load_app_version() -> str:
+    for env_name in ("PATCHOPSIII_VERSION_OVERRIDE", "PATCHOPSIII_VERSION"):
+        version = os.environ.get(env_name, "").strip()
+        if version:
+            return version
+
+    try:
+        package_data = json.loads((APP_ROOT / "package.json").read_text(encoding="utf-8"))
+        version = str(package_data.get("version", "")).strip()
+        if version:
+            return version
+    except Exception:
+        pass
+
+    return "0.0.0"
+
+
+APP_VERSION = _load_app_version()
 
 
 class LogBus:

@@ -802,7 +802,7 @@ function App() {
 
   return (
     <main className="app-shell">
-      <TitleBar appVersion={state?.appVersion ?? "v1.3.0-beta"} updateDisabled={!backendReady || busy === "update-check"} onCheckForUpdates={checkForUpdates} />
+      <TitleBar appVersion={state?.appVersion ?? "0.0.0"} updateDisabled={!backendReady || busy === "update-check"} onCheckForUpdates={checkForUpdates} />
 
       <div className="directory-row">
         <label>
