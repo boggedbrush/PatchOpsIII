@@ -26,3 +26,6 @@ node_modules/
 
 # vdf files:
 *.vdf
+
+# codex:
+.codex/
