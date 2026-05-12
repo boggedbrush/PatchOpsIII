@@ -35,6 +35,8 @@ PatchOpsIII manages the community T7 Patch workflow through backend helpers that
 
 Patch downloads use the maintained [Scroptss/T7Patch](https://github.com/Scroptss/T7Patch) v3.02 release for core T7Patch files, while LPC files still come from the legacy release because the maintained fork does not publish that asset.
 
+You can learn more about the maintained T7 Patch [here](https://github.com/Scroptss/T7Patch).
+
 ### BO3 Enhanced
 
 PatchOpsIII includes BO3 Enhanced install, uninstall, verification, status, and launch support. Enhanced is the primary supported compatibility surface for users who need that mod path.
@@ -88,3 +90,4 @@ bun run dev:desktop
 - Do not reintroduce Qt, PySide, or Python packaging-only workflows for new frontend work.
 - Keep backend modules headless so Electron can call them without importing legacy UI dependencies.
 - Historical release notes may mention removed workflows, but current documentation should describe the Electron-first app.
+- Known issue: [All-around Enhancement Mod](https://steamcommunity.com/sharedfiles/filedetails/?id=2631943123) full version currently crashes before launch, so PatchOpsIII provides All-around Enhancement Lite instead.
