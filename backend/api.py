@@ -133,6 +133,14 @@ class CompatibleDepotRequired(RuntimeError):
         )
 
 
+class ElevationRequired(RuntimeError):
+    pass
+
+
+class ElevationCancelled(RuntimeError):
+    pass
+
+
 def _load_app_version() -> str:
     for env_name in ("PATCHOPSIII_VERSION_OVERRIDE", "PATCHOPSIII_VERSION"):
         version = os.environ.get(env_name, "").strip()
@@ -1215,9 +1223,99 @@ def _find_t7_patch_source_dir(extract_root: Path) -> Path | None:
     return None
 
 
+def _elevated_backend_command_args(command: str, *args: str) -> tuple[str, list[str], str]:
+    if getattr(sys, "frozen", False):
+        return sys.executable, [command, *args], str(APP_ROOT)
+    return sys.executable, ["-m", "backend.api", command, *args], str(APP_ROOT)
+
+
+def _run_elevated_and_wait(command: str, *args: str) -> int:
+    if platform.system() != "Windows":
+        raise ElevationRequired("Administrator approval is only available on Windows.")
+
+    import ctypes
+    from ctypes import wintypes
+
+    executable, parameters, working_dir = _elevated_backend_command_args(command, *args)
+    params = subprocess.list2cmdline(parameters)
+
+    class ShellExecuteInfo(ctypes.Structure):
+        _fields_ = [
+            ("cbSize", wintypes.DWORD),
+            ("fMask", wintypes.ULONG),
+            ("hwnd", wintypes.HWND),
+            ("lpVerb", wintypes.LPCWSTR),
+            ("lpFile", wintypes.LPCWSTR),
+            ("lpParameters", wintypes.LPCWSTR),
+            ("lpDirectory", wintypes.LPCWSTR),
+            ("nShow", ctypes.c_int),
+            ("hInstApp", wintypes.HINSTANCE),
+            ("lpIDList", wintypes.LPVOID),
+            ("lpClass", wintypes.LPCWSTR),
+            ("hkeyClass", wintypes.HKEY),
+            ("dwHotKey", wintypes.DWORD),
+            ("hIcon", wintypes.HANDLE),
+            ("hProcess", wintypes.HANDLE),
+        ]
+
+    SEE_MASK_NOCLOSEPROCESS = 0x00000040
+    SW_HIDE = 0
+    WAIT_OBJECT_0 = 0x00000000
+    INFINITE = 0xFFFFFFFF
+    ERROR_CANCELLED = 1223
+
+    shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    shell32.ShellExecuteExW.argtypes = [ctypes.POINTER(ShellExecuteInfo)]
+    shell32.ShellExecuteExW.restype = wintypes.BOOL
+    kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel32.WaitForSingleObject.restype = wintypes.DWORD
+    kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+
+    info = ShellExecuteInfo()
+    info.cbSize = ctypes.sizeof(ShellExecuteInfo)
+    info.fMask = SEE_MASK_NOCLOSEPROCESS
+    info.hwnd = None
+    info.lpVerb = "runas"
+    info.lpFile = executable
+    info.lpParameters = params
+    info.lpDirectory = working_dir
+    info.nShow = SW_HIDE
+
+    write_log("Requesting Windows administrator approval...", "Info", log_target)
+    if not shell32.ShellExecuteExW(ctypes.byref(info)):
+        error_code = ctypes.get_last_error()
+        if error_code == ERROR_CANCELLED:
+            raise ElevationCancelled("Windows administrator approval was cancelled.")
+        raise ElevationRequired(f"Windows administrator approval failed with code {error_code}.")
+
+    try:
+        wait_result = kernel32.WaitForSingleObject(info.hProcess, INFINITE)
+        if wait_result != WAIT_OBJECT_0:
+            raise ElevationRequired(f"Elevated helper did not finish normally ({wait_result}).")
+
+        exit_code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(info.hProcess, ctypes.byref(exit_code)):
+            raise ElevationRequired("Could not read elevated helper result.")
+        return int(exit_code.value)
+    finally:
+        if info.hProcess:
+            kernel32.CloseHandle(info.hProcess)
+
+
+def _install_t7_patch_elevated(game_dir: str) -> None:
+    exit_code = _run_elevated_and_wait("--install-t7-patch", game_dir)
+    if exit_code != 0:
+        raise RuntimeError(f"Elevated T7 Patch install failed with code {exit_code}.")
+    write_log("T7 Patch install completed with administrator approval.", "Success", log_target)
+
+
 def _install_t7_patch(game_dir: str) -> None:
     if platform.system() == "Windows" and not is_admin():
-        raise PermissionError("Run PatchOpsIII as administrator to install or update T7 Patch.")
+        raise ElevationRequired("T7 Patch install needs Windows administrator approval.")
 
     MOD_FILES_DIR.mkdir(parents=True, exist_ok=True)
     if platform.system() == "Windows":
@@ -1902,7 +2000,10 @@ async def install_t7_patch() -> dict[str, Any]:
     if not game_dir:
         return {"ok": False, "error": "Game directory is not set."}
     try:
-        await _blocking(_install_t7_patch, game_dir)
+        if platform.system() == "Windows" and not is_admin():
+            await _blocking(_install_t7_patch_elevated, game_dir)
+        else:
+            await _blocking(_install_t7_patch, game_dir)
     except Exception as exc:
         write_log(f"T7 Patch install failed: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
@@ -2217,7 +2318,31 @@ async def logs(websocket: WebSocket) -> None:
         log_bus.disconnect(websocket)
 
 
+def _run_cli_command(argv: list[str]) -> int | None:
+    if not argv:
+        return None
+
+    command = argv[0]
+    if command == "--install-t7-patch":
+        if len(argv) < 2:
+            write_log("T7 Patch install failed: game directory was not provided.", "Error", log_target)
+            return 2
+        game_dir = argv[1]
+        try:
+            _install_t7_patch(game_dir)
+        except Exception as exc:
+            write_log(f"T7 Patch install failed: {exc}", "Error", log_target)
+            return 1
+        return 0
+
+    return None
+
+
 if __name__ == "__main__":
+    cli_result = _run_cli_command(sys.argv[1:])
+    if cli_result is not None:
+        raise SystemExit(cli_result)
+
     import uvicorn
 
     uvicorn.run(
