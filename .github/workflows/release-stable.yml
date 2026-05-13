@@ -340,6 +340,10 @@ jobs:
             if [ -d "$dir" ]; then
               for archive in "${dir}"/*.zip "${dir}"/*.tar "${dir}"/*.tar.gz "${dir}"/*.tgz; do
                 [ -e "$archive" ] || continue
+                if [ "$dir" = "artifacts/windows" ] && [ "$(basename "$archive")" = "PatchOpsIII.zip" ]; then
+                  echo "Keeping Windows release zip intact: $archive"
+                  continue
+                fi
                 echo "Extracting $archive"
                 case "$archive" in
                   *.tar.gz|*.tgz) tar -xzf "$archive" -C "$dir" ;;
