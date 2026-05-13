@@ -1,6 +1,6 @@
 {
   "name": "patchopsiii-electron",
-  "version": "v1.3.0-beta2",
+  "version": "v1.3.0-beta3",
   "description": "Electron control center for Call of Duty: Black Ops III maintenance, mod setup, and performance tuning.",
   "author": "boggedbrush",
   "private": true,
