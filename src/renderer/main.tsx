@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   AlertTriangle,
+  CheckCircle2,
   Clipboard,
   Cpu,
   Download,
@@ -40,6 +41,7 @@ const captionIconUrls = {
 const navItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "t7", label: "T7 Patch", icon: ShieldCheck },
+  { id: "exe", label: "EXE Swapper", icon: RefreshCw },
   { id: "enhanced", label: "Enhanced", icon: Gem },
   // removed for now as the developer has decided to turn this mod into a paid service
   { id: "graphics", label: "Graphics", icon: Image },
@@ -69,6 +71,47 @@ type BrowseState = {
   roots: BrowseLocation[];
   shortcuts: BrowseLocation[];
   entries: BrowseEntry[];
+};
+
+type DepotPromptState = {
+  command: string;
+  copied: boolean;
+  watching: boolean;
+};
+
+type EnhancedValidationState = {
+  label: string;
+  ok: boolean | null;
+  checkedAt: string | null;
+};
+
+const defaultExeSwap: PatchOpsState["exeSwap"] = {
+  profile: "",
+  modeLabel: "Unknown",
+  patchLabel: "",
+  displayLabel: "EXE Swapper is unavailable until the local service restarts.",
+  state: "unavailable",
+  activeBuildId: "Unknown",
+  activeBuildDate: "",
+  currentBuildId: "21201493",
+  currentBuildDate: "Feb 19, 2026",
+  compatibleBuildId: "10650222",
+  compatibleBuildDate: "Mar 3, 2023",
+  enhancedBuildId: "Enhanced",
+  enhancedBuildDate: "",
+  executable: "",
+  executableName: "",
+  executableHash: "",
+  trustedExecutable: false,
+  integrityStatus: "unavailable",
+  integrityMessage: "EXE Swapper is unavailable until the local service restarts.",
+  backupAvailable: false,
+  latestAvailable: false,
+  compatibleAvailable: false,
+  enhancedAvailable: false,
+  compatibleActive: false,
+  enhancedExeActive: false,
+  enhancedActive: false
 };
 
 const configMap = {
@@ -280,6 +323,29 @@ function backendUnavailableMessage(status: BackendStatus) {
   return status === "failed" ? "PatchOpsIII took longer than expected. Restart PatchOpsIII and try again." : "PatchOpsIII is still getting ready.";
 }
 
+function normalizeState(next: PatchOpsState) {
+  return {
+    ...next,
+    enhanced: {
+      ...next.enhanced,
+      filesInstalled: next.enhanced.filesInstalled ?? 0,
+      backupStatus: next.enhanced.backupStatus ?? "Not created"
+    },
+    exeSwap: next.exeSwap ?? defaultExeSwap
+  };
+}
+
+function formatTimestamp(value: string | null | undefined) {
+  if (!value) {
+    return "Never";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString();
+}
+
 async function waitForBackendReady(timeoutMs = 12000) {
   const start = Date.now();
   const backendUrl = await resolveBackendUrl();
@@ -334,6 +400,8 @@ function App() {
   const [browseInput, setBrowseInput] = useState("");
   const [browseError, setBrowseError] = useState<string | null>(null);
   const [browseMode, setBrowseMode] = useState<"game" | "dump">("game");
+  const [depotPrompt, setDepotPrompt] = useState<DepotPromptState | null>(null);
+  const depotWatchTimer = useRef<number | null>(null);
   const [t7Gamertag, setT7Gamertag] = useState("");
   const [t7ColorCode, setT7ColorCode] = useState("");
   const [t7Password, setT7Password] = useState("");
@@ -342,11 +410,12 @@ function App() {
   const [showT7Password, setShowT7Password] = useState(false);
   const [showT7PasswordEdit, setShowT7PasswordEdit] = useState(false);
   const [enhancedDumpSource, setEnhancedDumpSource] = useState("");
+  const [enhancedValidation, setEnhancedValidation] = useState<EnhancedValidationState>({ label: "Not run", ok: null, checkedAt: null });
   const [dxvkSettings, setDxvkSettings] = useState<DxvkSettings>(dxvkPresets.Recommended);
 
   async function refresh() {
     const next = await apiRequest<PatchOpsState>("/api/status");
-    setState(next);
+    setState(normalizeState(next));
     setLogs(uniqueVisibleLogs(next.logs));
   }
 
@@ -367,6 +436,115 @@ function App() {
     );
   }
 
+  async function useCompatibleExe() {
+    if (backendStatus !== "ready") {
+      setError(backendUnavailableMessage(backendStatus));
+      return;
+    }
+    setBusy("exe-compatible");
+    setError(null);
+    try {
+      const result = await apiRequest<ApiResult>("/api/exe-swap/compatible", {
+        method: "POST"
+      });
+      if (!result.ok) {
+        if (result.depotRequired && result.depotCommand) {
+          if (result.state) {
+            setState(normalizeState(result.state));
+            setLogs(uniqueVisibleLogs(result.state.logs));
+          }
+          setDepotPrompt({ command: result.depotCommand, copied: false, watching: false });
+          return;
+        }
+        throw new Error(result.error ?? "Compatible EXE swap failed.");
+      }
+      if (result.state) {
+        setState(normalizeState(result.state));
+        setLogs(uniqueVisibleLogs(result.state.logs));
+      } else {
+        await refresh();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Compatible EXE swap failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function copyDepotCommand() {
+    if (!depotPrompt) {
+      return;
+    }
+    await navigator.clipboard.writeText(depotPrompt.command);
+    setDepotPrompt((current) => current ? { ...current, copied: true } : current);
+  }
+
+  async function continueDepotDownload() {
+    if (!depotPrompt) {
+      return;
+    }
+    setDepotPrompt((current) => current ? { ...current, watching: true } : current);
+    window.location.href = "steam://open/console";
+  }
+
+  async function pollCompatibleDepot() {
+    try {
+      const depotResult = await apiRequest<ApiResult<{ available: boolean }>>("/api/exe-swap/compatible-depot");
+      if (depotResult.state) {
+        setState(normalizeState(depotResult.state));
+        setLogs(uniqueVisibleLogs(depotResult.state.logs));
+      }
+      if (!depotResult.ok || !depotResult.available) {
+        return;
+      }
+
+      const swapResult = await apiRequest<ApiResult>("/api/exe-swap/compatible", {
+        method: "POST"
+      });
+      if (!swapResult.ok) {
+        if (swapResult.depotRequired) {
+          return;
+        }
+        throw new Error(swapResult.error ?? "Compatible EXE swap failed.");
+      }
+      if (swapResult.state) {
+        setState(normalizeState(swapResult.state));
+        setLogs(uniqueVisibleLogs(swapResult.state.logs));
+      } else {
+        await refresh();
+      }
+      if (depotWatchTimer.current !== null) {
+        window.clearInterval(depotWatchTimer.current);
+        depotWatchTimer.current = null;
+      }
+      setDepotPrompt(null);
+      setActiveView("exe");
+    } catch (err) {
+      if (depotWatchTimer.current !== null) {
+        window.clearInterval(depotWatchTimer.current);
+        depotWatchTimer.current = null;
+      }
+      setDepotPrompt((current) => current ? { ...current, watching: false } : current);
+      setError(err instanceof Error ? err.message : "Compatible EXE swap failed.");
+    }
+  }
+
+  async function useCurrentExe() {
+    await runAction("exe-current", () =>
+      apiRequest<ApiResult>("/api/exe-swap/current", {
+        method: "POST"
+      })
+    );
+  }
+
+  async function useEnhancedExe() {
+    await runAction("exe-enhanced", () =>
+      apiRequest<ApiResult>("/api/exe-swap/enhanced", {
+        method: "POST"
+      })
+    );
+  }
+
   async function runAction<T>(id: string, action: () => Promise<ApiResult<T> | PatchOpsState | unknown>) {
     if (backendStatus !== "ready") {
       setError(backendUnavailableMessage(backendStatus));
@@ -382,7 +560,7 @@ function App() {
           throw new Error(apiResult.error ?? "Action failed");
         }
         if (apiResult.state) {
-          setState(apiResult.state);
+          setState(normalizeState(apiResult.state));
           setLogs(uniqueVisibleLogs(apiResult.state.logs));
         } else {
           await refresh();
@@ -581,6 +759,50 @@ function App() {
     );
   }
 
+  async function validateEnhancedSource() {
+    if (backendStatus !== "ready") {
+      setError(backendUnavailableMessage(backendStatus));
+      return;
+    }
+    const dumpSource = enhancedDumpSource.trim();
+    if (!dumpSource) {
+      setEnhancedValidation({ label: "Select a source first", ok: false, checkedAt: new Date().toISOString() });
+      return;
+    }
+    setBusy("enhanced-validate");
+    setError(null);
+    try {
+      const result = await apiRequest<ApiResult<{ valid: boolean; message?: string }>>("/api/enhanced-validate", {
+        method: "POST",
+        body: JSON.stringify({ dumpSource })
+      });
+      if (result.state) {
+        setState(normalizeState(result.state));
+        setLogs(uniqueVisibleLogs(result.state.logs));
+      }
+      setEnhancedValidation({
+        label: result.message ?? (result.valid ? "Ready" : "Not valid"),
+        ok: result.valid,
+        checkedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      setEnhancedValidation({ label: "Validation failed", ok: false, checkedAt: new Date().toISOString() });
+      setError(err instanceof Error ? err.message : "Validation failed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function useDroppedEnhancedSource(event: React.DragEvent<HTMLElement>) {
+    event.preventDefault();
+    const file = event.dataTransfer.files[0] as (File & { path?: string }) | undefined;
+    const nextSource = file?.path || file?.name || "";
+    if (nextSource) {
+      setEnhancedDumpSource(nextSource);
+      setEnhancedValidation({ label: "Not run", ok: null, checkedAt: null });
+    }
+  }
+
   async function uninstallEnhanced() {
     if (!window.confirm("Uninstall BO3 Enhanced files and restore backups?")) {
       return;
@@ -733,6 +955,7 @@ function App() {
   async function selectBrowsePath(path: string) {
     if (browseMode === "dump") {
       setEnhancedDumpSource(path);
+      setEnhancedValidation({ label: "Not run", ok: null, checkedAt: null });
       setBrowseOpen(false);
       return;
     }
@@ -816,6 +1039,22 @@ function App() {
     }
   }, [state?.dxvk.settings]);
 
+  useEffect(() => {
+    if (!depotPrompt?.watching || depotWatchTimer.current !== null) {
+      return;
+    }
+    void pollCompatibleDepot();
+    depotWatchTimer.current = window.setInterval(() => {
+      void pollCompatibleDepot();
+    }, 5000);
+    return () => {
+      if (depotWatchTimer.current !== null) {
+        window.clearInterval(depotWatchTimer.current);
+        depotWatchTimer.current = null;
+      }
+    };
+  }, [depotPrompt?.watching]);
+
   const activeLaunchProfileLabel =
     state?.activeLaunchProfile === "custom"
       ? "Custom"
@@ -839,6 +1078,15 @@ function App() {
     .reverse()
     .find((entry) => entry.category === "Error");
   const releaseChannelLabel = state?.releaseChannel === "beta" ? "Beta" : "Stable";
+  const activeExeProfile = state?.exeSwap.profile ?? "";
+  const activeExeTrusted = Boolean(state?.exeSwap.trustedExecutable);
+  const compatibleDisabled = !state?.gameDetected || activeExeProfile === "compatible" || busy === "exe-compatible";
+  const latestDisabled = !state?.gameDetected || activeExeProfile === "current" || !state.exeSwap.latestAvailable || busy === "exe-current";
+  const enhancedDisabled = !state?.gameDetected || activeExeProfile === "enhanced" || !state.exeSwap.enhancedAvailable || busy === "exe-enhanced";
+  const enhancedSourceLabel = enhancedDumpSource.trim() || "None";
+  const enhancedValidationLabel = enhancedValidation.checkedAt
+    ? `${enhancedValidation.label} (${formatTimestamp(enhancedValidation.checkedAt)})`
+    : enhancedValidation.label;
 
   function retryStartup() {
     setError(null);
@@ -1144,55 +1392,237 @@ function App() {
               </>
             )}
 
+            {activeView === "exe" && state && (
+              <Panel title="EXE Swapper" className="exe-swap-panel">
+                <div className="exe-swap-layout">
+                  <section className="exe-swap-hero">
+                    <div className="exe-swap-title">
+                      <RefreshCw size={20} />
+                      <div>
+                        <span>Active build</span>
+                        <strong>
+                          {state.exeSwap.trustedExecutable && state.exeSwap.profile === "compatible"
+                            ? `Compatible Build (${state.exeSwap.activeBuildId})`
+                            : state.exeSwap.trustedExecutable && state.exeSwap.profile === "current"
+                              ? `Latest Build (${state.exeSwap.activeBuildId})`
+                              : state.exeSwap.trustedExecutable && state.exeSwap.profile === "enhanced"
+                                ? `BO3 Enhanced (${state.exeSwap.activeBuildId})`
+                                : "Unverified EXE"}
+                        </strong>
+                      </div>
+                    </div>
+                    <div className="exe-swap-status-grid">
+                      <StatusPill label={`Latest - ${state.exeSwap.currentBuildDate}`} value={state.exeSwap.currentBuildId} ok={state.exeSwap.trustedExecutable && state.exeSwap.profile === "current"} />
+                      <StatusPill label={`Compatible - ${state.exeSwap.compatibleBuildDate}`} value={state.exeSwap.compatibleBuildId} ok={state.exeSwap.compatibleActive} />
+                      <StatusPill label="Enhanced" value={state.exeSwap.enhancedExeActive ? "Active" : state.exeSwap.enhancedAvailable ? "Available" : "Not found"} ok={state.exeSwap.enhancedAvailable} />
+                    </div>
+                  </section>
+
+                  <section className="exe-swap-options" aria-label="EXE build comparison">
+                    <div className={cx("exe-swap-option", activeExeProfile === "compatible" && activeExeTrusted && "active", compatibleDisabled && "disabled")}>
+                      <header>
+                        <div>
+                          <h3>Compatible Build</h3>
+                          <p>March 3, 2023 Steam depot</p>
+                        </div>
+                        <span className={cx("option-badge", activeExeProfile === "compatible" && activeExeTrusted && "active")}>{activeExeProfile === "compatible" && activeExeTrusted ? "Active" : "Best for mods"}</span>
+                      </header>
+                      <div className="exe-swap-pros">
+                        <span className="pro"><CheckCircle2 size={15} /><strong>Vanilla experience:</strong> Supported</span>
+                        <span className="pro"><CheckCircle2 size={15} /><strong>Modded experience:</strong> Best support</span>
+                        <span className="warn"><AlertTriangle size={15} /><strong>Performance:</strong> Standard Steam performance</span>
+                      </div>
+                      <button className="tool-button primary" disabled={compatibleDisabled} onClick={useCompatibleExe}>
+                        <Download size={16} />
+                        Use Compatible Build
+                      </button>
+                    </div>
+
+                    <div className={cx("exe-swap-option", activeExeProfile === "current" && activeExeTrusted && "active", latestDisabled && "disabled")}>
+                      <header>
+                        <div>
+                          <h3>Latest Build</h3>
+                          <p>February 19, 2026 Steam build</p>
+                        </div>
+                        <span className={cx("option-badge", activeExeProfile === "current" && activeExeTrusted && "active")}>{activeExeProfile === "current" && activeExeTrusted ? "Active" : "Steam default"}</span>
+                      </header>
+                      <div className="exe-swap-pros">
+                        <span className="pro"><CheckCircle2 size={15} /><strong>Vanilla experience:</strong> Best Steam match</span>
+                        <span className="warn"><AlertTriangle size={15} /><strong>Modded experience:</strong> May or may not work</span>
+                        <span className="warn"><AlertTriangle size={15} /><strong>Performance:</strong> Standard Steam performance</span>
+                      </div>
+                      <button className="tool-button" disabled={latestDisabled} onClick={useCurrentExe}>
+                        <RotateCcw size={16} />
+                        Use Latest Build
+                      </button>
+                    </div>
+
+                    <div className={cx("exe-swap-option", activeExeProfile === "enhanced" && activeExeTrusted && "active", enhancedDisabled && "disabled")}>
+                      <header>
+                        <div>
+                          <h3>BO3 Enhanced</h3>
+                          <p>Windows Store build modded for Steam</p>
+                        </div>
+                        <span className={cx("option-badge", activeExeProfile === "enhanced" && activeExeTrusted && "active")}>{activeExeProfile === "enhanced" && activeExeTrusted ? "Active" : state.exeSwap.enhancedAvailable ? "Best performance" : "Not installed"}</span>
+                      </header>
+                      <div className="exe-swap-pros">
+                        <span className="pro"><CheckCircle2 size={15} /><strong>Vanilla experience:</strong> Supported</span>
+                        <span className="con"><X size={15} /><strong>Modded experience:</strong> Most mods unlikely</span>
+                        <span className="pro"><CheckCircle2 size={15} /><strong>Performance:</strong> Highest performance</span>
+                      </div>
+                      <button className="tool-button" disabled={enhancedDisabled} onClick={useEnhancedExe}>
+                        <Gem size={16} />
+                        Use BO3 Enhanced
+                      </button>
+                    </div>
+                  </section>
+                </div>
+              </Panel>
+            )}
+
             {activeView === "enhanced" && (
               <Panel title="Enhanced" className="enhanced-panel">
                 {state && (
                   <div className="enhanced-layout">
-                    <div className="t7-summary">
-                      <ModuleRow icon={Gem} title="BO3 Enhanced" active={state.enhanced.installed} />
-                      <StatusPill label="Launch Override" value={state.enhanced.launchOptionsActive ? "Active" : "Inactive"} ok={state.enhanced.launchOptionsActive} />
-                      <StatusPill label="Detected" value={state.enhanced.detectedAt ? "Tracked" : "Not tracked"} ok={Boolean(state.enhanced.detectedAt)} />
-                    </div>
-
-                    <section className="settings-block enhanced-source">
+                    <section className="enhanced-card enhanced-status-card">
                       <h3>
-                        <Download size={16} />
-                        Install Source
+                        <Gem size={16} />
+                        BO3 Enhanced Status
                       </h3>
-                      <div className="field-grid">
-                        <label>
-                          Dump Source
-                          <div className="input-action">
-                            <input
-                              value={enhancedDumpSource}
-                              onChange={(event) => setEnhancedDumpSource(event.target.value)}
-                              placeholder="DUMP.zip or extracted dump folder"
-                            />
-                            <button type="button" className="small-button" onClick={() => void openBrowseMenu("dump")}>
-                              <FolderOpen size={15} />
-                              Browse
-                            </button>
-                          </div>
-                        </label>
-                      </div>
-                      <p className="info-note">
-                        PatchOpsIII requires a manually supplied UWP game dump for BO3 Enhanced.
-                        <a href="https://youtu.be/rBZZTcSJ9_s?si=41p0r_Enten3h5AQ" target="_blank" rel="noreferrer">
-                          <ExternalLink size={14} />
-                          Dump guide
-                        </a>
-                      </p>
-                      <div className="t7-actions">
-                        <button className="tool-button primary" disabled={!enhancedDumpSource.trim() || busy === "enhanced-install"} onClick={installEnhanced}>
-                          <Download size={16} />
-                          Install / Update BO3 Enhanced
-                        </button>
-                        <button className="tool-button" disabled={!state.enhanced.installed || busy === "enhanced-uninstall"} onClick={uninstallEnhanced}>
-                          <Trash2 size={16} />
-                          Uninstall BO3 Enhanced
-                        </button>
+                      <div className="enhanced-metric-grid">
+                        <div className="enhanced-metric">
+                          <span>Status</span>
+                          <strong className={cx(state.enhanced.installed && "ok")}>{state.enhanced.installed ? "Installed" : "Not installed"}</strong>
+                        </div>
+                        <div className="enhanced-metric">
+                          <span>Launch override</span>
+                          <strong className={cx(state.enhanced.launchOptionsActive && "ok")}>{state.enhanced.launchOptionsActive ? "Active" : "Inactive"}</strong>
+                        </div>
+                        <div className="enhanced-metric">
+                          <span>Game</span>
+                          <strong className={cx(state.gameDetected && "ok")}>{state.gameDetected ? "Detected" : "Not detected"}</strong>
+                        </div>
+                        <div className="enhanced-metric">
+                          <span>Tracking</span>
+                          <strong className={cx(state.enhanced.detectedAt && "ok")}>{state.enhanced.detectedAt ? "Tracked" : "Not tracked"}</strong>
+                        </div>
                       </div>
                     </section>
+
+                    <div className="enhanced-main-grid">
+                      <section className="enhanced-card enhanced-source-card">
+                        <h3>
+                          <Download size={16} />
+                          Install Source
+                        </h3>
+                        <div className="enhanced-source-body">
+                          <div className="enhanced-drop-zone" onDragOver={(event) => event.preventDefault()} onDrop={useDroppedEnhancedSource}>
+                            <strong>Drop DUMP.zip or extracted folder here</strong>
+                            <span>or browse to the dump source manually</span>
+                          </div>
+                          <div className="enhanced-source-controls">
+                            <div className="enhanced-source-actions">
+                              <button type="button" className="tool-button" onClick={() => void openBrowseMenu("dump")}>
+                                <FolderOpen size={16} />
+                                Browse
+                              </button>
+                              <button type="button" className="tool-button" disabled={!enhancedDumpSource.trim() || busy === "enhanced-validate"} onClick={validateEnhancedSource}>
+                                <CheckCircle2 size={16} />
+                                Validate Source
+                              </button>
+                            </div>
+                            <div className="enhanced-source-meta">
+                              <div>
+                                <span>Source</span>
+                                <strong title={enhancedSourceLabel}>{enhancedSourceLabel}</strong>
+                              </div>
+                              <div>
+                                <span>Validation</span>
+                                <strong className={cx(enhancedValidation.ok === true && "ok", enhancedValidation.ok === false && "warn")}>{enhancedValidationLabel}</strong>
+                              </div>
+                            </div>
+                            <button className="tool-button install-primary" disabled={!enhancedDumpSource.trim() || enhancedValidation.ok !== true || busy === "enhanced-install"} onClick={installEnhanced}>
+                              <Download size={16} />
+                              Install / Update BO3 Enhanced
+                            </button>
+                            {enhancedValidation.ok !== true && (
+                              <p className="enhanced-action-note">Install requires a valid DUMP.zip or extracted UWP dump folder.</p>
+                            )}
+                          </div>
+                        </div>
+                      </section>
+
+                      <section className="enhanced-card enhanced-help-card">
+                        <h3>
+                          <AlertTriangle size={16} />
+                          Help / Requirements
+                        </h3>
+                        <div className="enhanced-help-group">
+                          <span className={cx("requirement-line", state.gameDetected && "ok")}>
+                            <CheckCircle2 size={15} />
+                            Game detected
+                          </span>
+                          <span className={cx("requirement-line", enhancedValidation.ok === true && "ok", enhancedValidation.ok !== true && "warn")}>
+                            <AlertTriangle size={15} />
+                            Dump required
+                          </span>
+                        </div>
+                        <div className="enhanced-help-summary">
+                          <span><strong>Sources:</strong> DUMP.zip or extracted folder</span>
+                          <span><strong>Checks:</strong> files, read/write, version</span>
+                        </div>
+                        <a className="tool-button enhanced-guide-button" href="https://youtu.be/rBZZTcSJ9_s?si=41p0r_Enten3h5AQ" target="_blank" rel="noreferrer">
+                          <ExternalLink size={16} />
+                          Open Dump Guide
+                        </a>
+                      </section>
+                    </div>
+
+                    <section className="enhanced-card enhanced-details-card">
+                      <h3>Install Details / Diagnostics</h3>
+                      <div className="enhanced-detail-grid">
+                        <div>
+                          <span>Last install</span>
+                          <strong>{formatTimestamp(state.enhanced.detectedAt)}</strong>
+                        </div>
+                        <div>
+                          <span>Last validation</span>
+                          <strong>{formatTimestamp(enhancedValidation.checkedAt)}</strong>
+                        </div>
+                        <div>
+                          <span>Files installed</span>
+                          <strong>{state.enhanced.filesInstalled}</strong>
+                        </div>
+                        <div>
+                          <span>Backup status</span>
+                          <strong>{state.enhanced.backupStatus}</strong>
+                        </div>
+                        <div>
+                          <span>Install path</span>
+                          <strong title={state.gameDir ?? ""}>{state.enhanced.installed && state.gameDir ? state.gameDir : "Not created"}</strong>
+                        </div>
+                        <div>
+                          <span>Launch target</span>
+                          <strong>{state.enhanced.launchOptionsActive ? "BO3 Enhanced" : "Stock BO3"}</strong>
+                        </div>
+                        <div>
+                          <span>Config file</span>
+                          <strong>{state.enhanced.installed ? "Configured" : "Missing"}</strong>
+                        </div>
+                        <div>
+                          <span>Restore point</span>
+                          <strong>{state.enhanced.backupStatus === "Created" ? "Available" : "Not available"}</strong>
+                        </div>
+                      </div>
+                    </section>
+
+                    <details className="enhanced-card enhanced-danger-card">
+                      <summary>Danger Zone</summary>
+                      <button className="tool-button danger" disabled={!state.enhanced.installed || busy === "enhanced-uninstall"} onClick={uninstallEnhanced}>
+                        <Trash2 size={16} />
+                        Uninstall BO3 Enhanced
+                      </button>
+                    </details>
 
                   </div>
                 )}
@@ -1422,12 +1852,16 @@ function App() {
 
         <Panel title="Activity Log" className="log-panel">
           <div className="terminal">
-            {logs.slice(-8).map((entry, index) => (
-              <p key={`${entry.line}-${index}`} className={logTone(entry.category)}>
-                <span>{entry.category}</span>
-                {entry.message}
-              </p>
-            ))}
+            {logs.length === 0 ? (
+              <p className="log-empty">No activity yet.</p>
+            ) : (
+              logs.slice(-8).map((entry, index) => (
+                <p key={`${entry.line}-${index}`} className={logTone(entry.category)}>
+                  <span>{entry.category}</span>
+                  {entry.message}
+                </p>
+              ))
+            )}
           </div>
         </Panel>
       </section>
@@ -1501,6 +1935,35 @@ function App() {
                 {browseMode === "game" ? "Use Selected Folder" : "Use Dump Folder"}
               </button>
             </footer>
+          </section>
+        </div>
+      )}
+
+      {depotPrompt && (
+        <div className="modal-backdrop depot-backdrop" role="presentation">
+          <section className="depot-modal" role="dialog" aria-modal="true" aria-labelledby="depot-title" aria-describedby="depot-message">
+            <div className="depot-mark">
+              <Clipboard size={28} />
+            </div>
+            <div className="depot-copy">
+              <h2 id="depot-title">Copy this</h2>
+              <p id="depot-message">Run this command in the Steam console to download the compatible build.</p>
+              <code>{depotPrompt.command}</code>
+              {depotPrompt.watching && <p className="depot-watch">Watching for the depot. PatchOpsIII will install it when ready.</p>}
+            </div>
+            <div className="depot-actions">
+              <button type="button" className="tool-button" onClick={() => setDepotPrompt(null)}>
+                Cancel
+              </button>
+              <button type="button" className="tool-button" onClick={copyDepotCommand}>
+                <Clipboard size={16} />
+                {depotPrompt.copied ? "Copied" : "Copy"}
+              </button>
+              <button type="button" className="tool-button primary" onClick={continueDepotDownload}>
+                <ExternalLink size={16} />
+                Continue
+              </button>
+            </div>
           </section>
         </div>
       )}

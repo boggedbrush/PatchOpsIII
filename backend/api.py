@@ -35,6 +35,7 @@ from utils import (
     get_app_data_dir,
     get_log_file_path,
     get_steam_library_paths,
+    get_steam_root_path,
     get_workshop_item_state,
     LEGACY_BACKUP_SUFFIX,
     launch_game_via_steam,
@@ -48,11 +49,13 @@ from bo3_enhanced import (
     detect_enhanced_install,
     download_latest_enhanced,
     install_enhanced_files,
+    load_state as load_enhanced_state,
     status_summary,
     uninstall_enhanced_files,
     validate_dump_source,
 )
 from t7_patch import (
+    DEFAULT_STEAM_EXE_SHA256,
     _resolve_t7patch_asset,
     add_defender_exclusion,
     backup_lpc_files,
@@ -104,9 +107,30 @@ GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/boggedbrush/PatchOpsII
 GITHUB_RELEASES_URL = "https://api.github.com/repos/boggedbrush/PatchOpsIII/releases"
 GITHUB_RELEASE_PAGE_URL = "https://github.com/boggedbrush/PatchOpsIII/releases/latest"
 RELEASE_CHANNELS = {"stable", "beta"}
+CURRENT_EXE_ID = "current"
+COMPATIBLE_EXE_ID = "compatible"
+ENHANCED_EXE_ID = "enhanced"
+COMPATIBLE_BUILD_SHA256 = {
+    "66b95eb4667bd5b3b3d230e7bed1d29ccd261d48ca2699f01216c863be24ff44",
+}
+COMPATIBLE_DEPOT_APP_ID = "311210"
+COMPATIBLE_DEPOT_ID = "311211"
+COMPATIBLE_DEPOT_MANIFEST_ID = "9084453472036406216"
+COMPATIBLE_DEPOT_COMMAND = f"download_depot {COMPATIBLE_DEPOT_APP_ID} {COMPATIBLE_DEPOT_ID} {COMPATIBLE_DEPOT_MANIFEST_ID}"
+CURRENT_STEAM_BUILD_ID = "21201493"
+CURRENT_STEAM_BUILD_DATE = "Feb 19, 2026"
+COMPATIBLE_STEAM_BUILD_ID = "10650222"
+COMPATIBLE_STEAM_BUILD_DATE = "Mar 3, 2023"
 SUPPORTED_LAUNCH_OPTIONS = {"", "+set fs_game offlinemp"} | {
     profile["launch_option"] for profile in WORKSHOP_PROFILES.values()
 }
+
+
+class CompatibleDepotRequired(RuntimeError):
+    def __init__(self) -> None:
+        super().__init__(
+            "Compatible Steam depot was not found. Copy the depot command, open Steam Console, run it, then continue once the download finishes."
+        )
 
 
 def _load_app_version() -> str:
@@ -548,7 +572,147 @@ def _t7_status(game_dir: str | None) -> dict[str, Any]:
     }
 
 
+def _known_enhanced_hashes(game_dir: str | None) -> set[str]:
+    settings = _load_settings()
+    hashes = settings.get("enhanced_exe_hashes", {})
+    known: set[str] = set()
+    if isinstance(hashes, dict):
+        value = hashes.get(str(Path(game_dir))) if game_dir else None
+        if isinstance(value, str) and value:
+            known.add(value.lower())
+        elif isinstance(value, list):
+            known.update(str(item).lower() for item in value if item)
+    legacy = settings.get("enhanced_exe_hash")
+    if isinstance(legacy, str) and legacy:
+        known.add(legacy.lower())
+    return known
+
+
+def _record_enhanced_hash(game_dir: str, exe_hash: str) -> None:
+    normalized_hash = (exe_hash or "").lower()
+    if not normalized_hash:
+        return
+    settings = _load_settings()
+    hashes = settings.get("enhanced_exe_hashes")
+    if not isinstance(hashes, dict):
+        hashes = {}
+    key = str(Path(game_dir))
+    values = hashes.get(key, [])
+    if isinstance(values, str):
+        values = [values]
+    if not isinstance(values, list):
+        values = []
+    existing = [str(item).lower() for item in values]
+    if normalized_hash not in existing:
+        values.append(normalized_hash)
+    hashes[key] = values[-5:]
+    settings["enhanced_exe_hashes"] = hashes
+    _save_settings(settings)
+
+
+def _executable_integrity_status(exe_hash: str, executable_exists: bool, enhanced_active: bool = False, enhanced_hash_known: bool = False) -> dict[str, Any]:
+    normalized_hash = (exe_hash or "").lower()
+    if not executable_exists:
+        return {
+            "trusted": False,
+            "status": "missing",
+            "profile": "",
+            "message": "BlackOps3.exe or BlackOpsIII.exe was not found.",
+        }
+    if normalized_hash == DEFAULT_STEAM_EXE_SHA256.lower():
+        return {
+            "trusted": True,
+            "status": "trusted",
+            "profile": CURRENT_EXE_ID,
+            "message": f"Executable matches latest Steam BuildID {CURRENT_STEAM_BUILD_ID}.",
+        }
+    if normalized_hash in COMPATIBLE_BUILD_SHA256:
+        return {
+            "trusted": True,
+            "status": "trusted",
+            "profile": COMPATIBLE_EXE_ID,
+            "message": f"Executable matches compatible BuildID {COMPATIBLE_STEAM_BUILD_ID}.",
+        }
+    if enhanced_active or enhanced_hash_known:
+        return {
+            "trusted": True,
+            "status": "enhanced",
+            "profile": ENHANCED_EXE_ID,
+            "message": "Executable is managed by BO3 Enhanced.",
+        }
+    short_hash = normalized_hash[:12] if normalized_hash else "unreadable"
+    return {
+        "trusted": False,
+        "status": "unverified",
+        "profile": "",
+        "message": (
+            f"Active executable hash {short_hash} does not match latest BuildID {CURRENT_STEAM_BUILD_ID}, "
+            f"compatible BuildID {COMPATIBLE_STEAM_BUILD_ID}, or a PatchOpsIII-preserved Enhanced EXE."
+        ),
+    }
+
+
+def _exe_swap_status(game_dir: str | None) -> dict[str, Any]:
+    executable = _find_bo3_executable(game_dir) if game_dir else None
+    exe_hash = (file_sha256(str(executable)) or "").lower() if executable and executable.exists() else ""
+    enhanced_active = bool(game_dir and detect_enhanced_install(game_dir))
+    integrity = _executable_integrity_status(exe_hash, bool(executable), enhanced_active, exe_hash in _known_enhanced_hashes(game_dir))
+    profile = integrity["profile"] or read_exe_variant(game_dir) or ""
+    if not executable:
+        active_build_id = "Unknown"
+        active_build_date = ""
+    elif profile == ENHANCED_EXE_ID:
+        active_build_id = "Enhanced"
+        active_build_date = ""
+    elif profile == COMPATIBLE_EXE_ID:
+        active_build_id = COMPATIBLE_STEAM_BUILD_ID
+        active_build_date = COMPATIBLE_STEAM_BUILD_DATE
+    elif profile == CURRENT_EXE_ID or profile == "default":
+        active_build_id = CURRENT_STEAM_BUILD_ID
+        active_build_date = CURRENT_STEAM_BUILD_DATE
+        profile = CURRENT_EXE_ID
+    else:
+        active_build_id = "Unverified"
+        active_build_date = ""
+
+    latest_available = bool(executable and _validated_latest_build_backup_path(executable, log_untrusted=False))
+    compatible_available = bool(executable and _validated_preserved_compatible_exe(executable, log_untrusted=False))
+    enhanced_available = bool(executable and _validated_enhanced_backup_path(game_dir, executable, log_untrusted=False))
+    return {
+        "profile": profile,
+        "modeLabel": "Compatible EXE" if profile == COMPATIBLE_EXE_ID else "Current EXE" if profile == CURRENT_EXE_ID else "Enhanced" if profile == ENHANCED_EXE_ID else "Unknown",
+        "patchLabel": "",
+        "displayLabel": integrity["message"],
+        "state": integrity["status"],
+        "activeBuildId": active_build_id,
+        "activeBuildDate": active_build_date,
+        "currentBuildId": CURRENT_STEAM_BUILD_ID,
+        "currentBuildDate": CURRENT_STEAM_BUILD_DATE,
+        "compatibleBuildId": COMPATIBLE_STEAM_BUILD_ID,
+        "compatibleBuildDate": COMPATIBLE_STEAM_BUILD_DATE,
+        "enhancedBuildId": "Enhanced",
+        "enhancedBuildDate": "",
+        "executable": str(executable) if executable else "",
+        "executableName": executable.name if executable else "",
+        "executableHash": exe_hash,
+        "trustedExecutable": integrity["trusted"],
+        "integrityStatus": integrity["status"],
+        "integrityMessage": integrity["message"],
+        "backupAvailable": latest_available,
+        "latestAvailable": latest_available,
+        "compatibleAvailable": compatible_available,
+        "enhancedAvailable": enhanced_available or profile == ENHANCED_EXE_ID,
+        "compatibleActive": profile == COMPATIBLE_EXE_ID,
+        "enhancedExeActive": profile == ENHANCED_EXE_ID,
+        "enhancedActive": enhanced_active,
+    }
+
+
 def _enhanced_status(game_dir: str | None) -> dict[str, Any]:
+    enhanced_state = load_enhanced_state(get_app_data_dir())
+    installed_files = enhanced_state.get("installed_files", [])
+    if not isinstance(installed_files, list):
+        installed_files = []
     if not game_dir:
         return {
             "installed": False,
@@ -556,16 +720,21 @@ def _enhanced_status(game_dir: str | None) -> dict[str, Any]:
             "acknowledgedAt": None,
             "launchOptionsActive": False,
             "dumpSource": _load_settings().get("enhanced_dump_source", ""),
+            "filesInstalled": len(installed_files),
+            "backupStatus": "Not created",
         }
 
     summary = status_summary(game_dir, get_app_data_dir())
     current_options = _current_launch_options() or ""
+    installed = bool(summary.get("installed"))
     return {
-        "installed": bool(summary.get("installed")),
+        "installed": installed,
         "detectedAt": summary.get("detected_at"),
         "acknowledgedAt": summary.get("acknowledged_at"),
         "launchOptionsActive": "windowscodecs=n,b" in current_options.lower(),
         "dumpSource": _load_settings().get("enhanced_dump_source", ""),
+        "filesInstalled": len(installed_files),
+        "backupStatus": "Created" if installed and installed_files else "Not created",
     }
 
 
@@ -755,6 +924,10 @@ def _install_enhanced(game_dir: str, dump_source: str) -> None:
         if not configured:
             raise RuntimeError("Installed files, but Linux compatibility setup failed.")
 
+    executable = _find_bo3_executable(game_dir)
+    enhanced_hash = (file_sha256(str(executable)) or "").lower() if executable else ""
+    if enhanced_hash:
+        _record_enhanced_hash(game_dir, enhanced_hash)
     write_exe_variant(game_dir, "enhanced")
     write_log("Installed BO3 Enhanced successfully.", "Success", log_target)
 
@@ -771,6 +944,257 @@ def _uninstall_enhanced(game_dir: str) -> None:
 
     write_exe_variant(game_dir, "default")
     write_log("Uninstalled BO3 Enhanced successfully.", "Success", log_target)
+
+
+def _available_sibling_path(path: Path) -> Path:
+    if not path.exists():
+        return path
+    for index in range(2, 1000):
+        candidate = path.with_name(f"{path.stem}-{index}{path.suffix}")
+        if not candidate.exists():
+            return candidate
+    raise FileExistsError(f"No available filename found near {path}")
+
+
+def _inactive_build_path(target_exe: Path, build_id: str) -> Path:
+    return target_exe.with_name(f"{target_exe.stem}.{build_id}.bak")
+
+
+def _enhanced_backup_path(target_exe: Path) -> Path:
+    return target_exe.with_name(f"{target_exe.stem}.{ENHANCED_EXE_ID}.bak")
+
+
+def _build_backup_candidates(target_exe: Path, build_id: str, backup_role: str) -> list[Path]:
+    exact = _inactive_build_path(target_exe, build_id)
+    candidates = [exact] if exact.exists() else []
+    old_exact = target_exe.with_name(f"{target_exe.stem}.{backup_role}-{build_id}{target_exe.suffix}")
+    if old_exact.exists():
+        candidates.append(old_exact)
+    old_pattern = f"{target_exe.stem}.{backup_role}-{build_id}-*{target_exe.suffix}"
+    candidates.extend(sorted((path for path in target_exe.parent.glob(old_pattern) if path.is_file()), key=lambda path: path.stat().st_mtime, reverse=True))
+    return candidates
+
+
+def _validated_preserved_compatible_exe(target_exe: Path, log_untrusted: bool = True) -> Path | None:
+    for candidate in _build_backup_candidates(target_exe, COMPATIBLE_STEAM_BUILD_ID, "compatible"):
+        candidate_hash = file_sha256(str(candidate))
+        if candidate_hash and candidate_hash.lower() in COMPATIBLE_BUILD_SHA256:
+            return candidate
+        if log_untrusted:
+            write_log(f"Ignoring preserved compatible executable with untrusted SHA-256: {candidate.name}", "Warning", log_target)
+    return None
+
+
+def _validated_enhanced_backup_path(game_dir: str | None, target_exe: Path, log_untrusted: bool = True) -> Path | None:
+    known_hashes = _known_enhanced_hashes(game_dir)
+    candidates = [_enhanced_backup_path(target_exe)]
+    candidates.extend(sorted((path for path in target_exe.parent.glob(f"{target_exe.stem}.{ENHANCED_EXE_ID}-*.bak") if path.is_file()), key=lambda path: path.stat().st_mtime, reverse=True))
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+        candidate_hash = file_sha256(str(candidate))
+        if candidate_hash and candidate_hash.lower() in known_hashes:
+            return candidate
+        if log_untrusted:
+            write_log(f"Ignoring preserved Enhanced executable with untrusted SHA-256: {candidate.name}", "Warning", log_target)
+    return None
+
+
+def _validated_latest_build_backup_path(target_exe: Path, log_untrusted: bool = True) -> Path | None:
+    for candidate in _build_backup_candidates(target_exe, CURRENT_STEAM_BUILD_ID, "current"):
+        candidate_hash = file_sha256(str(candidate))
+        if candidate_hash and candidate_hash.lower() == DEFAULT_STEAM_EXE_SHA256.lower():
+            return candidate
+        if log_untrusted:
+            write_log(f"Ignoring preserved latest executable with untrusted SHA-256: {candidate.name}", "Warning", log_target)
+    backup_path = existing_backup_path(str(target_exe))
+    if backup_path and os.path.exists(backup_path):
+        backup_hash = file_sha256(backup_path)
+        if backup_hash and backup_hash.lower() == DEFAULT_STEAM_EXE_SHA256.lower():
+            return Path(backup_path)
+        if log_untrusted:
+            write_log(f"Ignoring executable backup with untrusted SHA-256: {Path(backup_path).name}", "Warning", log_target)
+    return None
+
+
+def _preserved_path_for_profile(target_exe: Path, profile: str) -> Path:
+    if profile == CURRENT_EXE_ID:
+        return _inactive_build_path(target_exe, CURRENT_STEAM_BUILD_ID)
+    if profile == COMPATIBLE_EXE_ID:
+        return _inactive_build_path(target_exe, COMPATIBLE_STEAM_BUILD_ID)
+    if profile == ENHANCED_EXE_ID:
+        return _enhanced_backup_path(target_exe)
+    raise RuntimeError("Active executable is not a recognized PatchOpsIII build.")
+
+
+def _active_exe_integrity(game_dir: str, target_exe: Path) -> dict[str, Any]:
+    exe_hash = (file_sha256(str(target_exe)) or "").lower() if target_exe.exists() else ""
+    return _executable_integrity_status(exe_hash, target_exe.exists(), detect_enhanced_install(game_dir), exe_hash in _known_enhanced_hashes(game_dir))
+
+
+def _preserve_active_exe(game_dir: str, target_exe: Path, expected_profile: str | None = None) -> None:
+    if not target_exe.exists():
+        return
+    integrity = _active_exe_integrity(game_dir, target_exe)
+    profile = integrity["profile"]
+    if not integrity["trusted"] or not profile:
+        raise RuntimeError(integrity["message"])
+    if expected_profile and profile != expected_profile:
+        raise RuntimeError("Active executable does not match the expected build.")
+    target_hash = (file_sha256(str(target_exe)) or "").lower()
+    preserved_exe = _available_sibling_path(_preserved_path_for_profile(target_exe, profile))
+    if profile == ENHANCED_EXE_ID:
+        _record_enhanced_hash(game_dir, target_hash)
+    target_exe.rename(preserved_exe)
+    write_log(f"Preserved active executable as {preserved_exe.name}.", "Success", log_target)
+
+
+def _compatible_depot_candidates() -> list[Path]:
+    roots = list(get_steam_library_paths())
+    steam_root = get_steam_root_path()
+    if steam_root:
+        roots.append(steam_root)
+    if platform.system() == "Windows":
+        roots.extend(
+            [
+                str(Path(os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)")) / "Steam"),
+                str(Path(os.environ.get("PROGRAMFILES", r"C:\Program Files")) / "Steam"),
+            ]
+        )
+
+    candidates = []
+    seen = set()
+    for root in roots:
+        depot_dir = Path(root) / "steamapps" / "content" / f"app_{COMPATIBLE_DEPOT_APP_ID}" / f"depot_{COMPATIBLE_DEPOT_ID}"
+        key = str(depot_dir.resolve()) if depot_dir.exists() else str(depot_dir.absolute())
+        normalized = os.path.normcase(os.path.normpath(key))
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        candidates.append(depot_dir)
+    return candidates
+
+
+def _compatible_depot_download_exists() -> bool:
+    for depot_dir in _compatible_depot_candidates():
+        exe_path = depot_dir / "BlackOps3.exe"
+        installscript_path = depot_dir / "installscript_311210.vdf"
+        try:
+            if exe_path.exists() and installscript_path.exists() and exe_path.stat().st_size > 0:
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def _find_valid_compatible_depot() -> Path | None:
+    valid = []
+    for depot_dir in _compatible_depot_candidates():
+        exe_path = depot_dir / "BlackOps3.exe"
+        if exe_path.exists():
+            exe_hash = (file_sha256(str(exe_path)) or "").lower()
+            if exe_hash in COMPATIBLE_BUILD_SHA256:
+                valid.append(depot_dir)
+    if not valid:
+        return None
+    return max(valid, key=lambda path: (path / "BlackOps3.exe").stat().st_mtime)
+
+
+def _copy_depot_installscript(depot_dir: Path, game_dir: str) -> None:
+    source = depot_dir / "installscript_311210.vdf"
+    if not source.exists():
+        return
+    target = Path(game_dir) / source.name
+    backup = Path(patchops_backup_path(str(target)))
+    if target.exists() and not backup.exists():
+        shutil.copy2(target, backup)
+    shutil.copy2(source, target)
+
+
+def _restore_installscript_backup(game_dir: str) -> None:
+    target = Path(game_dir) / "installscript_311210.vdf"
+    backup = Path(patchops_backup_path(str(target)))
+    if backup.exists():
+        shutil.copy2(backup, target)
+
+
+def _install_compatible_exe(game_dir: str) -> None:
+    if not _has_game_executable(game_dir):
+        raise FileNotFoundError("BlackOps3.exe or BlackOpsIII.exe was not found.")
+
+    target_exe = _find_bo3_executable(game_dir) or (Path(game_dir) / "BlackOps3.exe")
+    active_integrity = _active_exe_integrity(game_dir, target_exe)
+    if active_integrity["profile"] == COMPATIBLE_EXE_ID:
+        write_log("Compatible executable is already active.", "Info", log_target)
+        return
+    if target_exe.exists() and not active_integrity["trusted"]:
+        raise RuntimeError(active_integrity["message"])
+    preserved_compatible_exe = _validated_preserved_compatible_exe(target_exe)
+    if preserved_compatible_exe:
+        if target_exe.exists():
+            _preserve_active_exe(game_dir, target_exe)
+        preserved_compatible_exe.rename(target_exe)
+        write_exe_variant(game_dir, "compatible")
+        write_log(f"Reused preserved compatible executable from {preserved_compatible_exe.name}.", "Success", log_target)
+        return
+
+    depot_dir = _find_valid_compatible_depot()
+    if not depot_dir:
+        raise CompatibleDepotRequired()
+
+    if target_exe.exists():
+        _preserve_active_exe(game_dir, target_exe)
+    shutil.copy2(depot_dir / "BlackOps3.exe", target_exe)
+    _copy_depot_installscript(depot_dir, game_dir)
+    write_exe_variant(game_dir, "compatible")
+    write_log(f"Compatible executable installed from Steam depot {COMPATIBLE_DEPOT_MANIFEST_ID}.", "Success", log_target)
+
+
+def _restore_current_exe(game_dir: str) -> None:
+    if not game_dir or not os.path.isdir(game_dir):
+        raise FileNotFoundError("Game directory is not set.")
+
+    target_exe = _find_bo3_executable(game_dir) or (Path(game_dir) / "BlackOps3.exe")
+    active_integrity = _active_exe_integrity(game_dir, target_exe)
+    if active_integrity["profile"] == CURRENT_EXE_ID:
+        write_log("Latest executable is already active.", "Info", log_target)
+        return
+    if target_exe.exists() and not active_integrity["trusted"]:
+        raise RuntimeError(active_integrity["message"])
+    backup_path = _validated_latest_build_backup_path(target_exe)
+    if not backup_path:
+        raise FileNotFoundError("No backup executable found. Cannot restore the current EXE.")
+
+    if target_exe.exists():
+        _preserve_active_exe(game_dir, target_exe)
+    Path(backup_path).rename(target_exe)
+    _restore_installscript_backup(game_dir)
+    write_exe_variant(game_dir, "default")
+    write_log("Current executable restored from backup.", "Success", log_target)
+
+
+def _restore_enhanced_exe(game_dir: str) -> None:
+    if not game_dir or not os.path.isdir(game_dir):
+        raise FileNotFoundError("Game directory is not set.")
+
+    target_exe = _find_bo3_executable(game_dir) or (Path(game_dir) / "BlackOps3.exe")
+    active_integrity = _active_exe_integrity(game_dir, target_exe)
+    if active_integrity["profile"] == ENHANCED_EXE_ID:
+        write_log("Enhanced executable is already active.", "Info", log_target)
+        return
+    if target_exe.exists() and not active_integrity["trusted"]:
+        raise RuntimeError(active_integrity["message"])
+    backup_path = _validated_enhanced_backup_path(game_dir, target_exe)
+    if not backup_path:
+        raise FileNotFoundError("No PatchOpsIII-preserved Enhanced executable was found.")
+
+    if target_exe.exists():
+        _preserve_active_exe(game_dir, target_exe)
+    Path(backup_path).rename(target_exe)
+    restored_hash = (file_sha256(str(target_exe)) or "").lower()
+    _record_enhanced_hash(game_dir, restored_hash)
+    write_exe_variant(game_dir, "enhanced")
+    write_log("Enhanced executable restored from PatchOpsIII backup.", "Success", log_target)
 
 
 def _is_t7_patch_source_dir(path: Path) -> bool:
@@ -1039,6 +1463,7 @@ def _current_state() -> dict[str, Any]:
         "releaseChannel": _release_channel(),
         "launchProfiles": launch_profiles,
         "enhanced": _enhanced_status(game_dir),
+        "exeSwap": _exe_swap_status(game_dir),
         "t7": _t7_status(game_dir),
         "dxvk": _dxvk_status(game_dir),
         "qol": qol,
@@ -1204,7 +1629,9 @@ def _reset_to_stock(game_dir: str) -> None:
 
     executable = _find_bo3_executable(game_dir) or (Path(game_dir) / "BlackOps3.exe")
     try:
-        if _restore_backup(executable, "Restored original executable from backup."):
+        if _active_exe_integrity(game_dir, executable)["profile"] != CURRENT_EXE_ID:
+            _restore_current_exe(game_dir)
+        elif _restore_backup(executable, "Restored original executable from backup."):
             write_exe_variant(game_dir, "default")
     except Exception as exc:
         write_log(f"Executable reset step failed: {exc}", "Warning", log_target)
@@ -1508,6 +1935,23 @@ async def install_enhanced(payload: EnhancedInstallPayload) -> dict[str, Any]:
     return {"ok": True, "state": await _current_state_async()}
 
 
+@app.post("/api/enhanced-validate")
+async def validate_enhanced(payload: EnhancedInstallPayload) -> dict[str, Any]:
+    source = payload.dumpSource.strip()
+    if not source:
+        return {"ok": True, "valid": False, "message": "Select a dump source first.", "state": await _current_state_async()}
+    settings = _load_settings()
+    settings["enhanced_dump_source"] = source
+    _save_settings(settings)
+    valid = await _blocking(validate_dump_source, source)
+    return {
+        "ok": True,
+        "valid": valid,
+        "message": "Source looks ready." if valid else "Source is missing required dump files.",
+        "state": await _current_state_async(),
+    }
+
+
 @app.post("/api/enhanced-uninstall")
 async def uninstall_enhanced() -> dict[str, Any]:
     game_dir = await _find_game_directory_async()
@@ -1517,6 +1961,63 @@ async def uninstall_enhanced() -> dict[str, Any]:
         await _blocking(_uninstall_enhanced, game_dir)
     except Exception as exc:
         write_log(f"BO3 Enhanced uninstall failed: {exc}", "Error", log_target)
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "state": await _current_state_async()}
+
+
+@app.post("/api/exe-swap/compatible")
+async def install_compatible_exe() -> dict[str, Any]:
+    game_dir = await _find_game_directory_async()
+    if not game_dir:
+        return {"ok": False, "error": "Game directory is not set."}
+    try:
+        await _blocking(_install_compatible_exe, game_dir)
+    except CompatibleDepotRequired as exc:
+        write_log(str(exc), "Info", log_target)
+        return {
+            "ok": False,
+            "error": str(exc),
+            "depotRequired": True,
+            "depotCommand": COMPATIBLE_DEPOT_COMMAND,
+            "state": await _current_state_async(),
+        }
+    except Exception as exc:
+        write_log(f"Compatible EXE swap failed: {exc}", "Error", log_target)
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "state": await _current_state_async()}
+
+
+@app.get("/api/exe-swap/compatible-depot")
+async def compatible_depot_status() -> dict[str, Any]:
+    return {
+        "ok": True,
+        "available": await _blocking(_compatible_depot_download_exists),
+        "state": await _current_state_async(),
+    }
+
+
+@app.post("/api/exe-swap/current")
+async def restore_current_exe() -> dict[str, Any]:
+    game_dir = await _find_game_directory_async()
+    if not game_dir:
+        return {"ok": False, "error": "Game directory is not set."}
+    try:
+        await _blocking(_restore_current_exe, game_dir)
+    except Exception as exc:
+        write_log(f"Current EXE restore failed: {exc}", "Error", log_target)
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "state": await _current_state_async()}
+
+
+@app.post("/api/exe-swap/enhanced")
+async def restore_enhanced_exe() -> dict[str, Any]:
+    game_dir = await _find_game_directory_async()
+    if not game_dir:
+        return {"ok": False, "error": "Game directory is not set."}
+    try:
+        await _blocking(_restore_enhanced_exe, game_dir)
+    except Exception as exc:
+        write_log(f"Enhanced EXE restore failed: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
     return {"ok": True, "state": await _current_state_async()}
 

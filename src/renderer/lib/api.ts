@@ -32,6 +32,36 @@ export type PatchOpsState = {
     acknowledgedAt: string | null;
     launchOptionsActive: boolean;
     dumpSource: string;
+    filesInstalled: number;
+    backupStatus: string;
+  };
+  exeSwap: {
+    profile: string;
+    modeLabel: string;
+    patchLabel: string;
+    displayLabel: string;
+    state: string;
+    activeBuildId: string;
+    activeBuildDate: string;
+    currentBuildId: string;
+    currentBuildDate: string;
+    compatibleBuildId: string;
+    compatibleBuildDate: string;
+    enhancedBuildId: string;
+    enhancedBuildDate: string;
+    executable: string;
+    executableName: string;
+    executableHash: string;
+    trustedExecutable: boolean;
+    integrityStatus: string;
+    integrityMessage: string;
+    backupAvailable: boolean;
+    latestAvailable: boolean;
+    compatibleAvailable: boolean;
+    enhancedAvailable: boolean;
+    compatibleActive: boolean;
+    enhancedExeActive: boolean;
+    enhancedActive: boolean;
   };
   t7: {
     installed: boolean;
@@ -96,6 +126,8 @@ export type ApiResult<T = unknown> = {
   ok: boolean;
   error?: string;
   state?: PatchOpsState;
+  depotRequired?: boolean;
+  depotCommand?: string;
 } & T;
 
 let cachedBackendUrl: string | null = null;
