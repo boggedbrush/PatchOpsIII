@@ -55,8 +55,7 @@ PatchOpsIII supports curated launch profiles for:
 - Offline launch
 - All-around Enhancement Lite
 - Ultimate Experience Mod
-
-The deprecated Reforged workflow is no longer part of the active product surface.
+- BO3 Reforged
 
 ### Logs and Tools
 

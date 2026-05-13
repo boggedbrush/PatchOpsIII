@@ -94,6 +94,11 @@ WORKSHOP_PROFILES = {
         "workshop_id": "2942053577",
         "launch_option": "+set fs_game 2942053577",
     },
+    "reforged": {
+        "name": "BO3 Reforged",
+        "workshop_id": "3667377161",
+        "launch_option": "+set fs_game 3667377161",
+    },
 }
 GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/boggedbrush/PatchOpsIII/releases/latest"
 GITHUB_RELEASE_PAGE_URL = "https://github.com/boggedbrush/PatchOpsIII/releases/latest"
