@@ -15,6 +15,7 @@ export type PatchOpsState = {
   presets: string[];
   currentLaunchOptions: string | null;
   activeLaunchProfile: string;
+  releaseChannel: "stable" | "beta";
   launchProfiles: Array<{
     id: string;
     label: string;

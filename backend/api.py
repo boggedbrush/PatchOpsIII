@@ -101,7 +101,9 @@ WORKSHOP_PROFILES = {
     },
 }
 GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/boggedbrush/PatchOpsIII/releases/latest"
+GITHUB_RELEASES_URL = "https://api.github.com/repos/boggedbrush/PatchOpsIII/releases"
 GITHUB_RELEASE_PAGE_URL = "https://github.com/boggedbrush/PatchOpsIII/releases/latest"
+RELEASE_CHANNELS = {"stable", "beta"}
 SUPPORTED_LAUNCH_OPTIONS = {"", "+set fs_game offlinemp"} | {
     profile["launch_option"] for profile in WORKSHOP_PROFILES.values()
 }
@@ -256,6 +258,10 @@ class PresetPayload(BaseModel):
     name: str
 
 
+class ReleaseChannelPayload(BaseModel):
+    channel: str
+
+
 _settings_cache: tuple[float | None, dict[str, Any]] | None = None
 _game_dir_cache: tuple[float | None, str | None] | None = None
 _preset_names_cache: tuple[float | None, list[str]] | None = None
@@ -297,6 +303,11 @@ def _load_settings() -> dict[str, Any]:
         settings = {}
     _settings_cache = (mtime, dict(settings))
     return settings
+
+
+def _release_channel() -> str:
+    channel = str(_load_settings().get("release_channel") or "stable").strip().lower()
+    return channel if channel in RELEASE_CHANNELS else "stable"
 
 
 def _save_settings(settings: dict[str, Any]) -> None:
@@ -871,15 +882,27 @@ def _current_launch_options() -> str | None:
     return _read_launch_options(user_id, app_id)
 
 
-def _version_parts(value: str) -> tuple[int, ...]:
-    parts = [int(part) for part in re.split(r"[^0-9]+", value.lstrip("vV")) if part.isdigit()]
-    return tuple(parts or [0])
+def _version_sort_key(value: str) -> tuple[tuple[int, ...], int, int]:
+    normalized = value.strip().lstrip("vV")
+    base_match = re.match(r"(\d+(?:\.\d+)*)", normalized)
+    base = tuple(int(part) for part in base_match.group(1).split(".")) if base_match else (0,)
+    base = base + (0,) * max(0, 3 - len(base))
+
+    prerelease = normalized[len(base_match.group(1)) :] if base_match else normalized
+    release_rank = 0 if prerelease else 1
+    prerelease_numbers = [int(part) for part in re.split(r"[^0-9]+", prerelease) if part.isdigit()]
+    prerelease_number = prerelease_numbers[-1] if prerelease_numbers else 0
+    return base, release_rank, prerelease_number
 
 
 def _select_update_asset(release_data: dict[str, Any]) -> dict[str, Any] | None:
     assets = release_data.get("assets") or []
     system = platform.system()
-    asset_names = ("PatchOpsIII.zip", "PatchOpsIII.exe") if system == "Windows" else ("PatchOpsIII.AppImage",)
+    asset_names = (
+        ("PatchOpsIII.zip", "PatchOpsIII-Beta.zip", "PatchOpsIII.exe", "PatchOpsIII-Beta.exe")
+        if system == "Windows"
+        else ("PatchOpsIII.AppImage", "PatchOpsIII-Beta.AppImage")
+    )
     for expected_name in asset_names:
         for asset in assets:
             name = str(asset.get("name") or "")
@@ -894,21 +917,43 @@ def _select_update_asset(release_data: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def _check_for_update() -> dict[str, Any]:
-    response = requests.get(GITHUB_LATEST_RELEASE_URL, timeout=30)
+def _fetch_release_for_channel(channel: str) -> dict[str, Any]:
+    if channel == "stable":
+        response = requests.get(GITHUB_LATEST_RELEASE_URL, timeout=30)
+        response.raise_for_status()
+        return response.json()
+
+    response = requests.get(GITHUB_RELEASES_URL, timeout=30)
     response.raise_for_status()
-    release_data = response.json()
+    releases = response.json()
+    if not isinstance(releases, list):
+        raise RuntimeError("GitHub release list response was not valid.")
+
+    for release in releases:
+        if not isinstance(release, dict) or release.get("draft") or not release.get("prerelease"):
+            continue
+        identity = f"{release.get('tag_name') or ''} {release.get('name') or ''}".lower()
+        if "beta" in identity:
+            return release
+
+    raise RuntimeError("No beta release was found.")
+
+
+def _check_for_update() -> dict[str, Any]:
+    channel = _release_channel()
+    release_data = _fetch_release_for_channel(channel)
     version = str(release_data.get("tag_name") or release_data.get("name") or "0.0.0")
     page_url = release_data.get("html_url") or GITHUB_RELEASE_PAGE_URL
     asset = _select_update_asset(release_data)
     available = bool(
         asset
         and not release_data.get("draft")
-        and not release_data.get("prerelease")
-        and _version_parts(version) > _version_parts(APP_VERSION)
+        and (channel == "beta" or not release_data.get("prerelease"))
+        and _version_sort_key(version) > _version_sort_key(APP_VERSION)
     )
     return {
         "available": available,
+        "channel": channel,
         "currentVersion": APP_VERSION,
         "latestVersion": version,
         "name": release_data.get("name") or "PatchOpsIII",
@@ -991,6 +1036,7 @@ def _current_state() -> dict[str, Any]:
         "presets": _preset_names(),
         "currentLaunchOptions": current_launch_options,
         "activeLaunchProfile": next((profile["id"] for profile in launch_profiles if profile["active"]), "custom" if current_launch_options else "default"),
+        "releaseChannel": _release_channel(),
         "launchProfiles": launch_profiles,
         "enhanced": _enhanced_status(game_dir),
         "t7": _t7_status(game_dir),
@@ -1312,14 +1358,28 @@ async def workshop_install(payload: WorkshopInstallPayload) -> dict[str, Any]:
 async def update_check() -> dict[str, Any]:
     try:
         result = await _blocking(_check_for_update)
+        channel_label = str(result.get("channel") or "stable").title()
         if result["available"]:
-            write_log(f"Update available: {result['latestVersion']}", "Success", log_target)
+            write_log(f"{channel_label} update available: {result['latestVersion']}", "Success", log_target)
         else:
-            write_log("No updates available.", "Info", log_target)
+            write_log(f"No {channel_label.lower()} updates available.", "Info", log_target)
         return {"ok": True, "update": result, "state": await _current_state_async()}
     except Exception as exc:
         write_log(f"Update check failed: {exc}", "Error", log_target)
         return {"ok": False, "error": str(exc)}
+
+
+@app.post("/api/release-channel")
+async def release_channel(payload: ReleaseChannelPayload) -> dict[str, Any]:
+    channel = payload.channel.strip().lower()
+    if channel not in RELEASE_CHANNELS:
+        return {"ok": False, "error": "Release channel must be beta or stable."}
+
+    settings = _load_settings()
+    settings["release_channel"] = channel
+    _save_settings(settings)
+    write_log(f"Release channel set to {channel.title()}.", "Success", log_target)
+    return {"ok": True, "state": await _current_state_async()}
 
 
 @app.post("/api/config")

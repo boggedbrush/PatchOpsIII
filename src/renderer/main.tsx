@@ -358,6 +358,15 @@ function App() {
     );
   }
 
+  async function setReleaseChannel(channel: PatchOpsState["releaseChannel"]) {
+    await runAction("release-channel", () =>
+      apiRequest<ApiResult>("/api/release-channel", {
+        method: "POST",
+        body: JSON.stringify({ channel })
+      })
+    );
+  }
+
   async function runAction<T>(id: string, action: () => Promise<ApiResult<T> | PatchOpsState | unknown>) {
     if (backendStatus !== "ready") {
       setError(backendUnavailableMessage(backendStatus));
@@ -825,6 +834,11 @@ function App() {
   const dxvkDetectedThreads = detectedCompilerThreads();
   const backendReady = backendStatus === "ready";
   const appVersion = state?.appVersion ?? packageVersion;
+  const latestError = logs
+    .slice()
+    .reverse()
+    .find((entry) => entry.category === "Error");
+  const releaseChannelLabel = state?.releaseChannel === "beta" ? "Beta" : "Stable";
 
   function retryStartup() {
     setError(null);
@@ -1327,13 +1341,70 @@ function App() {
             {activeView === "tools" && state && (
               <Panel title="Tools" className="tools-panel">
                 <div className="tools-grid">
-                  <section className="settings-block">
-                    <h3>
-                      <Clipboard size={16} />
-                      Logs
-                    </h3>
-                    <StatusPill label="Log file" value={state.logPath ? "Available" : "Missing"} ok={Boolean(state.logPath)} />
-                    <div className="tool-stack">
+                  <ToolCard title="System" icon={Cpu}>
+                    <div className="tool-metric-list">
+                      <ToolMetric label="Platform" value={state.platform || "Unknown"} ok={Boolean(state.platform)} />
+                      <ToolMetric label="Steam ID" value={state.steamUserId || "Not found"} ok={Boolean(state.steamUserId)} />
+                      <ToolMetric label="PatchOps" value={appVersion} ok />
+                    </div>
+                  </ToolCard>
+
+                  <ToolCard title="Updates" icon={RefreshCw}>
+                    <div className="release-channel-control" role="group" aria-label="Release channel">
+                      <div className="segmented-control">
+                        {(["stable", "beta"] as const).map((channel) => (
+                          <button
+                            key={channel}
+                            type="button"
+                            className={cx(state.releaseChannel === channel && "active")}
+                            disabled={busy === "release-channel"}
+                            onClick={() => void setReleaseChannel(channel)}
+                          >
+                            {channel === "stable" ? "Stable" : "Beta"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="tool-metric-list updates-metrics">
+                      <ToolMetric label="Current" value={releaseChannelLabel} ok />
+                      <ToolMetric label="Last checked" value="On demand" />
+                    </div>
+                    <button type="button" className="small-button action-button" disabled={!backendReady || busy === "update-check"} onClick={checkForUpdates}>
+                      <RefreshCw size={15} />
+                      Check for Updates
+                    </button>
+                  </ToolCard>
+
+                  <ToolCard title="Mod Cache" icon={Download}>
+                    <div className="tool-metric-list">
+                      <ToolMetric label="Status" value={state.maintenance.modFilesDir ? "Configured" : "Missing"} ok={Boolean(state.maintenance.modFilesDir)} />
+                      <ToolMetric label="Directory" value={state.maintenance.modFilesDir ? "Ready" : "Not found"} ok={Boolean(state.maintenance.modFilesDir)} />
+                    </div>
+                  </ToolCard>
+
+                  <ToolCard title="Cache Actions" icon={Trash2}>
+                    <div className="tool-action-grid">
+                      <button className="small-button action-button" disabled={busy === "clear-mod-files"} onClick={clearModFiles}>
+                        <Trash2 size={15} />
+                        Clear Mod Files
+                      </button>
+                      <button className="small-button action-button danger" disabled={!state.gameDetected || busy === "reset-stock"} onClick={resetToStock}>
+                        <RotateCcw size={15} />
+                        Reset to Stock
+                      </button>
+                    </div>
+                  </ToolCard>
+
+                  <ToolCard title="Logs" icon={Clipboard}>
+                    <div className="tool-metric-list">
+                      <ToolMetric label="Log file" value={state.logPath ? "Available" : "Missing"} ok={Boolean(state.logPath)} />
+                      <ToolMetric label="Last error" value={latestError ? "See Activity Log" : "None"} ok={!latestError} />
+                      <ToolMetric label="Entries" value={String(logs.length)} ok={logs.length > 0} />
+                    </div>
+                  </ToolCard>
+
+                  <ToolCard title="Log Actions" icon={Eraser}>
+                    <div className="tool-action-grid">
                       <button className="small-button action-button" disabled={busy === "copy-logs"} onClick={copyLogs}>
                         <Clipboard size={15} />
                         Copy Logs
@@ -1343,39 +1414,7 @@ function App() {
                         Clear Logs
                       </button>
                     </div>
-                  </section>
-
-                  <section className="settings-block">
-                    <h3>
-                      <Download size={16} />
-                      Mod Cache
-                    </h3>
-                    <StatusPill label="Directory" value={state.maintenance.modFilesDir ? "Configured" : "Missing"} ok={Boolean(state.maintenance.modFilesDir)} />
-                    <button className="small-button action-button" disabled={busy === "clear-mod-files"} onClick={clearModFiles}>
-                      <Trash2 size={15} />
-                      Clear Mod Files
-                    </button>
-                  </section>
-
-                  <section className="settings-block danger-block">
-                    <h3>
-                      <RotateCcw size={16} />
-                      Reset
-                    </h3>
-                    <button className="small-button action-button danger" disabled={!state.gameDetected || busy === "reset-stock"} onClick={resetToStock}>
-                      <RotateCcw size={15} />
-                      Reset to Stock
-                    </button>
-                  </section>
-
-                  <section className="settings-block">
-                    <h3>
-                      <Cpu size={16} />
-                      System
-                    </h3>
-                    <StatusPill label="Platform" value={state.platform || "Unknown"} ok={Boolean(state.platform)} />
-                    <StatusPill label="Steam User" value={state.steamUserId || "Not found"} ok={Boolean(state.steamUserId)} />
-                  </section>
+                  </ToolCard>
                 </div>
               </Panel>
             )}
@@ -1521,6 +1560,27 @@ function ModuleRow({ icon: Icon, title, active }: { icon: LucideIcon; title: str
 function StatusPill({ label, value, ok }: { label: string; value: string; ok: boolean }) {
   return (
     <div className="status-pill">
+      <span>{label}</span>
+      <strong className={ok ? "ok" : ""}>{value}</strong>
+    </div>
+  );
+}
+
+function ToolCard({ title, icon: Icon, className, children }: { title: string; icon: LucideIcon; className?: string; children: React.ReactNode }) {
+  return (
+    <section className={cx("tool-card", className)}>
+      <h3>
+        <Icon size={16} />
+        {title}
+      </h3>
+      {children}
+    </section>
+  );
+}
+
+function ToolMetric({ label, value, ok }: { label: string; value: string; ok?: boolean }) {
+  return (
+    <div className="tool-metric">
       <span>{label}</span>
       <strong className={ok ? "ok" : ""}>{value}</strong>
     </div>
