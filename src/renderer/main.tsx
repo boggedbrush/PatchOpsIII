@@ -1111,10 +1111,6 @@ function App() {
                           <strong className={state.t7.networkPassword ? "ok" : ""}>{state.t7.networkPassword ? "Set" : "Not set"}</strong>
                         </div>
                         <div>
-                          <span>Input</span>
-                          <strong>{t7NetworkPasswordEnabled ? "Enabled" : "Disabled"}</strong>
-                        </div>
-                        <div>
                           <span>Status</span>
                           <strong className={t7SecurityPending ? "warn" : "ok"}>{t7SecurityPending ? "Unsaved" : "Saved"}</strong>
                         </div>

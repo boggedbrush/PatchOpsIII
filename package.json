@@ -16,7 +16,7 @@
     "build:backend:linux": "bun scripts/check-backend-build.ts linux && .venv/bin/python -m PyInstaller --onefile --name patchops-backend --distpath dist/backend --workpath build/pyinstaller --specpath build/pyinstaller --hidden-import uvicorn.logging --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.protocols.websockets --hidden-import uvicorn.protocols.websockets.auto --hidden-import uvicorn.lifespan --hidden-import uvicorn.lifespan.on backend/api.py",
     "build:backend:win": "bun scripts/check-backend-build.ts win && .venv/Scripts/python.exe -m PyInstaller --onefile --name patchops-backend --distpath dist/backend --workpath build/pyinstaller --specpath build/pyinstaller --hidden-import uvicorn.logging --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.protocols.websockets --hidden-import uvicorn.protocols.websockets.auto --hidden-import uvicorn.lifespan --hidden-import uvicorn.lifespan.on backend/api.py",
     "dist:linux": "bun run build && bun run build:backend:linux && bun x electron-builder@26.8.1 --linux AppImage --publish never",
-    "dist:win": "bun run build && bun run build:backend:win && bun x electron-builder@26.8.1 --win portable --publish never",
+    "dist:win": "bun run build && bun run build:backend:win && bun x electron-builder@26.8.1 --win dir --publish never --config.win.signAndEditExecutable=false && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows-zip.ps1",
     "typecheck": "tsc --noEmit",
     "start": "bun run build:main && electron ."
   },
@@ -55,14 +55,14 @@
     "win": {
       "target": [
         {
-          "target": "portable",
+          "target": "dir",
           "arch": [
             "x64"
           ]
         }
       ],
       "icon": "PatchOpsIII.ico",
-      "artifactName": "PatchOpsIII.exe"
+      "artifactName": "PatchOpsIII.zip"
     },
     "linux": {
       "target": [

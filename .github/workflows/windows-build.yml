@@ -25,10 +25,10 @@ on:
         default: ''
     outputs:
       hash:
-        description: SHA256 hash of the Windows executable
+        description: SHA256 hash of the Windows zip
         value: ${{ jobs.build-windows.outputs.hash }}
       vt_url:
-        description: VirusTotal URL for the Windows executable
+        description: VirusTotal URL for the Windows zip
         value: ${{ jobs.build-windows.outputs.vt_url }}
       artifact_name:
         description: Name of the produced artifact
@@ -39,7 +39,7 @@ permissions:
 
 jobs:
   build-windows:
-    name: Build Windows Electron executable
+    name: Build Windows Electron zip
     runs-on: windows-latest
     outputs:
       hash: ${{ steps.compute_hash.outputs.hash }}
@@ -54,8 +54,9 @@ jobs:
       ELECTRON_VERSION: "31.7.7"
       ELECTRON_BUILDER_VERSION: "26.8.1"
       PYTHON_VERSION: "3.12"
+      PYINSTALLER_VERSION: "6.20.0"
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      WINDOWS_BINARY: dist\packages\PatchOpsIII.exe
+      WINDOWS_PACKAGE: dist\packages\PatchOpsIII.zip
       VT_API_KEY: ${{ secrets.VT_API_KEY }}
       VT_CLI_ARCHIVE: vt-cli-latest.zip
     steps:
@@ -72,13 +73,6 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
           cache-dependency-path: requirements.txt
-      - name: Cache Bun install cache
-        uses: actions/cache@v4
-        with:
-          path: ~\.bun\install\cache
-          key: windows-bun-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock', 'package.json') }}
-          restore-keys: |
-            windows-bun-${{ runner.arch }}-${{ env.BUN_VERSION }}-
       - name: Cache Electron downloads
         uses: actions/cache@v4
         with:
@@ -95,33 +89,35 @@ jobs:
             windows-electron-builder-${{ runner.arch }}-${{ env.ELECTRON_BUILDER_VERSION }}-
             windows-electron-builder-${{ runner.arch }}-
       - name: Cache Python virtual environment
+        id: cache-venv
         uses: actions/cache@v4
         with:
           path: .venv
-          key: windows-venv-${{ runner.arch }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt') }}
+          key: windows-venv-${{ runner.arch }}-${{ env.PYTHON_VERSION }}-${{ env.PYINSTALLER_VERSION }}-${{ hashFiles('requirements.txt') }}
           restore-keys: |
             windows-venv-${{ runner.arch }}-${{ env.PYTHON_VERSION }}-
       - name: Install Python backend dependencies
+        if: steps.cache-venv.outputs.cache-hit != 'true'
         run: |
           python -m venv .venv
           .\.venv\Scripts\python -m pip install -U pip
           .\.venv\Scripts\python -m pip install -r requirements.txt
-          .\.venv\Scripts\python -m pip install -U pyinstaller
+          .\.venv\Scripts\python -m pip install pyinstaller==${{ env.PYINSTALLER_VERSION }}
       - name: Install Electron dependencies
         run: bun install --frozen-lockfile
-      - name: Build portable Electron executable
+      - name: Build Windows zip
         run: bun run dist:win
-      - name: Ensure executable exists
+      - name: Ensure zip exists
         run: |
-          if (-not (Test-Path $env:WINDOWS_BINARY)) {
+          if (-not (Test-Path $env:WINDOWS_PACKAGE)) {
             Get-ChildItem -Recurse dist | ForEach-Object { $_.FullName }
-            throw "$env:WINDOWS_BINARY was not produced"
+            throw "$env:WINDOWS_PACKAGE was not produced"
           }
       - name: Compute Windows hash
         id: compute_hash
         run: |
-          $hash = (Get-FileHash -Algorithm SHA256 -Path $env:WINDOWS_BINARY).Hash.ToLowerInvariant()
-          Set-Content -Path (Join-Path (Split-Path $env:WINDOWS_BINARY) 'hash.log') -Value $hash
+          $hash = (Get-FileHash -Algorithm SHA256 -Path $env:WINDOWS_PACKAGE).Hash.ToLowerInvariant()
+          Set-Content -Path (Join-Path (Split-Path $env:WINDOWS_PACKAGE) 'hash.log') -Value $hash
           $vtUrl = "https://www.virustotal.com/gui/file/$hash"
           "hash=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "vt_url=$vtUrl" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
@@ -162,12 +158,12 @@ jobs:
           }
       - name: VirusTotal scan
         if: ${{ env.VT_API_KEY != '' }}
-        run: .\vt.exe scan file $env:WINDOWS_BINARY --apikey $env:VT_API_KEY
+        run: .\vt.exe scan file $env:WINDOWS_PACKAGE --apikey $env:VT_API_KEY
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: PatchOpsIII-windows
           path: |
-            dist/packages/PatchOpsIII.exe
+            dist/packages/PatchOpsIII.zip
             dist/packages/hash.log
           if-no-files-found: error

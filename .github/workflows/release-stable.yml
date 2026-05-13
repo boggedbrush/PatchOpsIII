@@ -386,7 +386,7 @@ jobs:
           linux_vt = os.environ.get("LINUX_VT_URL", "").strip() or "https://www.virustotal.com/"
           windows_hash = os.environ.get("WINDOWS_HASH", "").strip() or "None"
           linux_hash = os.environ.get("LINUX_HASH", "").strip() or "None"
-          asset_windows = "PatchOpsIII.exe"
+          asset_windows = "PatchOpsIII.zip"
           asset_linux = "PatchOpsIII.AppImage"
           base_url = f"https://github.com/{repo}/releases/download/{tag}"
           windows_download = f"{base_url}/{asset_windows}"
@@ -429,13 +429,13 @@ jobs:
           set -euo pipefail
           mkdir -p release
           echo "Collecting release binaries"
-          win_exec=$(find artifacts/windows -type f -name 'PatchOpsIII.exe' -print -quit)
+          win_exec=$(find artifacts/windows -type f -name 'PatchOpsIII.zip' -print -quit)
           if [ -z "$win_exec" ]; then
-            echo "Windows executable not found under artifacts/windows" >&2
+            echo "Windows zip not found under artifacts/windows" >&2
             find artifacts/windows -type f -print >&2
             exit 1
           fi
-          cp "$win_exec" "release/PatchOpsIII.exe"
+          cp "$win_exec" "release/PatchOpsIII.zip"
           if [ -f "$(dirname "$win_exec")/PatchOpsIII.sig" ]; then
             cp "$(dirname "$win_exec")/PatchOpsIII.sig" "release/PatchOpsIII.sig"
           fi

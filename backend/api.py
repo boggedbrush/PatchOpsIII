@@ -82,6 +82,7 @@ PRESETS_PATH = APP_ROOT / "presets.json"
 MOD_FILES_DIR = Path(get_app_data_dir()) / "BO3 Mod Files"
 GAME_EXECUTABLE_NAMES = ("BlackOpsIII.exe", "BlackOps3.exe")
 T7_GAME_FILES = ("t7patch.dll", "t7patch.conf", "discord_game_sdk.dll", "dsound.dll", "t7patchloader.dll", "zbr2.dll")
+T7_REQUIRED_FILES = ("t7patch.dll", "t7patchloader.dll")
 WORKSHOP_PROFILES = {
     "all_around": {
         "name": "All-around Enhancement Lite",
@@ -756,6 +757,24 @@ def _uninstall_enhanced(game_dir: str) -> None:
     write_log("Uninstalled BO3 Enhanced successfully.", "Success", log_target)
 
 
+def _is_t7_patch_source_dir(path: Path) -> bool:
+    if not path.is_dir():
+        return False
+    filenames = {entry.name.lower() for entry in path.iterdir() if entry.is_file()}
+    return all(filename in filenames for filename in T7_REQUIRED_FILES)
+
+
+def _find_t7_patch_source_dir(extract_root: Path) -> Path | None:
+    candidates = [extract_root]
+    candidates.extend(path for path in extract_root.rglob("*") if path.is_dir())
+    candidates.sort(key=lambda path: (0 if path.name.lower() == "linux" else 1, len(path.parts), str(path).lower()))
+
+    for candidate in candidates:
+        if _is_t7_patch_source_dir(candidate):
+            return candidate
+    return None
+
+
 def _install_t7_patch(game_dir: str) -> None:
     if platform.system() == "Windows" and not is_admin():
         raise PermissionError("Run PatchOpsIII as administrator to install or update T7 Patch.")
@@ -768,12 +787,17 @@ def _install_t7_patch(game_dir: str) -> None:
     write_log("Downloading T7 Patch...", "Info", log_target)
     zip_url, expected_hashes = _resolve_t7patch_asset("Linux.Steamdeck.and.Manual.Windows.Install.zip", log_target)
     zip_dest = MOD_FILES_DIR / "T7Patch.zip"
-    source_dir = MOD_FILES_DIR / "linux"
+    extract_dir = MOD_FILES_DIR / "T7Patch_extracted"
 
     if zip_dest.exists():
         zip_dest.unlink()
-    if source_dir.exists():
-        shutil.rmtree(source_dir)
+    for stale_dir in (
+        MOD_FILES_DIR / "linux",
+        MOD_FILES_DIR / "Linux.Steamdeck.and.Manual.Windows.Install",
+        extract_dir,
+    ):
+        if stale_dir.exists():
+            shutil.rmtree(stale_dir)
 
     if not expected_hashes:
         raise RuntimeError("No GitHub SHA-256 digest available for T7 Patch archive.")
@@ -781,11 +805,12 @@ def _install_t7_patch(game_dir: str) -> None:
     write_log("Downloaded T7 Patch successfully.", "Success", log_target)
 
     with zipfile.ZipFile(zip_dest, "r") as archive:
-        archive.extractall(MOD_FILES_DIR)
+        archive.extractall(extract_dir)
     write_log("Extracted T7 Patch successfully.", "Success", log_target)
 
-    if not source_dir.exists():
-        raise RuntimeError("T7 Patch archive did not contain the expected linux folder.")
+    source_dir = _find_t7_patch_source_dir(extract_dir)
+    if source_dir is None:
+        raise RuntimeError("T7 Patch archive did not contain the expected T7 Patch files.")
 
     for root, _, files in os.walk(source_dir):
         relative = os.path.relpath(root, source_dir)
@@ -813,16 +838,15 @@ def _uninstall_t7_patch(game_dir: str) -> None:
     if removed_game:
         write_log("Uninstalled T7 Patch files from the game directory.", "Success", log_target)
 
-    linux_dir = MOD_FILES_DIR / "linux"
     removed_mod = False
-    if linux_dir.exists():
-        for filename in T7_GAME_FILES:
-            target = linux_dir / filename
-            if target.exists():
-                target.unlink()
-                removed_mod = True
-        if linux_dir.exists() and not any(linux_dir.iterdir()):
-            linux_dir.rmdir()
+    for cache_dir in (
+        MOD_FILES_DIR / "linux",
+        MOD_FILES_DIR / "Linux.Steamdeck.and.Manual.Windows.Install",
+        MOD_FILES_DIR / "T7Patch_extracted",
+    ):
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir)
+            removed_mod = True
 
     zip_path = MOD_FILES_DIR / "T7Patch.zip"
     if zip_path.exists():
@@ -850,7 +874,7 @@ def _version_parts(value: str) -> tuple[int, ...]:
 def _select_update_asset(release_data: dict[str, Any]) -> dict[str, Any] | None:
     assets = release_data.get("assets") or []
     system = platform.system()
-    asset_names = ("PatchOpsIII.exe",) if system == "Windows" else ("PatchOpsIII.AppImage",)
+    asset_names = ("PatchOpsIII.zip", "PatchOpsIII.exe") if system == "Windows" else ("PatchOpsIII.AppImage",)
     for expected_name in asset_names:
         for asset in assets:
             name = str(asset.get("name") or "")
