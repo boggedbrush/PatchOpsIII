@@ -16,7 +16,7 @@
     "build:backend:linux": "bun scripts/check-backend-build.ts linux && .venv/bin/python -m PyInstaller --onefile --name patchops-backend --distpath dist/backend --workpath build/pyinstaller --specpath build/pyinstaller --hidden-import uvicorn.logging --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.protocols.websockets --hidden-import uvicorn.protocols.websockets.auto --hidden-import uvicorn.lifespan --hidden-import uvicorn.lifespan.on backend/api.py",
     "build:backend:win": "bun scripts/check-backend-build.ts win && .venv/Scripts/python.exe -m PyInstaller --onefile --name patchops-backend --distpath dist/backend --workpath build/pyinstaller --specpath build/pyinstaller --hidden-import uvicorn.logging --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.protocols.websockets --hidden-import uvicorn.protocols.websockets.auto --hidden-import uvicorn.lifespan --hidden-import uvicorn.lifespan.on backend/api.py",
     "dist:linux": "bun run build && bun run build:backend:linux && bun x electron-builder@26.8.1 --linux AppImage --publish never",
-    "dist:win": "bun run build && bun run build:backend:win && bun x electron-builder@26.8.1 --win dir --publish never --config.win.signAndEditExecutable=false && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows-zip.ps1",
+    "dist:win": "bun run build && bun run build:backend:win && bun x electron-builder@26.8.1 --win --publish never --config.win.signAndEditExecutable=false",
     "typecheck": "tsc --noEmit",
     "start": "bun run build:main && electron ."
   },
@@ -29,6 +29,7 @@
     "electronLanguages": [
       "en-US"
     ],
+    "msiProjectCreated": "scripts/brand-msi.cjs",
     "files": [
       "dist/main/**",
       "dist/renderer/**",
@@ -55,14 +56,31 @@
     "win": {
       "target": [
         {
-          "target": "dir",
+          "target": "msi",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
           "arch": [
             "x64"
           ]
         }
       ],
-      "icon": "PatchOpsIII.ico",
-      "artifactName": "PatchOpsIII.zip"
+      "icon": "PatchOpsIII.ico"
+    },
+    "msi": {
+      "artifactName": "PatchOpsIII.msi",
+      "oneClick": false,
+      "perMachine": true,
+      "runAfterFinish": false
+    },
+    "nsis": {
+      "artifactName": "PatchOpsIII.exe",
+      "oneClick": false,
+      "perMachine": false,
+      "runAfterFinish": false
     },
     "linux": {
       "target": [

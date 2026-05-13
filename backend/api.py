@@ -1421,7 +1421,14 @@ def _select_update_asset(release_data: dict[str, Any]) -> dict[str, Any] | None:
     assets = release_data.get("assets") or []
     system = platform.system()
     asset_names = (
-        ("PatchOpsIII.zip", "PatchOpsIII-Beta.zip", "PatchOpsIII.exe", "PatchOpsIII-Beta.exe")
+        (
+            "PatchOpsIII.msi",
+            "PatchOpsIII-Beta.msi",
+            "PatchOpsIII.exe",
+            "PatchOpsIII-Beta.exe",
+            "PatchOpsIII.zip",
+            "PatchOpsIII-Beta.zip",
+        )
         if system == "Windows"
         else ("PatchOpsIII.AppImage", "PatchOpsIII-Beta.AppImage")
     )

@@ -1,14 +1,14 @@
 # PatchOpsIII v1.3.0-beta3 Release Notes
 
 ## Overview
-PatchOpsIII v1.3.0-beta3 is a follow-up to beta2. It focuses on easier Windows downloads, a new EXE Swapper section, improved BO3 Enhanced setup, and a simple way to choose Stable or Beta updates.
+PatchOpsIII v1.3.0-beta3 is a follow-up to beta2. It focuses on a cleaner Windows installer, a new EXE Swapper section, improved BO3 Enhanced setup, and a simple way to choose Stable or Beta updates.
 
 These notes only cover changes since `v1.3.0-beta2`.
 
 ---
 
 ## 🚀 Major Highlights
-- Windows downloads are now packaged as a zip file for faster, easier updates and fewer false positives.
+- Windows downloads now use an MSI installer.
 - EXE Swapper is now available as its own section.
 - BO3 Enhanced setup now has a clearer install flow, source validation, help, and diagnostics.
 - Users can switch update checks between Stable and Beta.
@@ -44,8 +44,9 @@ These notes only cover changes since `v1.3.0-beta2`.
 - LPC files still come from the legacy t7patch release because the maintained release does not include them.
 
 ### Packaging
-- Windows beta releases now ship as `PatchOpsIII-Beta.zip` to make updates easier and help reduce false positives.
-- The in-app updater now supports Windows zip downloads first, with the exe update path kept as a fallback.
+- Windows beta releases now ship as `PatchOpsIII-Beta.msi`.
+- The in-app updater now supports Windows MSI downloads first, with exe and zip update paths kept as fallbacks.
+- The Windows installer uses PatchOpsIII branding and installs to Program Files by default.
 - SHA-256 hashes and VirusTotal links remain part of the release process.
 
 ---
@@ -58,8 +59,8 @@ These notes only cover changes since `v1.3.0-beta2`.
 - Improved empty-log handling so the Activity Log does not collapse into a tiny strip.
 
 ### Windows
-- Switched Windows release packaging to zip.
-- Added updater support for Windows zip assets.
+- Switched Windows release packaging to MSI.
+- Added updater support for Windows MSI assets.
 - Added EXE switching workflows for Windows users.
 
 ### Linux and Steam Deck
@@ -76,9 +77,9 @@ These notes only cover changes since `v1.3.0-beta2`.
   - Workaround: Report issues through GitHub with logs and your platform details.
   - Status: Active beta testing.
 
-- **Windows Zip Updates**
-  - Impact: Windows zip downloads are new, so update behavior needs wider testing.
-  - Workaround: If the in-app update fails, download the zip from GitHub and extract it manually.
+- **Windows MSI Updates**
+  - Impact: Windows MSI downloads are new, so update behavior needs wider testing.
+  - Workaround: If the in-app update fails, download the MSI from GitHub and run it manually.
   - Status: Being tested in beta3.
 
 - **EXE Swapper**
@@ -126,7 +127,7 @@ PatchOpsIII builds on the work of the following projects:
 ---
 
 ## 🔮 Upcoming Work
-- Continue testing Windows zip updates.
+- Continue testing Windows MSI updates.
 - Keep polishing BO3 Enhanced setup.
 - Continue testing EXE Swapper behavior across more installs.
 - Continue bug fixes and quality-of-life updates based on user reports.

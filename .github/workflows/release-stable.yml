@@ -340,10 +340,6 @@ jobs:
             if [ -d "$dir" ]; then
               for archive in "${dir}"/*.zip "${dir}"/*.tar "${dir}"/*.tar.gz "${dir}"/*.tgz; do
                 [ -e "$archive" ] || continue
-                if [ "$dir" = "artifacts/windows" ] && [ "$(basename "$archive")" = "PatchOpsIII.zip" ]; then
-                  echo "Keeping Windows release zip intact: $archive"
-                  continue
-                fi
                 echo "Extracting $archive"
                 case "$archive" in
                   *.tar.gz|*.tgz) tar -xzf "$archive" -C "$dir" ;;
@@ -390,7 +386,7 @@ jobs:
           linux_vt = os.environ.get("LINUX_VT_URL", "").strip() or "https://www.virustotal.com/"
           windows_hash = os.environ.get("WINDOWS_HASH", "").strip() or "None"
           linux_hash = os.environ.get("LINUX_HASH", "").strip() or "None"
-          asset_windows = "PatchOpsIII.zip"
+          asset_windows = "PatchOpsIII.msi"
           asset_linux = "PatchOpsIII.AppImage"
           base_url = f"https://github.com/{repo}/releases/download/{tag}"
           windows_download = f"{base_url}/{asset_windows}"
@@ -433,13 +429,20 @@ jobs:
           set -euo pipefail
           mkdir -p release
           echo "Collecting release binaries"
-          win_exec=$(find artifacts/windows -type f -name 'PatchOpsIII.zip' -print -quit)
+          win_exec=$(find artifacts/windows -type f -name 'PatchOpsIII.msi' -print -quit)
           if [ -z "$win_exec" ]; then
-            echo "Windows zip not found under artifacts/windows" >&2
+            echo "Windows MSI not found under artifacts/windows" >&2
             find artifacts/windows -type f -print >&2
             exit 1
           fi
-          cp "$win_exec" "release/PatchOpsIII.zip"
+          cp "$win_exec" "release/PatchOpsIII.msi"
+          win_fallback=$(find artifacts/windows -type f -name 'PatchOpsIII.exe' -print -quit)
+          if [ -z "$win_fallback" ]; then
+            echo "Windows transition EXE not found under artifacts/windows" >&2
+            find artifacts/windows -type f -print >&2
+            exit 1
+          fi
+          cp "$win_fallback" "release/PatchOpsIII.exe"
           if [ -f "$(dirname "$win_exec")/PatchOpsIII.sig" ]; then
             cp "$(dirname "$win_exec")/PatchOpsIII.sig" "release/PatchOpsIII.sig"
           fi
