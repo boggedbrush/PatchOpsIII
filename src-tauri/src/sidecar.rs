@@ -13,6 +13,7 @@ struct BackendEnv {
     host: String,
     port: u16,
     version: String,
+    parent_pid: u32,
     core_binary: Option<PathBuf>,
     resource_dir: Option<PathBuf>,
 }
@@ -78,6 +79,7 @@ impl BackendSupervisor {
             host,
             port,
             version: app_version(app, root.as_deref()),
+            parent_pid: std::process::id(),
             core_binary: find_binary(app, "patchops-core"),
             resource_dir: resource_root(app),
         };
@@ -145,6 +147,7 @@ fn apply_backend_env(command: &mut Command, backend_env: &BackendEnv) {
     command
         .env("PATCHOPSIII_BACKEND_HOST", &backend_env.host)
         .env("PATCHOPSIII_BACKEND_PORT", backend_env.port.to_string())
+        .env("PATCHOPSIII_PARENT_PID", backend_env.parent_pid.to_string())
         .env("PATCHOPSIII_VERSION", &backend_env.version)
         .env("PYTHONUNBUFFERED", "1");
 }
@@ -317,6 +320,7 @@ mod tests {
             host: "127.0.0.1".to_string(),
             port: 8767,
             version: "v1.3.0-beta3".to_string(),
+            parent_pid: 4242,
             core_binary: Some(PathBuf::from("patchops-core-test")),
             resource_dir: Some(PathBuf::from("resource-root-test")),
         };
@@ -326,6 +330,7 @@ mod tests {
         let env = command_env(&command);
         assert_eq!(env["PATCHOPSIII_BACKEND_HOST"], "127.0.0.1");
         assert_eq!(env["PATCHOPSIII_BACKEND_PORT"], "8767");
+        assert_eq!(env["PATCHOPSIII_PARENT_PID"], "4242");
         assert_eq!(env["PATCHOPSIII_VERSION"], "v1.3.0-beta3");
         assert_eq!(env["PYTHONUNBUFFERED"], "1");
         assert_eq!(
@@ -349,6 +354,7 @@ mod tests {
             host: "127.0.0.1".to_string(),
             port: 8765,
             version: "1.3.0".to_string(),
+            parent_pid: 2424,
             core_binary: None,
             resource_dir: None,
         };
@@ -360,5 +366,6 @@ mod tests {
         assert!(!env.contains_key("PATCHOPSIII_RESOURCE_DIR"));
         assert_eq!(env["PATCHOPSIII_BACKEND_HOST"], "127.0.0.1");
         assert_eq!(env["PATCHOPSIII_BACKEND_PORT"], "8765");
+        assert_eq!(env["PATCHOPSIII_PARENT_PID"], "2424");
     }
 }

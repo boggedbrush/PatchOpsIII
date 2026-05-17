@@ -11,6 +11,8 @@ import stat
 import string
 import subprocess
 import sys
+import threading
+import time
 import zipfile
 from collections import deque
 from pathlib import Path
@@ -337,6 +339,7 @@ _game_dir_cache: tuple[Path, float | None, str | None] | None = None
 _preset_names_cache: tuple[float | None, list[str]] | None = None
 _presets_cache: tuple[float | None, dict[str, Any]] | None = None
 _core_warning_logged = False
+_parent_watchdog_started = False
 
 
 def _file_mtime(path: Path) -> float | None:
@@ -512,6 +515,61 @@ def _core_warn_once(message: str) -> None:
         return
     _core_warning_logged = True
     write_log(message, "Warning", log_target)
+
+
+def _parent_process_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if pid == os.getpid():
+        return True
+    if platform.system() == "Windows":
+        try:
+            import ctypes
+
+            handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+            if not handle:
+                return False
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+        except Exception:
+            return True
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+
+
+def _start_parent_watchdog() -> None:
+    global _parent_watchdog_started
+    if _parent_watchdog_started:
+        return
+
+    raw_pid = os.environ.get("PATCHOPSIII_PARENT_PID", "").strip()
+    if not raw_pid:
+        return
+    try:
+        parent_pid = int(raw_pid)
+    except ValueError:
+        write_log(f"Ignoring invalid PATCHOPSIII_PARENT_PID: {raw_pid}", "Warning", log_target)
+        return
+    if parent_pid <= 0:
+        return
+
+    interval = float(os.environ.get("PATCHOPSIII_PARENT_WATCHDOG_INTERVAL", "2") or "2")
+    _parent_watchdog_started = True
+
+    def watch_parent() -> None:
+        while True:
+            time.sleep(max(0.2, interval))
+            if not _parent_process_alive(parent_pid):
+                os._exit(0)
+
+    threading.Thread(target=watch_parent, name="patchops-parent-watchdog", daemon=True).start()
 
 
 def _core_status(game_dir: str | None) -> dict[str, Any] | None:
@@ -1974,6 +2032,7 @@ def _apply_preset_values(game_dir: str, preset_name: str) -> None:
 @app.on_event("startup")
 async def startup() -> None:
     log_target.set_loop(asyncio.get_running_loop())
+    _start_parent_watchdog()
 
 
 @app.get("/api/health")

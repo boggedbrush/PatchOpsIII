@@ -322,5 +322,28 @@ class AppRootTests(unittest.TestCase):
                         self.assertEqual(api._resolve_app_root(), resource_dir.resolve())
 
 
+class ParentWatchdogTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        api._parent_watchdog_started = False
+
+    def test_parent_process_alive_rejects_invalid_pid(self) -> None:
+        self.assertFalse(api._parent_process_alive(0))
+        self.assertFalse(api._parent_process_alive(-1))
+
+    def test_parent_process_alive_accepts_current_pid(self) -> None:
+        self.assertTrue(api._parent_process_alive(os.getpid()))
+
+    def test_parent_watchdog_ignores_missing_or_invalid_env(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            api._start_parent_watchdog()
+        self.assertFalse(api._parent_watchdog_started)
+
+        with patch.dict(os.environ, {"PATCHOPSIII_PARENT_PID": "not-a-pid"}):
+            with patch.object(api, "write_log") as write_log:
+                api._start_parent_watchdog()
+        self.assertFalse(api._parent_watchdog_started)
+        self.assertTrue(write_log.called)
+
+
 if __name__ == "__main__":
     unittest.main()
