@@ -99,33 +99,37 @@ The backend writes shared app settings to `patchops-settings.json`. Existing `el
 # build the Rust local operations core
 bun run build:core
 
+# build the Rust core for Tauri dev
+bun run build:core:dev
+
 # run the Tauri desktop shell against the existing React renderer
 bun run dev:tauri
+
+# skip the dev Rust core rebuild when target/debug/patchops-core already exists
+PATCHOPSIII_SKIP_CORE_BUILD=1 bun run dev:tauri
 
 # run the Rust core directly
 echo '{"gameDir":"C:\\path\\to\\Call of Duty Black Ops III"}' | target/release/patchops-core status
 echo '{"path":"C:\\path\\to\\BlackOps3.exe"}' | target/release/patchops-core hash
 ```
 
-Tauri packaging expects target-triple sidecars in `src-tauri/binaries/`. Build the PyInstaller backend first, build the Rust core, then prepare sidecars:
+Tauri packaging expects target-triple sidecars in `src-tauri/binaries/`. Local Tauri package commands use a fast path: the PyInstaller backend is rebuilt only when backend inputs changed, while release commands force a clean backend rebuild for CI and final artifacts.
 
 ```bash
 # verify Tauri installer metadata matches the numeric base package version
 bun run check:tauri-version
 
-# Windows
-bun run build:backend:win
-bun run build:core
-bun run prepare:tauri-sidecars
-bun run verify:tauri-sidecars
+# Windows fast local package
 bun run dist:tauri:win
 
-# Linux
-bun run build:backend:linux
-bun run build:core
-bun run prepare:tauri-sidecars
-bun run verify:tauri-sidecars
+# Windows full release package
+bun run dist:tauri:win:release
+
+# Linux fast local package
 bun run dist:tauri:linux
+
+# Linux full release package
+bun run dist:tauri:linux:release
 ```
 
 Electron remains available through `bun run dev:desktop` and the existing Electron packaging scripts until the Tauri shell reaches full parity.

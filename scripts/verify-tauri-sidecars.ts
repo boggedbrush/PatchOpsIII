@@ -7,6 +7,7 @@ const root = process.cwd();
 const binariesDir = path.join(root, "src-tauri", "binaries");
 const backendRuntimeDir = path.join(root, "src-tauri", "backend-runtime");
 const extension = process.platform === "win32" ? ".exe" : "";
+const devMode = process.argv.includes("--dev");
 
 function hostTriple() {
   const result = spawnSync("rustc", ["-Vv"], { encoding: "utf-8" });
@@ -38,12 +39,15 @@ function verifySidecar(name: string, triple: string) {
 
 const triple = hostTriple();
 const backendRuntime = path.join(backendRuntimeDir, `patchops-backend${extension}`);
-if (!existsSync(backendRuntime)) {
+if (devMode) {
+  console.log("Skipped backend runtime verification in dev mode.");
+} else if (!existsSync(backendRuntime)) {
   throw new Error(`Missing backend runtime executable: ${path.relative(root, backendRuntime)}`);
+} else {
+  const backendStats = statSync(backendRuntime);
+  if (!backendStats.isFile() || backendStats.size <= 0) {
+    throw new Error(`Invalid backend runtime executable: ${path.relative(root, backendRuntime)}`);
+  }
+  console.log(`Verified ${path.relative(root, backendRuntime)} (${backendStats.size} bytes)`);
 }
-const backendStats = statSync(backendRuntime);
-if (!backendStats.isFile() || backendStats.size <= 0) {
-  throw new Error(`Invalid backend runtime executable: ${path.relative(root, backendRuntime)}`);
-}
-console.log(`Verified ${path.relative(root, backendRuntime)} (${backendStats.size} bytes)`);
 verifySidecar("patchops-core", triple);

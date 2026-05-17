@@ -17,10 +17,11 @@ const backendPort = process.env.PATCHOPSIII_BACKEND_PORT ?? "8767";
 let shuttingDown = false;
 
 cleanupSession("tauri");
-runStep("core", "bun", ["run", "build:core"]);
-runStep("sidecars", "bun", ["scripts/prepare-tauri-sidecars.ts", "--dev"]);
+if (process.env.PATCHOPSIII_SKIP_CORE_BUILD !== "1") {
+  runStep("core", "bun", ["run", "build:core:dev"]);
+}
 
-const tauri = spawn("bun", ["x", "tauri", "dev"], {
+const tauri = spawn("bun", ["x", "tauri", "dev", "--config", "src-tauri/tauri.dev.conf.json"], {
   stdio: "inherit",
   shell: process.platform === "win32",
   env: {
@@ -29,7 +30,7 @@ const tauri = spawn("bun", ["x", "tauri", "dev"], {
   }
 });
 
-registerProcess("tauri", "tauri", tauri, "bun x tauri dev");
+registerProcess("tauri", "tauri", tauri, "bun x tauri dev --config src-tauri/tauri.dev.conf.json");
 tauri.on("exit", (code) => shutdown(code ?? 0));
 
 function shutdown(code = 0) {

@@ -143,9 +143,9 @@ jobs:
 
       - name: Prepare Tauri sidecars for host tests
         run: |
-          bun run build:core
+          bun run build:core:dev
           bun scripts/prepare-tauri-sidecars.ts --dev
-          bun run verify:tauri-sidecars
+          bun scripts/verify-tauri-sidecars.ts --dev
 
       - name: Test Tauri host
         run: cargo test -p patchopsiii-tauri
@@ -154,7 +154,7 @@ jobs:
         run: .venv/bin/python -m unittest backend.test_core_bridge backend.test_api_status_core
 
       - name: Build Tauri AppImage
-        run: bun run dist:tauri:linux
+        run: bun run dist:tauri:linux:release
 
       - name: Locate AppImage
         id: appimage

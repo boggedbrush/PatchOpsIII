@@ -1,4 +1,4 @@
-import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, rmSync, statSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
@@ -33,43 +33,120 @@ function requireFile(candidates: string[], label: string) {
   return found;
 }
 
-function copySidecar(source: string, name: string, triple: string) {
-  mkdirSync(binariesDir, { recursive: true });
-  const target = path.join(binariesDir, `${name}-${triple}${extension}`);
+function changed(source: string, target: string) {
+  if (!existsSync(target)) {
+    return true;
+  }
+  const sourceStats = statSync(source);
+  const targetStats = statSync(target);
+  return sourceStats.size !== targetStats.size || sourceStats.mtimeMs > targetStats.mtimeMs + 1;
+}
+
+function copyFileIfChanged(source: string, target: string) {
+  mkdirSync(path.dirname(target), { recursive: true });
+  if (!changed(source, target)) {
+    return false;
+  }
   copyFileSync(source, target);
   if (process.platform !== "win32") {
     chmodSync(target, 0o755);
   }
-  console.log(`Prepared ${path.relative(root, target)}`);
+  return true;
+}
+
+function listFiles(directory: string) {
+  const files: string[] = [];
+  if (!existsSync(directory)) {
+    return files;
+  }
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const filePath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...listFiles(filePath));
+    } else {
+      files.push(filePath);
+    }
+  }
+  return files;
+}
+
+function removeStaleFiles(sourceDir: string, targetDir: string) {
+  const sourceFiles = new Set(listFiles(sourceDir).map((file) => path.relative(sourceDir, file)));
+  for (const targetFile of listFiles(targetDir)) {
+    const relative = path.relative(targetDir, targetFile);
+    if (relative === ".gitkeep" || sourceFiles.has(relative)) {
+      continue;
+    }
+    rmSync(targetFile, { force: true });
+  }
+}
+
+function removeEmptyDirectories(directory: string) {
+  if (!existsSync(directory)) {
+    return;
+  }
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const child = path.join(directory, entry.name);
+    removeEmptyDirectories(child);
+    if (readdirSync(child).length === 0) {
+      rmSync(child, { recursive: true, force: true });
+    }
+  }
+}
+
+function copySidecar(source: string, name: string, triple: string) {
+  const target = path.join(binariesDir, `${name}-${triple}${extension}`);
+  const didCopy = copyFileIfChanged(source, target);
+  console.log(`${didCopy ? "Prepared" : "Reused"} ${path.relative(root, target)}`);
 }
 
 function prepareBackendRuntime(source: string) {
-  rmSync(backendRuntimeDir, { recursive: true, force: true });
   mkdirSync(backendRuntimeDir, { recursive: true });
 
   if (statSync(source).isDirectory()) {
-    cpSync(source, backendRuntimeDir, { recursive: true });
+    removeStaleFiles(source, backendRuntimeDir);
+    for (const sourceFile of listFiles(source)) {
+      const target = path.join(backendRuntimeDir, path.relative(source, sourceFile));
+      copyFileIfChanged(sourceFile, target);
+    }
+    removeEmptyDirectories(backendRuntimeDir);
   } else {
-    copyFileSync(source, path.join(backendRuntimeDir, `patchops-backend${extension}`));
+    for (const targetFile of listFiles(backendRuntimeDir)) {
+      const relative = path.relative(backendRuntimeDir, targetFile);
+      if (relative !== ".gitkeep" && relative !== `patchops-backend${extension}`) {
+        rmSync(targetFile, { force: true });
+      }
+    }
+    copyFileIfChanged(source, path.join(backendRuntimeDir, `patchops-backend${extension}`));
+    removeEmptyDirectories(backendRuntimeDir);
   }
 
-  if (process.platform !== "win32") {
-    const backendExe = path.join(backendRuntimeDir, `patchops-backend${extension}`);
-    if (existsSync(backendExe)) {
-      chmodSync(backendExe, 0o755);
-    }
-  }
   console.log(`Prepared ${path.relative(root, backendRuntimeDir)}`);
 }
 
 const triple = hostTriple();
 const core = requireFile(
-  [
-    path.join(root, "target", "release", `patchops-core${extension}`),
-    path.join(root, "crates", "patchops-core", "target", "release", `patchops-core${extension}`)
-  ],
+  devMode
+    ? [
+        path.join(root, "target", "debug", `patchops-core${extension}`),
+        path.join(root, "crates", "patchops-core", "target", "debug", `patchops-core${extension}`)
+      ]
+    : [
+        path.join(root, "target", "release", `patchops-core${extension}`),
+        path.join(root, "crates", "patchops-core", "target", "release", `patchops-core${extension}`)
+      ],
   "Rust core sidecar"
 );
+
+copySidecar(core, "patchops-core", triple);
+
+if (devMode) {
+  console.log("Skipped backend runtime prep in dev mode. Tauri dev runs Python through uvicorn.");
+  process.exit(0);
+}
 
 const backendCandidates = [
   path.join(root, "dist", "backend", "patchops-backend"),
@@ -77,12 +154,8 @@ const backendCandidates = [
   path.join(root, "backend-bin", `patchops-backend${extension}`)
 ];
 const backend = backendCandidates.find((candidate) => existsSync(candidate));
-if (!backend && !devMode) {
+if (!backend) {
   throw new Error(`PyInstaller backend sidecar was not found. Checked:\n${backendCandidates.join("\n")}`);
 }
 
-prepareBackendRuntime(backend ?? core);
-copySidecar(core, "patchops-core", triple);
-if (!backend && devMode) {
-  console.log("Prepared dev-only backend runtime placeholder. Tauri dev still runs Python through uvicorn.");
-}
+prepareBackendRuntime(backend);
