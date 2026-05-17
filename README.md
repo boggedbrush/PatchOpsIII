@@ -32,7 +32,7 @@
 - [Star History](#star-history)
 
 ## Overview
-PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popular community tools and quality-of-life tweaks in a single polished Electron interface backed by a local Python API. Whether you are securing your game with T7 Patch, smoothing shader compilation stutter with DXVK, or fine-tuning launch options, PatchOpsIII consolidates every workflow into one cohesive experience.
+PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popular community tools and quality-of-life tweaks in a single polished desktop interface backed by a local Python API. Whether you are securing your game with T7 Patch, smoothing shader compilation stutter with DXVK, or fine-tuning launch options, PatchOpsIII consolidates every workflow into one cohesive experience.
 
 ## Key Features
 
@@ -64,7 +64,7 @@ PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popul
 4. **Dependencies:** The packaged build bundles all required Python dependencies; no additional setup is needed.
 
 ### Developer Setup
-PatchOpsIII uses a React + TypeScript renderer wrapped by Electron. Bun is the JavaScript runtime/package manager, while Python runs the local backend API.
+PatchOpsIII is migrating from Electron to Tauri in small steps. The React + TypeScript renderer remains the UI, Python FastAPI remains the local API and orchestration layer, and the new Rust core handles narrow deterministic local operations such as status scanning, hashing, and config parsing.
 
 ```bash
 # install Python service dependencies
@@ -82,7 +82,55 @@ bun run dev
 bun run dev:desktop
 ```
 
-The browser development server uses Vite on `127.0.0.1:5173` and the Python API on `127.0.0.1:8765`. The Electron desktop command uses Vite on `127.0.0.1:5174` and its Python API on `127.0.0.1:8766`, so both commands can run at the same time. The renderer communicates with Python through HTTP APIs and `/ws` WebSockets; Electron IPC is reserved for desktop-specific bridge actions such as selecting a local game directory.
+The browser development server uses Vite on `127.0.0.1:5173` and the Python API on `127.0.0.1:8765`. The Electron desktop command uses Vite on `127.0.0.1:5174` and its Python API on `127.0.0.1:8766`. The Tauri desktop command uses Vite on `127.0.0.1:5175` and its Python API on `127.0.0.1:8767`. These defaults keep the browser, Electron, and Tauri dev flows from fighting over ports during the migration. The renderer communicates with Python through HTTP APIs and `/ws` WebSockets; Electron IPC is reserved for legacy desktop-specific bridge actions.
+
+### Tauri Migration Developer Flow
+The target architecture is:
+
+```text
+Tauri Rust host -> React renderer -> Python FastAPI sidecar -> Rust local operations core -> BO3 / Steam / filesystem
+```
+
+Tauri owns the native window, folder picker, window controls, platform bridge, backend URL bridge, and Python sidecar supervision. It does not duplicate FastAPI routes. Python still owns downloads, update checks, install decisions, elevated helper flows, WebSocket logs, and public `/api/...` behavior. The Rust core is invoked by Python as a JSON subprocess bridge for read-only local operations first.
+
+The backend writes shared app settings to `patchops-settings.json`. Existing `electron-settings.json` files are still read as a legacy fallback so current installs keep their saved game directory and release channel during the migration.
+
+```bash
+# build the Rust local operations core
+bun run build:core
+
+# run the Tauri desktop shell against the existing React renderer
+bun run dev:tauri
+
+# run the Rust core directly
+echo '{"gameDir":"C:\\path\\to\\Call of Duty Black Ops III"}' | target/release/patchops-core status
+echo '{"path":"C:\\path\\to\\BlackOps3.exe"}' | target/release/patchops-core hash
+```
+
+Tauri packaging expects target-triple sidecars in `src-tauri/binaries/`. Build the PyInstaller backend first, build the Rust core, then prepare sidecars:
+
+```bash
+# verify Tauri installer metadata matches the numeric base package version
+bun run check:tauri-version
+
+# Windows
+bun run build:backend:win
+bun run build:core
+bun run prepare:tauri-sidecars
+bun run verify:tauri-sidecars
+bun run dist:tauri:win
+
+# Linux
+bun run build:backend:linux
+bun run build:core
+bun run prepare:tauri-sidecars
+bun run verify:tauri-sidecars
+bun run dist:tauri:linux
+```
+
+Electron remains available through `bun run dev:desktop` and the existing Electron packaging scripts until the Tauri shell reaches full parity.
+Tauri packaging is also covered by `.github/workflows/tauri-windows-build.yml` and `.github/workflows/tauri-linux-build.yml` so Windows MSI and Linux AppImage artifacts can be verified on their native runners.
+The beta and stable release workflows publish Tauri artifacts alongside the legacy Electron artifacts during the migration window.
 
 ## Forked Components
 - **BO3 Enhanced Proton fork metadata:** [bo3-enhanced-proton/README.md](bo3-enhanced-proton/README.md)

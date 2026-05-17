@@ -78,9 +78,40 @@ from dxvk_manager import (
     is_dxvk_async_installed,
 )
 
+try:
+    from backend.core_bridge import CoreBridgeError, CoreUnavailableError, core_available, core_call
+except ImportError:
+    from core_bridge import CoreBridgeError, CoreUnavailableError, core_available, core_call
 
-APP_ROOT = Path(sys.executable).resolve().parents[1] if getattr(sys, "frozen", False) else Path(__file__).resolve().parents[1]
-SETTINGS_PATH = Path(get_app_data_dir()) / "electron-settings.json"
+
+def _resolve_app_root() -> Path:
+    for env_name in ("PATCHOPSIII_RESOURCE_DIR", "PATCHOPSIII_APP_ROOT"):
+        value = os.environ.get(env_name, "").strip()
+        if value:
+            path = Path(value).resolve()
+            if path.exists():
+                for candidate in (path, path / "_up_"):
+                    if (candidate / "presets.json").exists() or (candidate / "package.json").exists():
+                        return candidate
+                return path
+
+    if getattr(sys, "frozen", False):
+        executable = Path(sys.executable).resolve()
+        candidates = [executable.parent]
+        candidates.append(executable.parent / "_up_")
+        candidates.extend(executable.parents)
+        candidates.extend(parent / "_up_" for parent in executable.parents)
+        for candidate in candidates:
+            if (candidate / "presets.json").exists() or (candidate / "package.json").exists():
+                return candidate
+        return executable.parents[1]
+
+    return Path(__file__).resolve().parents[1]
+
+
+APP_ROOT = _resolve_app_root()
+SETTINGS_PATH = Path(get_app_data_dir()) / "patchops-settings.json"
+LEGACY_SETTINGS_PATH = Path(get_app_data_dir()) / "electron-settings.json"
 PRESETS_PATH = APP_ROOT / "presets.json"
 MOD_FILES_DIR = Path(get_app_data_dir()) / "BO3 Mod Files"
 GAME_EXECUTABLE_NAMES = ("BlackOpsIII.exe", "BlackOps3.exe")
@@ -222,6 +253,13 @@ def _cors_origins() -> list[str]:
         "http://127.0.0.1:5173",
         "http://localhost:5174",
         "http://127.0.0.1:5174",
+        "http://localhost:5175",
+        "http://127.0.0.1:5175",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+        "tauri://localhost",
+        "asset://localhost",
+        "app://localhost",
         "app://patchopsiii",
     ]
     extra = [origin.strip() for origin in os.environ.get("PATCHOPSIII_CORS_ORIGINS", "").split(",") if origin.strip()]
@@ -294,10 +332,11 @@ class ReleaseChannelPayload(BaseModel):
     channel: str
 
 
-_settings_cache: tuple[float | None, dict[str, Any]] | None = None
-_game_dir_cache: tuple[float | None, str | None] | None = None
+_settings_cache: tuple[Path, float | None, dict[str, Any]] | None = None
+_game_dir_cache: tuple[Path, float | None, str | None] | None = None
 _preset_names_cache: tuple[float | None, list[str]] | None = None
 _presets_cache: tuple[float | None, dict[str, Any]] | None = None
+_core_warning_logged = False
 
 
 def _file_mtime(path: Path) -> float | None:
@@ -323,17 +362,30 @@ async def _config_path_async(game_dir: str | None = None) -> Path | None:
     return await _blocking(_config_path, game_dir)
 
 
+def _settings_read_path() -> Path:
+    if SETTINGS_PATH.exists():
+        return SETTINGS_PATH
+    if LEGACY_SETTINGS_PATH.exists():
+        return LEGACY_SETTINGS_PATH
+    return SETTINGS_PATH
+
+
+def _settings_mtime() -> float | None:
+    return _file_mtime(_settings_read_path())
+
+
 def _load_settings() -> dict[str, Any]:
     global _settings_cache
-    mtime = _file_mtime(SETTINGS_PATH)
-    if _settings_cache and _settings_cache[0] == mtime:
-        return dict(_settings_cache[1])
+    path = _settings_read_path()
+    mtime = _file_mtime(path)
+    if _settings_cache and _settings_cache[0] == path and _settings_cache[1] == mtime:
+        return dict(_settings_cache[2])
     try:
-        loaded = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+        loaded = json.loads(path.read_text(encoding="utf-8"))
         settings = loaded if isinstance(loaded, dict) else {}
     except Exception:
         settings = {}
-    _settings_cache = (mtime, dict(settings))
+    _settings_cache = (path, mtime, dict(settings))
     return settings
 
 
@@ -346,7 +398,7 @@ def _save_settings(settings: dict[str, Any]) -> None:
     global _settings_cache, _game_dir_cache
     SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
     SETTINGS_PATH.write_text(json.dumps(settings, indent=2), encoding="utf-8")
-    _settings_cache = (_file_mtime(SETTINGS_PATH), dict(settings))
+    _settings_cache = (SETTINGS_PATH, _file_mtime(SETTINGS_PATH), dict(settings))
     _game_dir_cache = None
 
 
@@ -359,9 +411,10 @@ def _has_game_executable(directory: str | Path | None) -> bool:
 
 def _find_game_directory() -> str | None:
     global _game_dir_cache
-    settings_mtime = _file_mtime(SETTINGS_PATH)
-    if _game_dir_cache and _game_dir_cache[0] == settings_mtime:
-        cached = _game_dir_cache[1]
+    settings_path = _settings_read_path()
+    settings_mtime = _settings_mtime()
+    if _game_dir_cache and _game_dir_cache[0] == settings_path and _game_dir_cache[1] == settings_mtime:
+        cached = _game_dir_cache[2]
         if cached is None or _has_game_executable(cached):
             return cached
         _game_dir_cache = None
@@ -369,14 +422,20 @@ def _find_game_directory() -> str | None:
     saved = _load_settings().get("game_dir")
     if isinstance(saved, str) and _has_game_executable(saved):
         found = str(Path(saved))
-        _game_dir_cache = (settings_mtime, found)
+        _game_dir_cache = (settings_path, settings_mtime, found)
         return found
 
     for library in get_steam_library_paths():
         candidate = Path(library) / "steamapps" / "common" / "Call of Duty Black Ops III"
         if _has_game_executable(candidate):
             found = str(candidate)
-            _game_dir_cache = (settings_mtime, found)
+            _game_dir_cache = (settings_path, settings_mtime, found)
+            return found
+
+    for candidate in _core_steam_game_dirs():
+        if _has_game_executable(candidate):
+            found = str(candidate)
+            _game_dir_cache = (settings_path, settings_mtime, found)
             return found
 
     system = platform.system()
@@ -401,9 +460,9 @@ def _find_game_directory() -> str | None:
     for candidate in candidates:
         if _has_game_executable(candidate):
             found = str(candidate)
-            _game_dir_cache = (settings_mtime, found)
+            _game_dir_cache = (settings_path, settings_mtime, found)
             return found
-    _game_dir_cache = (settings_mtime, None)
+    _game_dir_cache = (settings_path, settings_mtime, None)
     return None
 
 
@@ -445,6 +504,90 @@ def _config_float(content: str, key: str, default: float) -> float:
 
 def _config_bool(content: str, key: str, enabled_value: str = "1", default: str = "0") -> bool:
     return str(_extract_config(content, key, default)) == enabled_value
+
+
+def _core_warn_once(message: str) -> None:
+    global _core_warning_logged
+    if _core_warning_logged:
+        return
+    _core_warning_logged = True
+    write_log(message, "Warning", log_target)
+
+
+def _core_status(game_dir: str | None) -> dict[str, Any] | None:
+    if not game_dir:
+        return None
+    try:
+        if not core_available():
+            return None
+        return core_call("status", {"gameDir": game_dir}, timeout=15)
+    except CoreUnavailableError:
+        return None
+    except CoreBridgeError as exc:
+        _core_warn_once(f"Rust core status scan unavailable: {exc}")
+    except Exception as exc:
+        _core_warn_once(f"Rust core status scan failed: {exc}")
+    return None
+
+
+def _core_config_values(game_dir: str | None) -> dict[str, str] | None:
+    if not game_dir:
+        return None
+    try:
+        if not core_available():
+            return None
+        result = core_call("read-config", {"gameDir": game_dir}, timeout=15)
+        values = result.get("values")
+        if isinstance(values, dict):
+            return {str(key): str(value) for key, value in values.items()}
+    except CoreUnavailableError:
+        return None
+    except CoreBridgeError as exc:
+        _core_warn_once(f"Rust core config read unavailable: {exc}")
+    except Exception as exc:
+        _core_warn_once(f"Rust core config read failed: {exc}")
+    return None
+
+
+def _core_steam_game_dirs() -> list[Path]:
+    try:
+        if not core_available():
+            return []
+        result = core_call("scan-steam", {}, timeout=15)
+        game_dirs = result.get("gameDirs")
+        if isinstance(game_dirs, list):
+            return [Path(str(item)) for item in game_dirs if item]
+    except CoreUnavailableError:
+        return []
+    except CoreBridgeError as exc:
+        _core_warn_once(f"Rust core Steam scan unavailable: {exc}")
+    except Exception as exc:
+        _core_warn_once(f"Rust core Steam scan failed: {exc}")
+    return []
+
+
+def _config_value(content: str, rust_values: dict[str, str] | None, key: str, default: Any) -> Any:
+    if rust_values and key in rust_values:
+        return rust_values[key]
+    return _extract_config(content, key, default)
+
+
+def _config_int_value(content: str, rust_values: dict[str, str] | None, key: str, default: int) -> int:
+    try:
+        return int(float(_config_value(content, rust_values, key, default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _config_float_value(content: str, rust_values: dict[str, str] | None, key: str, default: float) -> float:
+    try:
+        return float(_config_value(content, rust_values, key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _config_bool_value(content: str, rust_values: dict[str, str] | None, key: str, enabled_value: str = "1", default: str = "0") -> bool:
+    return str(_config_value(content, rust_values, key, default)) == enabled_value
 
 
 def _write_config_value(game_dir: str, key: str, value: str | int | float | bool, comment: str) -> None:
@@ -554,7 +697,7 @@ def _t7_mode(game_dir: str | None) -> str:
     return "Custom" if executable else "Unknown"
 
 
-def _t7_status(game_dir: str | None) -> dict[str, Any]:
+def _t7_status(game_dir: str | None, core_status: dict[str, Any] | None = None) -> dict[str, Any]:
     if not game_dir:
         return {
             "installed": False,
@@ -569,8 +712,8 @@ def _t7_status(game_dir: str | None) -> dict[str, Any]:
 
     patch_status = check_t7_patch_status(game_dir)
     return {
-        "installed": is_t7_patch_installed(game_dir),
-        "confExists": (Path(game_dir) / "t7patch.conf").exists(),
+        "installed": bool(core_status.get("t7Installed")) if core_status and "t7Installed" in core_status else is_t7_patch_installed(game_dir),
+        "confExists": bool(core_status.get("t7ConfigExists")) if core_status and "t7ConfigExists" in core_status else (Path(game_dir) / "t7patch.conf").exists(),
         "gamertag": patch_status.get("gamertag", ""),
         "plainName": patch_status.get("plain_name", ""),
         "colorCode": patch_status.get("color_code", ""),
@@ -660,11 +803,15 @@ def _executable_integrity_status(exe_hash: str, executable_exists: bool, enhance
     }
 
 
-def _exe_swap_status(game_dir: str | None) -> dict[str, Any]:
+def _exe_swap_status(game_dir: str | None, core_status: dict[str, Any] | None = None) -> dict[str, Any]:
     executable = _find_bo3_executable(game_dir) if game_dir else None
     exe_hash = (file_sha256(str(executable)) or "").lower() if executable and executable.exists() else ""
+    if core_status and core_status.get("executable"):
+        executable = Path(str(core_status.get("executable")))
+        exe_hash = str(core_status.get("executableHash") or exe_hash).lower()
     enhanced_active = bool(game_dir and detect_enhanced_install(game_dir))
-    integrity = _executable_integrity_status(exe_hash, bool(executable), enhanced_active, exe_hash in _known_enhanced_hashes(game_dir))
+    executable_exists = bool(executable and (executable.exists() or core_status and core_status.get("gameDetected")))
+    integrity = _executable_integrity_status(exe_hash, executable_exists, enhanced_active, exe_hash in _known_enhanced_hashes(game_dir))
     profile = integrity["profile"] or read_exe_variant(game_dir) or ""
     if not executable:
         active_build_id = "Unknown"
@@ -701,7 +848,7 @@ def _exe_swap_status(game_dir: str | None) -> dict[str, Any]:
         "enhancedBuildId": "Enhanced",
         "enhancedBuildDate": "",
         "executable": str(executable) if executable else "",
-        "executableName": executable.name if executable else "",
+        "executableName": str(core_status.get("executableName") or executable.name) if core_status and executable else executable.name if executable else "",
         "executableHash": exe_hash,
         "trustedExecutable": integrity["trusted"],
         "integrityStatus": integrity["status"],
@@ -814,9 +961,9 @@ def _write_dxvk_conf(game_dir: str, settings: dict[str, Any], include_gpl_async_
     write_log("Updated dxvk.conf from DXVK settings.", "Success", log_target)
 
 
-def _dxvk_status(game_dir: str | None) -> dict[str, Any]:
+def _dxvk_status(game_dir: str | None, core_status: dict[str, Any] | None = None) -> dict[str, Any]:
     return {
-        "installed": bool(game_dir and is_dxvk_async_installed(game_dir)),
+        "installed": bool(core_status.get("dxvkInstalled")) if core_status and "dxvkInstalled" in core_status else bool(game_dir and is_dxvk_async_installed(game_dir)),
         "confExists": bool(game_dir and (Path(game_dir) / "dxvk.conf").exists()),
         "settings": _read_dxvk_settings(game_dir),
     }
@@ -1547,18 +1694,22 @@ def _open_external_url(url: str) -> None:
 
 def _current_state() -> dict[str, Any]:
     game_dir = _find_game_directory()
+    rust_status = _core_status(game_dir)
+    rust_config = _core_config_values(game_dir)
     content = _read_config(game_dir)
-    config_exists = bool(content)
+    config_exists = bool(rust_status.get("configExists")) if rust_status and "configExists" in rust_status else bool(content)
     log_path = get_log_file_path()
     qol = _qol_status(game_dir)
     current_launch_options = _current_launch_options()
     launch_profiles = _launch_profiles(current_launch_options)
     enhanced_summary = status_summary(game_dir, get_app_data_dir()) if game_dir else {"installed": False}
+    t7_status = _t7_status(game_dir, rust_status)
+    dxvk_status = _dxvk_status(game_dir, rust_status)
     return {
         "appVersion": APP_VERSION,
         "platform": platform.system(),
         "gameDir": game_dir,
-        "gameDetected": bool(game_dir),
+        "gameDetected": bool(rust_status.get("gameDetected")) if rust_status and "gameDetected" in rust_status else bool(game_dir),
         "configExists": config_exists,
         "steamUserId": find_steam_user_id(),
         "logPath": log_path,
@@ -1568,39 +1719,39 @@ def _current_state() -> dict[str, Any]:
         "releaseChannel": _release_channel(),
         "launchProfiles": launch_profiles,
         "enhanced": _enhanced_status(game_dir),
-        "exeSwap": _exe_swap_status(game_dir),
-        "t7": _t7_status(game_dir),
-        "dxvk": _dxvk_status(game_dir),
+        "exeSwap": _exe_swap_status(game_dir, rust_status),
+        "t7": t7_status,
+        "dxvk": dxvk_status,
         "qol": qol,
         "graphics": {
-            "maxFps": _config_int(content, "MaxFPS", 165),
-            "fov": _config_int(content, "FOV", 80),
-            "displayMode": _config_int(content, "FullScreenMode", 1),
-            "resolution": _extract_config(content, "WindowSize", "1920x1080"),
-            "refreshRate": _config_float(content, "RefreshRate", 60),
-            "renderResolution": _config_int(content, "ResolutionPercent", 100),
-            "vsync": _config_bool(content, "Vsync", "1", "1"),
-            "drawFps": _config_bool(content, "DrawFPS", "1", "0"),
+            "maxFps": _config_int_value(content, rust_config, "MaxFPS", 165),
+            "fov": _config_int_value(content, rust_config, "FOV", 80),
+            "displayMode": _config_int_value(content, rust_config, "FullScreenMode", 1),
+            "resolution": _config_value(content, rust_config, "WindowSize", "1920x1080"),
+            "refreshRate": _config_float_value(content, rust_config, "RefreshRate", 60),
+            "renderResolution": _config_int_value(content, rust_config, "ResolutionPercent", 100),
+            "vsync": _config_bool_value(content, rust_config, "Vsync", "1", "1"),
+            "drawFps": _config_bool_value(content, rust_config, "DrawFPS", "1", "0"),
         },
         "advanced": {
-            "smoothFramerate": _config_bool(content, "SmoothFramerate", "1", "0"),
-            "unlockOptions": _config_bool(content, "RestrictGraphicsOptions", "0", "1"),
-            "reduceCpu": _config_bool(content, "SerializeRender", "2", "0"),
-            "maxFrameLatency": _config_int(content, "MaxFrameLatency", 1),
+            "smoothFramerate": _config_bool_value(content, rust_config, "SmoothFramerate", "1", "0"),
+            "unlockOptions": _config_bool_value(content, rust_config, "RestrictGraphicsOptions", "0", "1"),
+            "reduceCpu": _config_bool_value(content, rust_config, "SerializeRender", "2", "0"),
+            "maxFrameLatency": _config_int_value(content, rust_config, "MaxFrameLatency", 1),
             "vramLimited": not (
-                str(_extract_config(content, "VideoMemory", "1")) == "1"
-                and str(_extract_config(content, "StreamMinResident", "0")) == "0"
+                str(_config_value(content, rust_config, "VideoMemory", "1")) == "1"
+                and str(_config_value(content, rust_config, "StreamMinResident", "0")) == "0"
             ),
-            "vramTarget": int(_config_float(content, "VideoMemory", 0.75) * 100),
-            "configReadonly": _config_is_readonly(game_dir),
+            "vramTarget": int(_config_float_value(content, rust_config, "VideoMemory", 0.75) * 100),
+            "configReadonly": bool(rust_status.get("configReadonly")) if rust_status and "configReadonly" in rust_status else _config_is_readonly(game_dir),
         },
         "maintenance": {
             "modFilesDir": str(MOD_FILES_DIR),
             "logPayload": _log_payload(),
         },
         "mods": {
-            "t7Patch": bool(game_dir and ((Path(game_dir) / "t7patch.exe").exists() or (Path(game_dir) / "t7patch.dll").exists())),
-            "dxvk": bool(game_dir and is_dxvk_async_installed(game_dir)),
+            "t7Patch": bool(t7_status["installed"]),
+            "dxvk": bool(dxvk_status["installed"]),
             "enhanced": bool(enhanced_summary.get("installed")),
         },
         "logs": log_bus.recent[-80:],

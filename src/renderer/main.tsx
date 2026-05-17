@@ -26,6 +26,18 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { Toggle } from "./components/Toggle";
 import { apiRequest, makeSocket, resolveBackendUrl, type ApiResult, type LogEntry, type PatchOpsState } from "./lib/api";
+import {
+  closeWindow as closeDesktopWindow,
+  desktopRuntime,
+  getPlatform,
+  getWindowState,
+  hasDesktopBridge,
+  minimizeWindow as minimizeDesktopWindow,
+  onWindowStateChange,
+  openExternalUrl,
+  pickGameDirectory,
+  toggleMaximizeWindow
+} from "./lib/desktop";
 import packageInfo from "../../package.json";
 import "./styles/app.css";
 
@@ -203,41 +215,42 @@ function TitleBar({ appVersion, updateDisabled, onCheckForUpdates }: { appVersio
   const [maximized, setMaximized] = useState(false);
   const isMac = platform === "darwin";
   const displayVersion = appVersion.toLowerCase().startsWith("v") ? appVersion : `v${appVersion}`;
-  const hasDesktopChrome = Boolean(window.patchOpsDesktop);
-  const usesNativeWindowControls = hasDesktopChrome && platform === "win32";
-  const showWindowControls = !isMac && !usesNativeWindowControls;
+  const hasDesktopChrome = hasDesktopBridge();
+  const runtime = desktopRuntime();
+  const usesNativeWindowControls = runtime === "electron" && platform === "win32";
+  const showWindowControls = runtime === "tauri" || (!isMac && !usesNativeWindowControls);
 
   useEffect(() => {
     let removeWindowStateListener: (() => void) | undefined;
-    void window.patchOpsDesktop?.getPlatform().then(setPlatform).catch(() => undefined);
-    void window.patchOpsDesktop?.getWindowState?.().then((state) => setMaximized(state.maximized));
-    removeWindowStateListener = window.patchOpsDesktop?.onWindowStateChange?.((state) => setMaximized(state.maximized));
+    void getPlatform().then(setPlatform).catch(() => undefined);
+    void getWindowState().then((state) => setMaximized(state.maximized)).catch(() => undefined);
+    removeWindowStateListener = onWindowStateChange((state) => setMaximized(state.maximized));
     return () => removeWindowStateListener?.();
   }, []);
 
   async function minimizeWindow() {
-    if (window.patchOpsDesktop) {
-      await window.patchOpsDesktop.minimizeWindow();
+    if (hasDesktopChrome) {
+      await minimizeDesktopWindow();
     }
   }
 
   async function toggleMaximize() {
-    if (window.patchOpsDesktop) {
-      const state = await window.patchOpsDesktop.toggleMaximizeWindow();
+    if (hasDesktopChrome) {
+      const state = await toggleMaximizeWindow();
       setMaximized(state.maximized);
     }
   }
 
   function closeWindow() {
-    if (window.patchOpsDesktop) {
-      void window.patchOpsDesktop.closeWindow();
+    if (hasDesktopChrome) {
+      void closeDesktopWindow();
       return;
     }
   }
 
   return (
-    <div className={cx("titlebar", isMac ? "titlebar-mac" : "titlebar-desktop", usesNativeWindowControls && "titlebar-native-overlay titlebar-mica")}>
-      <div className="titlebar-grip" aria-hidden="true" />
+    <div className={cx("titlebar", isMac ? "titlebar-mac" : "titlebar-desktop", usesNativeWindowControls && "titlebar-native-overlay titlebar-mica")} data-tauri-drag-region>
+      <div className="titlebar-grip" aria-hidden="true" data-tauri-drag-region />
       <div className="titlebar-brand">
         <img src={logoUrl} alt="" className="titlebar-logo" />
         <div className="titlebar-copy">
@@ -248,7 +261,7 @@ function TitleBar({ appVersion, updateDisabled, onCheckForUpdates }: { appVersio
           </button>
         </div>
       </div>
-      <div className="titlebar-drag" />
+      <div className="titlebar-drag" data-tauri-drag-region />
       {showWindowControls && (
         <div className="window-controls" aria-label="Window controls">
           <button type="button" className="window-control" aria-label="Minimize window" onClick={minimizeWindow}>
@@ -484,7 +497,7 @@ function App() {
       return;
     }
     setDepotPrompt((current) => current ? { ...current, watching: true } : current);
-    window.location.href = "steam://open/console";
+    await openExternalUrl("steam://open/console");
   }
 
   async function pollCompatibleDepot() {
@@ -947,9 +960,29 @@ function App() {
   }
 
   async function openBrowseMenu(mode: "game" | "dump" = "game") {
+    if (mode === "game" && hasDesktopBridge()) {
+      try {
+        const selected = await pickGameDirectory();
+        if (selected) {
+          await setGameDirectory(selected);
+        }
+        return;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to open the native folder picker.");
+      }
+    }
     setBrowseMode(mode);
     setBrowseOpen(true);
     await loadBrowse(mode === "dump" ? enhancedDumpSource || state?.gameDir || undefined : state?.gameDir ?? undefined);
+  }
+
+  async function setGameDirectory(path: string) {
+    await runAction("directory", () =>
+      apiRequest<ApiResult>("/api/game-directory", {
+        method: "POST",
+        body: JSON.stringify({ path })
+      })
+    );
   }
 
   async function selectBrowsePath(path: string) {
@@ -959,12 +992,7 @@ function App() {
       setBrowseOpen(false);
       return;
     }
-    await runAction("directory", () =>
-      apiRequest<ApiResult>("/api/game-directory", {
-        method: "POST",
-        body: JSON.stringify({ path })
-      })
-    );
+    await setGameDirectory(path);
     setBrowseOpen(false);
   }
 
@@ -1571,7 +1599,16 @@ function App() {
                           <span><strong>Sources:</strong> DUMP.zip or extracted folder</span>
                           <span><strong>Checks:</strong> files, read/write, version</span>
                         </div>
-                        <a className="tool-button enhanced-guide-button" href="https://youtu.be/rBZZTcSJ9_s?si=41p0r_Enten3h5AQ" target="_blank" rel="noreferrer">
+                        <a
+                          className="tool-button enhanced-guide-button"
+                          href="https://youtu.be/rBZZTcSJ9_s?si=41p0r_Enten3h5AQ"
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            void openExternalUrl("https://youtu.be/rBZZTcSJ9_s?si=41p0r_Enten3h5AQ");
+                          }}
+                        >
                           <ExternalLink size={16} />
                           Open Dump Guide
                         </a>

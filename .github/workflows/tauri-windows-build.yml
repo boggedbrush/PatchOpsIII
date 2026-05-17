@@ -1,0 +1,254 @@
+name: Tauri Windows Build
+
+on:
+  push:
+    branches:
+      - Testing
+      - testing
+  pull_request:
+    branches:
+      - Testing
+      - testing
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to build
+        required: false
+        type: string
+        default: ''
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to build
+        required: false
+        type: string
+        default: ''
+    outputs:
+      hash:
+        description: SHA256 hash of the Tauri Windows MSI
+        value: ${{ jobs.build-tauri-windows.outputs.hash }}
+      artifact_name:
+        description: Name of the produced artifact
+        value: ${{ jobs.build-tauri-windows.outputs.artifact_name }}
+
+permissions:
+  contents: read
+
+jobs:
+  build-tauri-windows:
+    name: Build Tauri Windows MSI
+    runs-on: windows-latest
+    outputs:
+      hash: ${{ steps.compute_hash.outputs.hash }}
+      artifact_name: ${{ steps.artifact.outputs.name }}
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: .
+    env:
+      BUN_VERSION: "1.3.14"
+      PYTHON_VERSION: "3.12"
+      PYINSTALLER_VERSION: "6.20.0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+
+      - name: Set artifact metadata
+        id: artifact
+        run: |
+          "name=PatchOpsIII-tauri-windows" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Bun install cache
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\bun\install\cache
+          key: tauri-windows-bun-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            tauri-windows-bun-${{ runner.arch }}-${{ env.BUN_VERSION }}-
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\.cargo\registry
+            ~\.cargo\git
+            target
+          key: tauri-windows-cargo-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'src-tauri/Cargo.toml') }}
+          restore-keys: |
+            tauri-windows-cargo-${{ runner.arch }}-
+
+      - name: Cache Python virtual environment
+        id: cache-venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: tauri-windows-venv-${{ runner.arch }}-${{ env.PYTHON_VERSION }}-${{ env.PYINSTALLER_VERSION }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            tauri-windows-venv-${{ runner.arch }}-${{ env.PYTHON_VERSION }}-
+
+      - name: Install Python backend dependencies
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python -m pip install -U pip
+          .\.venv\Scripts\python -m pip install -r requirements.txt
+          .\.venv\Scripts\python -m pip install pyinstaller==${{ env.PYINSTALLER_VERSION }}
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check Tauri version metadata
+        run: bun run check:tauri-version
+
+      - name: Test renderer desktop adapter
+        run: bun run test:renderer
+
+      - name: Test Rust core
+        run: cargo test -p patchops-core
+
+      - name: Test Tauri host
+        run: cargo test -p patchopsiii-tauri
+
+      - name: Test Python bridge
+        run: .\.venv\Scripts\python -m unittest backend.test_core_bridge backend.test_api_status_core
+
+      - name: Build Tauri MSI
+        run: bun run dist:tauri:win
+
+      - name: Smoke Tauri Windows runtime
+        run: |
+          $smokeRoot = Join-Path $env:RUNNER_TEMP 'patchops-tauri-smoke'
+          $appData = Join-Path $smokeRoot 'appdata'
+          $gameDir = Join-Path $smokeRoot 'game'
+          $playersDir = Join-Path $gameDir 'players'
+          New-Item -ItemType Directory -Force -Path $playersDir | Out-Null
+          Set-Content -Path (Join-Path $gameDir 'BlackOps3.exe') -Value 'exe' -NoNewline
+          Set-Content -Path (Join-Path $playersDir 'config.ini') -Value 'MaxFPS = "144"' -NoNewline
+          $env:PATCHOPSIII_BACKEND_PORT = '8892'
+          $env:APPDATA = $appData
+          $app = Start-Process -FilePath ".\target\release\patchopsiii-tauri.exe" -WindowStyle Hidden -PassThru
+          try {
+            $health = $null
+            $status = $null
+            for ($attempt = 0; $attempt -lt 90; $attempt++) {
+              try {
+                $health = Invoke-RestMethod -Uri 'http://127.0.0.1:8892/api/health' -TimeoutSec 1
+                $status = Invoke-RestMethod -Uri 'http://127.0.0.1:8892/api/status' -TimeoutSec 5
+                break
+              } catch {
+                Start-Sleep -Seconds 1
+              }
+            }
+            if ($null -eq $health -or $null -eq $status) {
+              throw 'Tauri Windows app did not start the backend or serve /api/status'
+            }
+            $presets = @($status.presets)
+            if (-not $health.version -or -not $status.appVersion) {
+              throw 'Tauri Windows runtime did not report backend/app versions'
+            }
+            if ($presets.Count -lt 2) {
+              throw 'Tauri Windows runtime did not load bundled presets.json'
+            }
+            $body = @{ path = $gameDir } | ConvertTo-Json -Compress
+            $setResult = Invoke-RestMethod -Uri 'http://127.0.0.1:8892/api/game-directory' -Method Post -ContentType 'application/json' -Body $body -TimeoutSec 5
+            if (-not $setResult.ok) {
+              throw 'Tauri Windows runtime rejected /api/game-directory'
+            }
+            $settingsPath = Join-Path $appData 'PatchOpsIII\patchops-settings.json'
+            $legacyPath = Join-Path $appData 'PatchOpsIII\electron-settings.json'
+            if (-not (Test-Path $settingsPath)) {
+              throw 'Tauri Windows runtime did not write patchops-settings.json'
+            }
+            if (Test-Path $legacyPath) {
+              throw 'Tauri Windows runtime wrote legacy electron-settings.json'
+            }
+            $settings = Get-Content -Path $settingsPath -Raw | ConvertFrom-Json
+            if ([string]$settings.game_dir -ne [string]$gameDir) {
+              throw 'Tauri Windows runtime saved the wrong game directory'
+            }
+            $backendPid = (Get-NetTCPConnection -LocalPort 8892 -State Listen -ErrorAction Stop | Select-Object -First 1).OwningProcess
+            "healthVersion=$($health.version)"
+            "statusVersion=$($status.appVersion)"
+            "presetCount=$($presets.Count)"
+            "backendPid=$backendPid"
+            "settingsFile=$(Split-Path -Leaf $settingsPath)"
+
+            $app.CloseMainWindow() | Out-Null
+            for ($attempt = 0; $attempt -lt 40; $attempt++) {
+              if ($app.HasExited) {
+                break
+              }
+              Start-Sleep -Milliseconds 250
+              $app.Refresh()
+            }
+            if (-not $app.HasExited) {
+              throw 'Tauri Windows app did not exit after CloseMainWindow'
+            }
+            for ($attempt = 0; $attempt -lt 40; $attempt++) {
+              $listener = Get-NetTCPConnection -LocalPort 8892 -State Listen -ErrorAction SilentlyContinue
+              if (-not $listener) {
+                break
+              }
+              Start-Sleep -Milliseconds 250
+            }
+            if (Get-NetTCPConnection -LocalPort 8892 -State Listen -ErrorAction SilentlyContinue) {
+              throw 'Tauri Windows backend remained open after app exit'
+            }
+            "shutdownClean=true"
+          } finally {
+            if ($app -and -not $app.HasExited) {
+              $app.CloseMainWindow() | Out-Null
+              Start-Sleep -Seconds 2
+              if (-not $app.HasExited) {
+                Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+              }
+            }
+            Get-NetTCPConnection -LocalPort 8892 -ErrorAction SilentlyContinue | ForEach-Object {
+              Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue
+            }
+            Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Locate MSI
+        id: msi
+        run: |
+          $msis = @(Get-ChildItem -Path target\release\bundle\msi -Filter *.msi)
+          if ($msis.Count -ne 1) {
+            Get-ChildItem -Recurse target\release\bundle | ForEach-Object { $_.FullName }
+            throw "Expected exactly one Tauri MSI, found $($msis.Count)"
+          }
+          $msi = $msis[0]
+          "path=$($msi.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Compute MSI hash
+        id: compute_hash
+        run: |
+          $hash = (Get-FileHash -Algorithm SHA256 -Path '${{ steps.msi.outputs.path }}').Hash.ToLowerInvariant()
+          Set-Content -Path target\release\bundle\msi\hash.log -Value $hash
+          "hash=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Upload Tauri Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PatchOpsIII-tauri-windows
+          path: |
+            ${{ steps.msi.outputs.path }}
+            target\release\bundle\msi\hash.log
+          if-no-files-found: error

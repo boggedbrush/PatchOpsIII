@@ -1,7 +1,7 @@
 {
-  "name": "patchopsiii-electron",
+  "name": "patchopsiii-desktop",
   "version": "v1.3.0-beta3",
-  "description": "Electron control center for Call of Duty: Black Ops III maintenance, mod setup, and performance tuning.",
+  "description": "Desktop control center for Call of Duty: Black Ops III maintenance, mod setup, and performance tuning.",
   "author": "boggedbrush",
   "private": true,
   "type": "module",
@@ -9,14 +9,24 @@
   "scripts": {
     "dev": "bun scripts/dev-server.ts",
     "dev:desktop": "bun run build:main && bun scripts/dev.ts",
+    "dev:tauri": "bun scripts/dev-tauri.ts",
     "dev:cleanup": "bun scripts/dev-cleanup.ts",
     "build": "bun run typecheck && bun run build:main && vite build",
     "build:main": "bun scripts/clean-main.ts && tsc -p tsconfig.electron.json",
+    "build:core": "cargo build -p patchops-core --release",
+    "check:tauri-version": "bun scripts/check-tauri-version.ts",
+    "clean:tauri-bundles": "bun scripts/clean-tauri-bundles.ts",
     "dist": "bun run build && bun x electron-builder@26.8.1",
+    "prepare:tauri-sidecars": "bun scripts/prepare-tauri-sidecars.ts",
+    "verify:tauri-sidecars": "bun scripts/verify-tauri-sidecars.ts",
     "build:backend:linux": "bun scripts/check-backend-build.ts linux && .venv/bin/python -m PyInstaller --onefile --name patchops-backend --distpath dist/backend --workpath build/pyinstaller --specpath build/pyinstaller --hidden-import uvicorn.logging --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.protocols.websockets --hidden-import uvicorn.protocols.websockets.auto --hidden-import uvicorn.lifespan --hidden-import uvicorn.lifespan.on backend/api.py",
     "build:backend:win": "bun scripts/check-backend-build.ts win && .venv/Scripts/python.exe -m PyInstaller --onefile --name patchops-backend --distpath dist/backend --workpath build/pyinstaller --specpath build/pyinstaller --hidden-import uvicorn.logging --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.protocols.websockets --hidden-import uvicorn.protocols.websockets.auto --hidden-import uvicorn.lifespan --hidden-import uvicorn.lifespan.on backend/api.py",
     "dist:linux": "bun run build && bun run build:backend:linux && bun x electron-builder@26.8.1 --linux AppImage --publish never",
     "dist:win": "bun run build && bun run build:backend:win && bun x electron-builder@26.8.1 --win --publish never --config.win.signAndEditExecutable=false",
+    "dist:tauri": "bun run check:tauri-version && bun run build && bun run build:core && bun run prepare:tauri-sidecars && bun run verify:tauri-sidecars && bun run clean:tauri-bundles && bun x tauri build",
+    "dist:tauri:linux": "bun run check:tauri-version && bun run build && bun run build:backend:linux && bun run build:core && bun run prepare:tauri-sidecars && bun run verify:tauri-sidecars && bun run clean:tauri-bundles && bun x tauri build --bundles appimage",
+    "dist:tauri:win": "bun run check:tauri-version && bun run build && bun run build:backend:win && bun run build:core && bun run prepare:tauri-sidecars && bun run verify:tauri-sidecars && bun run clean:tauri-bundles && bun x tauri build --bundles msi",
+    "test:renderer": "bun test src/renderer/**/*.test.ts",
     "typecheck": "tsc --noEmit",
     "start": "bun run build:main && electron ."
   },
@@ -96,8 +106,11 @@
       "artifactName": "PatchOpsIII.AppImage"
     }
   },
-  "dependencies": {},
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0"
+  },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
     "@tailwindcss/vite": "^4.0.0",
     "@vitejs/plugin-react": "^5.0.0",
     "@types/bun": "^1.1.0",

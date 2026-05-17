@@ -96,6 +96,12 @@
   - Update metadata: [{{LINUX_ZSYNC_FILENAME}}]({{LINUX_ZSYNC_URL}})
   - VirusTotal: {{LINUX_VT_STATUS_OR_URL}}
 
+- **Tauri migration preview**
+  - Windows: [PatchOpsIII {{VERSION}} Tauri for Windows]({{TAURI_WINDOWS_DOWNLOAD_URL}})
+  - Windows SHA256: `{{TAURI_WINDOWS_SHA256}}`
+  - Linux & Steam Deck: [PatchOpsIII {{VERSION}} Tauri for Linux & Steam Deck]({{TAURI_LINUX_DOWNLOAD_URL}})
+  - Linux SHA256: `{{TAURI_LINUX_SHA256}}`
+
 ---
 
 ## 🧑‍💻 Acknowledgements

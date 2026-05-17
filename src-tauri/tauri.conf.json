@@ -1,0 +1,47 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "PatchOpsIII",
+  "version": "1.3.0",
+  "identifier": "com.patchopsiii.desktop",
+  "build": {
+    "beforeDevCommand": "bun x vite --host 127.0.0.1 --port 5175 --strictPort",
+    "beforeBuildCommand": "bun run build",
+    "devUrl": "http://127.0.0.1:5175",
+    "frontendDist": "../dist/renderer"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "PatchOpsIII",
+        "width": 1320,
+        "height": 860,
+        "minWidth": 1100,
+        "minHeight": 720,
+        "resizable": true,
+        "decorations": false,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "appimage"],
+    "icon": [
+      "../PatchOpsIII.ico",
+      "../website/assets/img/icon-512.png"
+    ],
+    "resources": [
+      "../package.json",
+      "../presets.json",
+      "../PatchOpsIII.ico",
+      "../website/assets/img/icon-512.png"
+    ],
+    "externalBin": [
+      "binaries/patchops-backend",
+      "binaries/patchops-core"
+    ]
+  }
+}

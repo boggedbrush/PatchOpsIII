@@ -302,6 +302,20 @@ jobs:
       ref: ${{ needs.prepare.outputs.tag }}
     secrets: inherit
 
+  build-tauri-windows:
+    needs:
+      - prepare
+    uses: ./.github/workflows/tauri-windows-build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.tag }}
+
+  build-tauri-linux:
+    needs:
+      - prepare
+    uses: ./.github/workflows/tauri-linux-build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.tag }}
+
   release:
     name: Publish stable release
     runs-on: ubuntu-latest
@@ -311,6 +325,8 @@ jobs:
       - prepare
       - build-windows
       - build-linux
+      - build-tauri-windows
+      - build-tauri-linux
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -327,6 +343,16 @@ jobs:
         with:
           name: ${{ needs.build-linux.outputs.artifact_name }}
           path: artifacts/linux
+      - name: Download Tauri Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-tauri-windows.outputs.artifact_name }}
+          path: artifacts/tauri-windows
+      - name: Download Tauri Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-tauri-linux.outputs.artifact_name }}
+          path: artifacts/tauri-linux
       - name: Inspect downloaded artifacts
         run: |
           set -euo pipefail
@@ -336,7 +362,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          for dir in artifacts/windows artifacts/linux; do
+          for dir in artifacts/windows artifacts/linux artifacts/tauri-windows artifacts/tauri-linux; do
             if [ -d "$dir" ]; then
               for archive in "${dir}"/*.zip "${dir}"/*.tar "${dir}"/*.tar.gz "${dir}"/*.tgz; do
                 [ -e "$archive" ] || continue
@@ -357,6 +383,8 @@ jobs:
           WINDOWS_VT_URL: ${{ needs.build-windows.outputs.vt_url }}
           LINUX_HASH: ${{ needs.build-linux.outputs.hash }}
           LINUX_VT_URL: ${{ needs.build-linux.outputs.vt_url }}
+          TAURI_WINDOWS_HASH: ${{ needs.build-tauri-windows.outputs.hash }}
+          TAURI_LINUX_HASH: ${{ needs.build-tauri-linux.outputs.hash }}
           REPO: ${{ github.repository }}
           RELEASE_NOTES_SOURCE: ${{ needs.prepare.outputs.notes_file }}
           RELEASE_TITLE: ${{ needs.prepare.outputs.release_title }}
@@ -386,11 +414,17 @@ jobs:
           linux_vt = os.environ.get("LINUX_VT_URL", "").strip() or "https://www.virustotal.com/"
           windows_hash = os.environ.get("WINDOWS_HASH", "").strip() or "None"
           linux_hash = os.environ.get("LINUX_HASH", "").strip() or "None"
+          tauri_windows_hash = os.environ.get("TAURI_WINDOWS_HASH", "").strip() or "None"
+          tauri_linux_hash = os.environ.get("TAURI_LINUX_HASH", "").strip() or "None"
           asset_windows = "PatchOpsIII.msi"
           asset_linux = "PatchOpsIII.AppImage"
+          asset_tauri_windows = "PatchOpsIII-Tauri.msi"
+          asset_tauri_linux = "PatchOpsIII-Tauri.AppImage"
           base_url = f"https://github.com/{repo}/releases/download/{tag}"
           windows_download = f"{base_url}/{asset_windows}"
           linux_download = f"{base_url}/{asset_linux}"
+          tauri_windows_download = f"{base_url}/{asset_tauri_windows}"
+          tauri_linux_download = f"{base_url}/{asset_tauri_linux}"
 
           text = source_path.read_text(encoding="utf-8").splitlines()
           heading_updated = False
@@ -411,11 +445,27 @@ jobs:
               "{{LINUX_SHA256}}": linux_hash,
               "{{WINDOWS_DOWNLOAD_URL}}": windows_download,
               "{{LINUX_DOWNLOAD_URL}}": linux_download,
+              "{{TAURI_WINDOWS_SHA256}}": tauri_windows_hash,
+              "{{TAURI_LINUX_SHA256}}": tauri_linux_hash,
+              "{{TAURI_WINDOWS_DOWNLOAD_URL}}": tauri_windows_download,
+              "{{TAURI_LINUX_DOWNLOAD_URL}}": tauri_linux_download,
           }
 
           final_text = "\n".join(text)
           for placeholder, value in replacements.items():
               final_text = final_text.replace(placeholder, value)
+
+          if "## Tauri Migration Preview" not in final_text:
+              final_text = final_text.rstrip() + (
+                  "\n\n---\n\n"
+                  "## Tauri Migration Preview\n"
+                  "- Windows Tauri MSI: "
+                  f"[PatchOpsIII Tauri for Windows]({tauri_windows_download}) "
+                  f"(SHA256: `{tauri_windows_hash}`)\n"
+                  "- Linux Tauri AppImage: "
+                  f"[PatchOpsIII Tauri for Linux & Steam Deck]({tauri_linux_download}) "
+                  f"(SHA256: `{tauri_linux_hash}`)\n"
+              )
 
           if not final_text.endswith("\n"):
               final_text += "\n"
@@ -461,6 +511,21 @@ jobs:
           if [ -f "$(dirname "$linux_exec")/PatchOpsIII.AppImage.sig" ]; then
             cp "$(dirname "$linux_exec")/PatchOpsIII.AppImage.sig" "release/PatchOpsIII.AppImage.sig"
           fi
+          tauri_win=$(find artifacts/tauri-windows -type f -name '*.msi' -print -quit)
+          if [ -z "$tauri_win" ]; then
+            echo "Tauri Windows MSI not found under artifacts/tauri-windows" >&2
+            find artifacts/tauri-windows -type f -print >&2
+            exit 1
+          fi
+          cp "$tauri_win" "release/PatchOpsIII-Tauri.msi"
+          tauri_linux=$(find artifacts/tauri-linux -type f -name '*.AppImage' -print -quit)
+          if [ -z "$tauri_linux" ]; then
+            echo "Tauri Linux AppImage not found under artifacts/tauri-linux" >&2
+            find artifacts/tauri-linux -type f -print >&2
+            exit 1
+          fi
+          cp "$tauri_linux" "release/PatchOpsIII-Tauri.AppImage"
+          chmod +x "release/PatchOpsIII-Tauri.AppImage"
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:

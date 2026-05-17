@@ -1,3 +1,5 @@
+import { getBackendUrl } from "./desktop";
+
 export type LogEntry = {
   category: "Info" | "Success" | "Warning" | "Error" | string;
   message: string;
@@ -136,11 +138,7 @@ export async function resolveBackendUrl() {
   if (cachedBackendUrl) {
     return cachedBackendUrl;
   }
-  if (window.patchOpsDesktop) {
-    cachedBackendUrl = await window.patchOpsDesktop.getBackendUrl();
-    return cachedBackendUrl;
-  }
-  cachedBackendUrl = import.meta.env.VITE_PATCHOPSIII_BACKEND_URL ?? "http://127.0.0.1:8765";
+  cachedBackendUrl = await getBackendUrl();
   return cachedBackendUrl;
 }
 

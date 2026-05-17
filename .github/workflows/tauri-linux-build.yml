@@ -1,0 +1,267 @@
+name: Tauri Linux Build
+
+on:
+  push:
+    branches:
+      - Testing
+      - testing
+  pull_request:
+    branches:
+      - Testing
+      - testing
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to build
+        required: false
+        type: string
+        default: ''
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to build
+        required: false
+        type: string
+        default: ''
+    outputs:
+      hash:
+        description: SHA256 hash of the Tauri AppImage
+        value: ${{ jobs.build-tauri-linux.outputs.hash }}
+      artifact_name:
+        description: Name of the produced artifact
+        value: ${{ jobs.build-tauri-linux.outputs.artifact_name }}
+
+permissions:
+  contents: read
+
+jobs:
+  build-tauri-linux:
+    name: Build Tauri Linux AppImage
+    runs-on: ubuntu-latest
+    outputs:
+      hash: ${{ steps.compute_hash.outputs.hash }}
+      artifact_name: ${{ steps.artifact.outputs.name }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: .
+    env:
+      BUN_VERSION: "1.3.14"
+      PYTHON_VERSION: "3.12"
+      PYINSTALLER_VERSION: "6.20.0"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+
+      - name: Set artifact metadata
+        id: artifact
+        run: printf 'name=%s\n' 'PatchOpsIII-tauri-linux' >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Bun install cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: tauri-linux-bun-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            tauri-linux-bun-${{ runner.arch }}-${{ env.BUN_VERSION }}-
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: tauri-linux-cargo-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'crates/**/Cargo.toml', 'src-tauri/Cargo.toml') }}
+          restore-keys: |
+            tauri-linux-cargo-${{ runner.arch }}-
+
+      - name: Cache Python virtual environment
+        id: cache-venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: tauri-linux-venv-${{ runner.arch }}-${{ env.PYTHON_VERSION }}-${{ env.PYINSTALLER_VERSION }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            tauri-linux-venv-${{ runner.arch }}-${{ env.PYTHON_VERSION }}-
+
+      - name: Install Tauri Linux prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            wget \
+            xdotool \
+            xvfb
+
+      - name: Install Python backend dependencies
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -U pip
+          .venv/bin/python -m pip install -r requirements.txt
+          .venv/bin/python -m pip install pyinstaller==${{ env.PYINSTALLER_VERSION }}
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check Tauri version metadata
+        run: bun run check:tauri-version
+
+      - name: Test renderer desktop adapter
+        run: bun run test:renderer
+
+      - name: Test Rust core
+        run: cargo test -p patchops-core
+
+      - name: Test Tauri host
+        run: cargo test -p patchopsiii-tauri
+
+      - name: Test Python bridge
+        run: .venv/bin/python -m unittest backend.test_core_bridge backend.test_api_status_core
+
+      - name: Build Tauri AppImage
+        run: bun run dist:tauri:linux
+
+      - name: Locate AppImage
+        id: appimage
+        run: |
+          set -euo pipefail
+          mapfile -t appimages < <(find target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage')
+          if [ "${#appimages[@]}" -ne 1 ]; then
+            find target/release/bundle -maxdepth 4 -type f -print
+            echo "Expected exactly one Tauri AppImage, found ${#appimages[@]}" >&2
+            exit 1
+          fi
+          appimage_path="${appimages[0]}"
+          chmod +x "$appimage_path"
+          printf 'path=%s\n' "$appimage_path" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke Tauri AppImage runtime
+        run: |
+          set -euo pipefail
+          app_pid=""
+          xvfb_pid=""
+          smoke_root=""
+          cleanup() {
+            if [ -n "$app_pid" ] && kill -0 "$app_pid" 2>/dev/null; then
+              pkill -TERM -P "$app_pid" 2>/dev/null || true
+              kill "$app_pid" 2>/dev/null || true
+              wait "$app_pid" 2>/dev/null || true
+            fi
+            if [ -n "$xvfb_pid" ] && kill -0 "$xvfb_pid" 2>/dev/null; then
+              kill "$xvfb_pid" 2>/dev/null || true
+              wait "$xvfb_pid" 2>/dev/null || true
+            fi
+            if [ -n "$smoke_root" ]; then
+              rm -rf "$smoke_root"
+            fi
+          }
+          trap cleanup EXIT
+
+          smoke_root="$(mktemp -d)"
+          game_dir="$smoke_root/game"
+          mkdir -p "$game_dir/players"
+          printf 'exe' > "$game_dir/BlackOps3.exe"
+          printf 'MaxFPS = "144"' > "$game_dir/players/config.ini"
+          export GAME_DIR="$game_dir"
+          export XDG_DATA_HOME="$smoke_root/data"
+
+          Xvfb :99 -screen 0 1280x800x24 >/tmp/patchops-xvfb.log 2>&1 &
+          xvfb_pid="$!"
+          export DISPLAY=:99
+          sleep 1
+
+          PATCHOPSIII_BACKEND_PORT=8891 APPIMAGE_EXTRACT_AND_RUN=1 '${{ steps.appimage.outputs.path }}' &
+          app_pid="$!"
+
+          for attempt in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:8891/api/health >/tmp/patchops-health.json 2>/dev/null &&
+               curl -fsS http://127.0.0.1:8891/api/status >/tmp/patchops-status.json 2>/dev/null; then
+              .venv/bin/python -c "import json; health=json.load(open('/tmp/patchops-health.json', encoding='utf-8')); status=json.load(open('/tmp/patchops-status.json', encoding='utf-8')); presets=status.get('presets'); assert health.get('version') and status.get('appVersion'), 'Tauri runtime did not report backend/app versions'; assert isinstance(presets, list) and len(presets) >= 2, 'Tauri runtime did not load bundled presets.json'; print(f\"healthVersion={health['version']}\"); print(f\"statusVersion={status['appVersion']}\"); print(f\"presetCount={len(presets)}\")"
+              .venv/bin/python -c "import json, os; print(json.dumps({'path': os.environ['GAME_DIR']}))" >/tmp/patchops-game-dir.json
+              curl -fsS -X POST http://127.0.0.1:8891/api/game-directory -H 'Content-Type: application/json' --data-binary @/tmp/patchops-game-dir.json >/tmp/patchops-set-dir.json
+              .venv/bin/python -c "import json, os, pathlib; result=json.load(open('/tmp/patchops-set-dir.json', encoding='utf-8')); assert result.get('ok'), 'Tauri runtime rejected /api/game-directory'; settings_path=pathlib.Path(os.environ['XDG_DATA_HOME'])/'PatchOpsIII'/'patchops-settings.json'; legacy_path=pathlib.Path(os.environ['XDG_DATA_HOME'])/'PatchOpsIII'/'electron-settings.json'; assert settings_path.exists(), 'Tauri runtime did not write patchops-settings.json'; assert not legacy_path.exists(), 'Tauri runtime wrote legacy electron-settings.json'; settings=json.loads(settings_path.read_text(encoding='utf-8')); assert settings.get('game_dir') == os.environ['GAME_DIR'], 'Tauri runtime saved the wrong game directory'; print(f'settingsFile={settings_path.name}')"
+              cat /tmp/patchops-health.json
+              printf '\n'
+              window_id=""
+              for window_attempt in $(seq 1 40); do
+                window_id="$(xdotool search --name '^PatchOpsIII$' 2>/dev/null | head -n 1 || true)"
+                if [ -n "$window_id" ]; then
+                  break
+                fi
+                sleep 0.25
+              done
+              if [ -z "$window_id" ]; then
+                echo "Tauri AppImage window was not visible on the X display" >&2
+                exit 1
+              fi
+              xdotool windowclose "$window_id"
+              for exit_attempt in $(seq 1 40); do
+                if ! kill -0 "$app_pid" 2>/dev/null; then
+                  break
+                fi
+                sleep 0.25
+              done
+              if kill -0 "$app_pid" 2>/dev/null; then
+                echo "Tauri AppImage did not exit after window close" >&2
+                exit 1
+              fi
+              wait "$app_pid" 2>/dev/null || true
+              app_pid=""
+              for shutdown_attempt in $(seq 1 40); do
+                if ! curl -fsS http://127.0.0.1:8891/api/health >/dev/null 2>&1; then
+                  echo "shutdownClean=true"
+                  exit 0
+                fi
+                sleep 0.25
+              done
+              echo "Tauri AppImage backend remained open after app termination" >&2
+              exit 1
+            fi
+            sleep 1
+          done
+
+          echo "Tauri AppImage did not start the backend or serve /api/status" >&2
+          exit 1
+
+      - name: Compute AppImage hash
+        id: compute_hash
+        run: |
+          hash="$(sha256sum '${{ steps.appimage.outputs.path }}' | cut -d ' ' -f1)"
+          printf '%s\n' "$hash" > target/release/bundle/appimage/hash.log
+          printf 'hash=%s\n' "$hash" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Tauri Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PatchOpsIII-tauri-linux
+          path: |
+            ${{ steps.appimage.outputs.path }}
+            target/release/bundle/appimage/hash.log
+          if-no-files-found: error
