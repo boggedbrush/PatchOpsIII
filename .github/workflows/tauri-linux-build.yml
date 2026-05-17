@@ -141,6 +141,12 @@ jobs:
       - name: Test Rust core
         run: cargo test -p patchops-core
 
+      - name: Prepare Tauri sidecars for host tests
+        run: |
+          bun run build:core
+          bun scripts/prepare-tauri-sidecars.ts --dev
+          bun run verify:tauri-sidecars
+
       - name: Test Tauri host
         run: cargo test -p patchopsiii-tauri
 
