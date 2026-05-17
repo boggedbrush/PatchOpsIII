@@ -3,10 +3,12 @@ name: Tauri Linux Build
 on:
   push:
     branches:
+      - main
       - Testing
       - testing
   pull_request:
     branches:
+      - main
       - Testing
       - testing
   workflow_dispatch:
