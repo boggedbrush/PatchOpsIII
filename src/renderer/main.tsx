@@ -376,28 +376,6 @@ async function waitForBackendReady(timeoutMs = 12000) {
   throw new Error("PatchOpsIII local API did not become ready.");
 }
 
-function StartupScreen({ status, onRetry }: { status: BackendStatus; onRetry: () => void }) {
-  const failed = status === "failed";
-  return (
-    <section className={cx("startup-screen", failed && "startup-screen-failed")} aria-live="polite">
-      <div className="startup-mark" aria-hidden="true">
-        <img src={logoUrl} alt="" />
-      </div>
-      <div className="startup-copy">
-        <strong>{failed ? "Startup took too long" : "Opening PatchOpsIII"}</strong>
-        <span>{failed ? "Try again, or close and reopen PatchOpsIII." : "Loading your settings..."}</span>
-      </div>
-      {!failed && <div className="startup-track" aria-hidden="true" />}
-      {failed && (
-        <button type="button" className="small-button startup-retry" onClick={onRetry}>
-          <RefreshCw size={16} />
-          Try Again
-        </button>
-      )}
-    </section>
-  );
-}
-
 function App() {
   const [state, setState] = useState<PatchOpsState | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>("starting");
@@ -1122,15 +1100,6 @@ function App() {
     setBootAttempt((current) => current + 1);
   }
 
-  if (!state && backendStatus !== "ready") {
-    return (
-      <main className="app-shell">
-        <TitleBar appVersion={appVersion} updateDisabled onCheckForUpdates={checkForUpdates} />
-        <StartupScreen status={backendStatus} onRetry={retryStartup} />
-      </main>
-    );
-  }
-
   return (
     <main className="app-shell">
       <TitleBar appVersion={appVersion} updateDisabled={!backendReady || busy === "update-check"} onCheckForUpdates={checkForUpdates} />
@@ -1158,6 +1127,12 @@ function App() {
         <div className="error-strip">
           <AlertTriangle size={16} />
           <span>{backendStatus === "starting" ? "PatchOpsIII is still getting ready." : backendUnavailableMessage("failed")}</span>
+          {backendStatus === "failed" && (
+            <button type="button" className="small-button" onClick={retryStartup}>
+              <RefreshCw size={15} />
+              Try Again
+            </button>
+          )}
         </div>
       )}
 

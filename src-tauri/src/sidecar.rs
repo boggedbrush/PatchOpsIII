@@ -129,19 +129,13 @@ impl BackendSupervisor {
 
         #[cfg(target_os = "windows")]
         {
-            let _ = Command::new("taskkill")
+            let _ = hidden_command("taskkill")
                 .args(["/pid", &child.id().to_string(), "/t"])
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
                 .status();
 
             if !wait_for_exit(&mut child, Duration::from_secs(2)) {
-                let _ = Command::new("taskkill")
+                let _ = hidden_command("taskkill")
                     .args(["/pid", &child.id().to_string(), "/t", "/f"])
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
                     .status();
             }
         }
@@ -245,6 +239,17 @@ fn configure_backend_process(command: &mut Command) {
     {
         command.stdout(Stdio::inherit()).stderr(Stdio::inherit());
     }
+}
+
+#[cfg(target_os = "windows")]
+fn hidden_command(program: &str) -> Command {
+    let mut command = Command::new(program);
+    command
+        .creation_flags(CREATE_NO_WINDOW)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    command
 }
 
 impl Drop for BackendSupervisor {

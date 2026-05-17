@@ -35,6 +35,14 @@ class CoreBridgeTests(unittest.TestCase):
                 with self.assertRaisesRegex(core_bridge.CoreBridgeError, "invalid JSON"):
                     core_bridge.core_call("status", {"gameDir": "x"})
 
+    @unittest.skipIf(os.name != "nt", "Windows-only subprocess flag")
+    def test_core_launch_hides_console_window_on_windows(self) -> None:
+        result = subprocess.CompletedProcess(["patchops-core"], 0, "{}", "")
+        with patch.object(core_bridge.subprocess, "run", return_value=result) as run:
+            core_bridge._run_core(Path("patchops-core.exe"), "status", {"gameDir": "x"}, timeout=5)
+
+        self.assertEqual(run.call_args.kwargs["creationflags"], subprocess.CREATE_NO_WINDOW)
+
     def test_core_call_hash_uses_real_binary_when_available(self) -> None:
         if core_bridge._resolve_core_binary() is None:
             self.skipTest("patchops-core binary is not built")

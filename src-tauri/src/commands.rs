@@ -1,9 +1,14 @@
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::process::{Command, Stdio};
 
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::AppState;
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[tauri::command]
 pub fn backend_url(state: State<'_, AppState>) -> String {
@@ -51,6 +56,11 @@ pub fn open_external_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
+fn hide_command_window(command: &mut Command) {
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
 fn is_allowed_external_url(url: &str) -> bool {
     let lower = url.to_ascii_lowercase();
     ["https://", "http://", "steam://"]
@@ -63,6 +73,7 @@ fn external_open_command(url: &str) -> Command {
     {
         let mut command = Command::new("rundll32");
         command.args(["url.dll,FileProtocolHandler", url]);
+        hide_command_window(&mut command);
         command
     }
 

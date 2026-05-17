@@ -97,6 +97,12 @@ def _resolve_core_binary() -> Path | None:
     return None
 
 
+def _hidden_subprocess_kwargs() -> dict[str, Any]:
+    if os.name != "nt":
+        return {}
+    return {"creationflags": subprocess.CREATE_NO_WINDOW}
+
+
 def core_available() -> bool:
     return _resolve_core_binary() is not None
 
@@ -109,6 +115,7 @@ def _run_core(binary: Path, command: str, payload: dict[str, Any], timeout: int)
         capture_output=True,
         timeout=timeout,
         check=False,
+        **_hidden_subprocess_kwargs(),
     )
 
 
