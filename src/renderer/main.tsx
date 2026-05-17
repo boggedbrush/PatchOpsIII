@@ -376,9 +376,32 @@ async function waitForBackendReady(timeoutMs = 12000) {
   throw new Error("PatchOpsIII local API did not become ready.");
 }
 
+function StartupOverlay({ status, exiting, onRetry }: { status: BackendStatus; exiting: boolean; onRetry: () => void }) {
+  const failed = status === "failed";
+  return (
+    <section className={cx("startup-overlay", exiting && "startup-overlay-exit", failed && "startup-overlay-failed")} aria-live="polite" aria-busy={!failed}>
+      <div className="startup-mark" aria-hidden="true">
+        <img src={logoUrl} alt="" />
+      </div>
+      <div className="startup-copy">
+        <strong>{failed ? "Startup took too long" : "Opening PatchOpsIII"}</strong>
+        <span>{failed ? "Try again, or close and reopen PatchOpsIII." : "Loading your settings..."}</span>
+      </div>
+      {!failed && <div className="startup-track" aria-hidden="true" />}
+      {failed && (
+        <button type="button" className="small-button startup-retry" onClick={onRetry}>
+          <RefreshCw size={16} />
+          Try Again
+        </button>
+      )}
+    </section>
+  );
+}
+
 function App() {
   const [state, setState] = useState<PatchOpsState | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>("starting");
+  const [startupVisible, setStartupVisible] = useState(true);
   const [bootAttempt, setBootAttempt] = useState(0);
   const [activeView, setActiveView] = useState<ViewId>("dashboard");
   const [activeGraphicsTab, setActiveGraphicsTab] = useState<GraphicsTabId>("graphics");
@@ -1061,6 +1084,15 @@ function App() {
     };
   }, [depotPrompt?.watching]);
 
+  useEffect(() => {
+    if (backendStatus !== "ready" || !state) {
+      setStartupVisible(true);
+      return;
+    }
+    const timer = window.setTimeout(() => setStartupVisible(false), 320);
+    return () => window.clearTimeout(timer);
+  }, [backendStatus, state]);
+
   const activeLaunchProfileLabel =
     state?.activeLaunchProfile === "custom"
       ? "Custom"
@@ -1078,6 +1110,7 @@ function App() {
   const t7SecurityPending = Boolean(state?.t7 && (t7NetworkPasswordEnabled !== Boolean(state.t7.networkPassword) || t7Password !== state.t7.networkPassword));
   const dxvkDetectedThreads = detectedCompilerThreads();
   const backendReady = backendStatus === "ready";
+  const startupExiting = backendReady && Boolean(state);
   const appVersion = state?.appVersion ?? packageVersion;
   const latestError = logs
     .slice()
@@ -1122,19 +1155,6 @@ function App() {
           Launch Game
         </button>
       </div>
-
-      {backendStatus !== "ready" && (
-        <div className="error-strip">
-          <AlertTriangle size={16} />
-          <span>{backendStatus === "starting" ? "PatchOpsIII is still getting ready." : backendUnavailableMessage("failed")}</span>
-          {backendStatus === "failed" && (
-            <button type="button" className="small-button" onClick={retryStartup}>
-              <RefreshCw size={15} />
-              Try Again
-            </button>
-          )}
-        </div>
-      )}
 
       {error && (
         <div className="error-strip">
@@ -1979,6 +1999,8 @@ function App() {
           </section>
         </div>
       )}
+
+      {startupVisible && <StartupOverlay status={backendStatus} exiting={startupExiting} onRetry={retryStartup} />}
     </main>
   );
 }
