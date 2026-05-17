@@ -25,7 +25,8 @@
     "dist:win": "bun run build && bun run build:backend:win && bun x electron-builder@26.8.1 --win --publish never --config.win.signAndEditExecutable=false",
     "dist:tauri": "bun run check:tauri-version && bun run build && bun run build:core && bun run prepare:tauri-sidecars && bun run verify:tauri-sidecars && bun run clean:tauri-bundles && bun x tauri build",
     "dist:tauri:linux": "bun run check:tauri-version && bun run build && bun run build:backend:linux && bun run build:core && bun run prepare:tauri-sidecars && bun run verify:tauri-sidecars && bun run clean:tauri-bundles && bun x tauri build --bundles appimage",
-    "dist:tauri:win": "bun run check:tauri-version && bun run build && bun run build:backend:win && bun run build:core && bun run prepare:tauri-sidecars && bun run verify:tauri-sidecars && bun run clean:tauri-bundles && bun x tauri build --bundles msi",
+    "dist:tauri:win": "bun run check:tauri-version && bun run build && bun run build:backend:win && bun run build:core && bun run prepare:tauri-sidecars && bun run verify:tauri-sidecars && bun run clean:tauri-bundles && bun x tauri build --bundles msi && bun run verify:tauri-win-package",
+    "verify:tauri-win-package": "bun scripts/verify-tauri-win-package.ts",
     "test:renderer": "bun test src/renderer/**/*.test.ts",
     "typecheck": "tsc --noEmit",
     "start": "bun run build:main && electron ."

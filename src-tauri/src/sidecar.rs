@@ -1,3 +1,5 @@
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -8,6 +10,8 @@ use tauri::{AppHandle, Manager};
 
 const DEFAULT_BACKEND_HOST: &str = "127.0.0.1";
 const DEFAULT_BACKEND_PORT: u16 = 8765;
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 struct BackendEnv {
     host: String,
@@ -85,10 +89,7 @@ impl BackendSupervisor {
         };
 
         apply_backend_env(&mut command, &backend_env);
-        command
-            .stdin(Stdio::null())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
+        configure_backend_process(&mut command);
 
         self.child = Some(command.spawn().map_err(|error| error.to_string())?);
         Ok(())
@@ -150,6 +151,27 @@ fn apply_backend_env(command: &mut Command, backend_env: &BackendEnv) {
         .env("PATCHOPSIII_PARENT_PID", backend_env.parent_pid.to_string())
         .env("PATCHOPSIII_VERSION", &backend_env.version)
         .env("PYTHONUNBUFFERED", "1");
+}
+
+fn configure_backend_process(command: &mut Command) {
+    command.stdin(Stdio::null());
+
+    #[cfg(target_os = "windows")]
+    {
+        if cfg!(debug_assertions) {
+            command.stdout(Stdio::inherit()).stderr(Stdio::inherit());
+        } else {
+            command
+                .creation_flags(CREATE_NO_WINDOW)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        command.stdout(Stdio::inherit()).stderr(Stdio::inherit());
+    }
 }
 
 impl Drop for BackendSupervisor {

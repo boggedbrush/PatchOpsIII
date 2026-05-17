@@ -42,6 +42,12 @@
     "externalBin": [
       "binaries/patchops-backend",
       "binaries/patchops-core"
-    ]
+    ],
+    "windows": {
+      "wix": {
+        "bannerPath": "../installer/patchops-msi-banner.bmp",
+        "dialogImagePath": "../installer/patchops-msi-dialog.bmp"
+      }
+    }
   }
 }
