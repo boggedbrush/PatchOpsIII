@@ -437,7 +437,7 @@ img {
   text-align: center;
   background:
     radial-gradient(circle at 50% 42%, rgba(253, 1, 0, 0.16), transparent 28%),
-    linear-gradient(180deg, rgba(5, 5, 5, 0.96), rgba(13, 13, 15, 0.98));
+    linear-gradient(180deg, #050505, #0d0d0f);
   opacity: 1;
   pointer-events: auto;
   transition:

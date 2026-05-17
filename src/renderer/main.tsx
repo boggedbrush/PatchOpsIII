@@ -402,6 +402,7 @@ function App() {
   const [state, setState] = useState<PatchOpsState | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>("starting");
   const [startupVisible, setStartupVisible] = useState(true);
+  const [startupExiting, setStartupExiting] = useState(false);
   const [bootAttempt, setBootAttempt] = useState(0);
   const [activeView, setActiveView] = useState<ViewId>("dashboard");
   const [activeGraphicsTab, setActiveGraphicsTab] = useState<GraphicsTabId>("graphics");
@@ -1087,10 +1088,25 @@ function App() {
   useEffect(() => {
     if (backendStatus !== "ready" || !state) {
       setStartupVisible(true);
+      setStartupExiting(false);
       return;
     }
-    const timer = window.setTimeout(() => setStartupVisible(false), 320);
-    return () => window.clearTimeout(timer);
+    let hideTimer: number | undefined;
+    let firstFrame = 0;
+    let secondFrame = 0;
+    firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        setStartupExiting(true);
+        hideTimer = window.setTimeout(() => setStartupVisible(false), 320);
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+      if (hideTimer !== undefined) {
+        window.clearTimeout(hideTimer);
+      }
+    };
   }, [backendStatus, state]);
 
   const activeLaunchProfileLabel =
@@ -1110,7 +1126,6 @@ function App() {
   const t7SecurityPending = Boolean(state?.t7 && (t7NetworkPasswordEnabled !== Boolean(state.t7.networkPassword) || t7Password !== state.t7.networkPassword));
   const dxvkDetectedThreads = detectedCompilerThreads();
   const backendReady = backendStatus === "ready";
-  const startupExiting = backendReady && Boolean(state);
   const appVersion = state?.appVersion ?? packageVersion;
   const latestError = logs
     .slice()
