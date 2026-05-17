@@ -352,16 +352,20 @@ fn resource_root(app: &AppHandle) -> Option<PathBuf> {
 fn find_binary(app: &AppHandle, name: &str) -> Option<PathBuf> {
     let mut directories = Vec::new();
     if let Some(root) = app_root(app) {
+        directories.push(root.join("src-tauri").join("backend-runtime"));
         directories.push(root.join("src-tauri").join("binaries"));
         directories.push(root.join("dist").join("backend"));
+        directories.push(root.join("dist").join("backend").join(name));
         directories.push(root.join("target").join("release"));
         directories.push(root.join("target").join("debug"));
     }
     if let Ok(resource_dir) = app.path().resource_dir() {
+        directories.push(resource_dir.join("backend-runtime"));
         directories.push(resource_dir);
     }
     if let Ok(current_exe) = env::current_exe() {
         if let Some(parent) = current_exe.parent() {
+            directories.push(parent.join("backend-runtime"));
             directories.push(parent.to_path_buf());
         }
     }

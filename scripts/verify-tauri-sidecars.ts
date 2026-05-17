@@ -5,6 +5,7 @@ import process from "node:process";
 
 const root = process.cwd();
 const binariesDir = path.join(root, "src-tauri", "binaries");
+const backendRuntimeDir = path.join(root, "src-tauri", "backend-runtime");
 const extension = process.platform === "win32" ? ".exe" : "";
 
 function hostTriple() {
@@ -36,5 +37,13 @@ function verifySidecar(name: string, triple: string) {
 }
 
 const triple = hostTriple();
-verifySidecar("patchops-backend", triple);
+const backendRuntime = path.join(backendRuntimeDir, `patchops-backend${extension}`);
+if (!existsSync(backendRuntime)) {
+  throw new Error(`Missing backend runtime executable: ${path.relative(root, backendRuntime)}`);
+}
+const backendStats = statSync(backendRuntime);
+if (!backendStats.isFile() || backendStats.size <= 0) {
+  throw new Error(`Invalid backend runtime executable: ${path.relative(root, backendRuntime)}`);
+}
+console.log(`Verified ${path.relative(root, backendRuntime)} (${backendStats.size} bytes)`);
 verifySidecar("patchops-core", triple);

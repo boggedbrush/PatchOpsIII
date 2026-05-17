@@ -20,7 +20,9 @@ const hiddenImports = [
 const args = [
   "-m",
   "PyInstaller",
-  "--onefile",
+  "--noconfirm",
+  "--onedir",
+  "--noconsole",
   "--name",
   "patchops-backend",
   "--icon",

@@ -16,6 +16,8 @@ node_modules/
 target/
 src-tauri/binaries/*
 !src-tauri/binaries/.gitkeep
+src-tauri/backend-runtime/*
+!src-tauri/backend-runtime/.gitkeep
 src-tauri/gen/
 
 # Log files:

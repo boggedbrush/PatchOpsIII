@@ -37,10 +37,10 @@
       "../package.json",
       "../presets.json",
       "../PatchOpsIII.ico",
-      "../website/assets/img/icon-512.png"
+      "../website/assets/img/icon-512.png",
+      "backend-runtime/"
     ],
     "externalBin": [
-      "binaries/patchops-backend",
       "binaries/patchops-core"
     ],
     "windows": {

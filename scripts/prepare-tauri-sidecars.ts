@@ -1,10 +1,11 @@
-import { chmodSync, copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
 
 const root = process.cwd();
 const binariesDir = path.join(root, "src-tauri", "binaries");
+const backendRuntimeDir = path.join(root, "src-tauri", "backend-runtime");
 const extension = process.platform === "win32" ? ".exe" : "";
 const devMode = process.argv.includes("--dev");
 
@@ -42,6 +43,25 @@ function copySidecar(source: string, name: string, triple: string) {
   console.log(`Prepared ${path.relative(root, target)}`);
 }
 
+function prepareBackendRuntime(source: string) {
+  rmSync(backendRuntimeDir, { recursive: true, force: true });
+  mkdirSync(backendRuntimeDir, { recursive: true });
+
+  if (statSync(source).isDirectory()) {
+    cpSync(source, backendRuntimeDir, { recursive: true });
+  } else {
+    copyFileSync(source, path.join(backendRuntimeDir, `patchops-backend${extension}`));
+  }
+
+  if (process.platform !== "win32") {
+    const backendExe = path.join(backendRuntimeDir, `patchops-backend${extension}`);
+    if (existsSync(backendExe)) {
+      chmodSync(backendExe, 0o755);
+    }
+  }
+  console.log(`Prepared ${path.relative(root, backendRuntimeDir)}`);
+}
+
 const triple = hostTriple();
 const core = requireFile(
   [
@@ -52,6 +72,7 @@ const core = requireFile(
 );
 
 const backendCandidates = [
+  path.join(root, "dist", "backend", "patchops-backend"),
   path.join(root, "dist", "backend", `patchops-backend${extension}`),
   path.join(root, "backend-bin", `patchops-backend${extension}`)
 ];
@@ -60,8 +81,8 @@ if (!backend && !devMode) {
   throw new Error(`PyInstaller backend sidecar was not found. Checked:\n${backendCandidates.join("\n")}`);
 }
 
-copySidecar(backend ?? core, "patchops-backend", triple);
+prepareBackendRuntime(backend ?? core);
 copySidecar(core, "patchops-core", triple);
 if (!backend && devMode) {
-  console.log("Prepared dev-only backend placeholder. Tauri dev still runs Python through uvicorn.");
+  console.log("Prepared dev-only backend runtime placeholder. Tauri dev still runs Python through uvicorn.");
 }
