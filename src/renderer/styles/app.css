@@ -414,26 +414,41 @@ img {
   background: linear-gradient(180deg, var(--bg-deep), var(--bg));
 }
 
-.app-shell > :not(.titlebar):not(.modal-backdrop) {
+.app-shell > :not(.titlebar):not(.modal-backdrop):not(.startup-overlay) {
   position: relative;
   z-index: 1;
   width: min(var(--content-max), calc(100% - (var(--app-pad) * 2)));
   margin-inline: auto;
 }
 
-.app-shell > :not(.titlebar):not(.modal-backdrop):not(:last-child) {
+.app-shell > :not(.titlebar):not(.modal-backdrop):not(.startup-overlay):not(:last-child) {
   margin-bottom: var(--app-gap);
 }
 
-.startup-screen {
+.startup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
   display: grid;
   place-content: center;
   justify-items: center;
   gap: 14px;
-  flex: 1 1 auto;
-  min-height: 0;
   padding: 32px 18px;
   text-align: center;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(253, 1, 0, 0.16), transparent 28%),
+    linear-gradient(180deg, #050505, #0d0d0f);
+  opacity: 1;
+  pointer-events: auto;
+  transition:
+    opacity 260ms ease,
+    visibility 260ms ease;
+}
+
+.startup-overlay-exit {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .startup-mark {
@@ -447,6 +462,7 @@ img {
   width: 64px;
   height: 64px;
   border-radius: 14px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 18px 54px rgba(253, 1, 0, 0.22);
 }
 
 .startup-copy {
@@ -511,13 +527,14 @@ img {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .startup-track::before {
-    animation: none;
+  .startup-overlay {
+    transition: none;
   }
 
   .startup-track::before {
     inset-inline: 0;
     width: 100%;
+    animation: none;
   }
 }
 

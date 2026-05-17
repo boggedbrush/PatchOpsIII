@@ -26,6 +26,18 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { Toggle } from "./components/Toggle";
 import { apiRequest, makeSocket, resolveBackendUrl, type ApiResult, type LogEntry, type PatchOpsState } from "./lib/api";
+import {
+  closeWindow as closeDesktopWindow,
+  desktopRuntime,
+  getPlatform,
+  getWindowState,
+  hasDesktopBridge,
+  minimizeWindow as minimizeDesktopWindow,
+  onWindowStateChange,
+  openExternalUrl,
+  pickGameDirectory,
+  toggleMaximizeWindow
+} from "./lib/desktop";
 import packageInfo from "../../package.json";
 import "./styles/app.css";
 
@@ -203,41 +215,42 @@ function TitleBar({ appVersion, updateDisabled, onCheckForUpdates }: { appVersio
   const [maximized, setMaximized] = useState(false);
   const isMac = platform === "darwin";
   const displayVersion = appVersion.toLowerCase().startsWith("v") ? appVersion : `v${appVersion}`;
-  const hasDesktopChrome = Boolean(window.patchOpsDesktop);
-  const usesNativeWindowControls = hasDesktopChrome && platform === "win32";
-  const showWindowControls = !isMac && !usesNativeWindowControls;
+  const hasDesktopChrome = hasDesktopBridge();
+  const runtime = desktopRuntime();
+  const usesNativeWindowControls = runtime === "electron" && platform === "win32";
+  const showWindowControls = runtime === "tauri" || (!isMac && !usesNativeWindowControls);
 
   useEffect(() => {
     let removeWindowStateListener: (() => void) | undefined;
-    void window.patchOpsDesktop?.getPlatform().then(setPlatform).catch(() => undefined);
-    void window.patchOpsDesktop?.getWindowState?.().then((state) => setMaximized(state.maximized));
-    removeWindowStateListener = window.patchOpsDesktop?.onWindowStateChange?.((state) => setMaximized(state.maximized));
+    void getPlatform().then(setPlatform).catch(() => undefined);
+    void getWindowState().then((state) => setMaximized(state.maximized)).catch(() => undefined);
+    removeWindowStateListener = onWindowStateChange((state) => setMaximized(state.maximized));
     return () => removeWindowStateListener?.();
   }, []);
 
   async function minimizeWindow() {
-    if (window.patchOpsDesktop) {
-      await window.patchOpsDesktop.minimizeWindow();
+    if (hasDesktopChrome) {
+      await minimizeDesktopWindow();
     }
   }
 
   async function toggleMaximize() {
-    if (window.patchOpsDesktop) {
-      const state = await window.patchOpsDesktop.toggleMaximizeWindow();
+    if (hasDesktopChrome) {
+      const state = await toggleMaximizeWindow();
       setMaximized(state.maximized);
     }
   }
 
   function closeWindow() {
-    if (window.patchOpsDesktop) {
-      void window.patchOpsDesktop.closeWindow();
+    if (hasDesktopChrome) {
+      void closeDesktopWindow();
       return;
     }
   }
 
   return (
-    <div className={cx("titlebar", isMac ? "titlebar-mac" : "titlebar-desktop", usesNativeWindowControls && "titlebar-native-overlay titlebar-mica")}>
-      <div className="titlebar-grip" aria-hidden="true" />
+    <div className={cx("titlebar", isMac ? "titlebar-mac" : "titlebar-desktop", usesNativeWindowControls && "titlebar-native-overlay titlebar-mica")} data-tauri-drag-region>
+      <div className="titlebar-grip" aria-hidden="true" data-tauri-drag-region />
       <div className="titlebar-brand">
         <img src={logoUrl} alt="" className="titlebar-logo" />
         <div className="titlebar-copy">
@@ -248,7 +261,7 @@ function TitleBar({ appVersion, updateDisabled, onCheckForUpdates }: { appVersio
           </button>
         </div>
       </div>
-      <div className="titlebar-drag" />
+      <div className="titlebar-drag" data-tauri-drag-region />
       {showWindowControls && (
         <div className="window-controls" aria-label="Window controls">
           <button type="button" className="window-control" aria-label="Minimize window" onClick={minimizeWindow}>
@@ -363,10 +376,10 @@ async function waitForBackendReady(timeoutMs = 12000) {
   throw new Error("PatchOpsIII local API did not become ready.");
 }
 
-function StartupScreen({ status, onRetry }: { status: BackendStatus; onRetry: () => void }) {
+function StartupOverlay({ status, exiting, onRetry }: { status: BackendStatus; exiting: boolean; onRetry: () => void }) {
   const failed = status === "failed";
   return (
-    <section className={cx("startup-screen", failed && "startup-screen-failed")} aria-live="polite">
+    <section className={cx("startup-overlay", exiting && "startup-overlay-exit", failed && "startup-overlay-failed")} aria-live="polite" aria-busy={!failed}>
       <div className="startup-mark" aria-hidden="true">
         <img src={logoUrl} alt="" />
       </div>
@@ -388,6 +401,8 @@ function StartupScreen({ status, onRetry }: { status: BackendStatus; onRetry: ()
 function App() {
   const [state, setState] = useState<PatchOpsState | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>("starting");
+  const [startupVisible, setStartupVisible] = useState(true);
+  const [startupExiting, setStartupExiting] = useState(false);
   const [bootAttempt, setBootAttempt] = useState(0);
   const [activeView, setActiveView] = useState<ViewId>("dashboard");
   const [activeGraphicsTab, setActiveGraphicsTab] = useState<GraphicsTabId>("graphics");
@@ -484,7 +499,7 @@ function App() {
       return;
     }
     setDepotPrompt((current) => current ? { ...current, watching: true } : current);
-    window.location.href = "steam://open/console";
+    await openExternalUrl("steam://open/console");
   }
 
   async function pollCompatibleDepot() {
@@ -947,9 +962,29 @@ function App() {
   }
 
   async function openBrowseMenu(mode: "game" | "dump" = "game") {
+    if (mode === "game" && hasDesktopBridge()) {
+      try {
+        const selected = await pickGameDirectory();
+        if (selected) {
+          await setGameDirectory(selected);
+        }
+        return;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to open the native folder picker.");
+      }
+    }
     setBrowseMode(mode);
     setBrowseOpen(true);
     await loadBrowse(mode === "dump" ? enhancedDumpSource || state?.gameDir || undefined : state?.gameDir ?? undefined);
+  }
+
+  async function setGameDirectory(path: string) {
+    await runAction("directory", () =>
+      apiRequest<ApiResult>("/api/game-directory", {
+        method: "POST",
+        body: JSON.stringify({ path })
+      })
+    );
   }
 
   async function selectBrowsePath(path: string) {
@@ -959,12 +994,7 @@ function App() {
       setBrowseOpen(false);
       return;
     }
-    await runAction("directory", () =>
-      apiRequest<ApiResult>("/api/game-directory", {
-        method: "POST",
-        body: JSON.stringify({ path })
-      })
-    );
+    await setGameDirectory(path);
     setBrowseOpen(false);
   }
 
@@ -1055,6 +1085,30 @@ function App() {
     };
   }, [depotPrompt?.watching]);
 
+  useEffect(() => {
+    if (backendStatus !== "ready" || !state) {
+      setStartupVisible(true);
+      setStartupExiting(false);
+      return;
+    }
+    let hideTimer: number | undefined;
+    let firstFrame = 0;
+    let secondFrame = 0;
+    firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        setStartupExiting(true);
+        hideTimer = window.setTimeout(() => setStartupVisible(false), 320);
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+      if (hideTimer !== undefined) {
+        window.clearTimeout(hideTimer);
+      }
+    };
+  }, [backendStatus, state]);
+
   const activeLaunchProfileLabel =
     state?.activeLaunchProfile === "custom"
       ? "Custom"
@@ -1094,15 +1148,6 @@ function App() {
     setBootAttempt((current) => current + 1);
   }
 
-  if (!state && backendStatus !== "ready") {
-    return (
-      <main className="app-shell">
-        <TitleBar appVersion={appVersion} updateDisabled onCheckForUpdates={checkForUpdates} />
-        <StartupScreen status={backendStatus} onRetry={retryStartup} />
-      </main>
-    );
-  }
-
   return (
     <main className="app-shell">
       <TitleBar appVersion={appVersion} updateDisabled={!backendReady || busy === "update-check"} onCheckForUpdates={checkForUpdates} />
@@ -1125,13 +1170,6 @@ function App() {
           Launch Game
         </button>
       </div>
-
-      {backendStatus !== "ready" && (
-        <div className="error-strip">
-          <AlertTriangle size={16} />
-          <span>{backendStatus === "starting" ? "PatchOpsIII is still getting ready." : backendUnavailableMessage("failed")}</span>
-        </div>
-      )}
 
       {error && (
         <div className="error-strip">
@@ -1571,7 +1609,16 @@ function App() {
                           <span><strong>Sources:</strong> DUMP.zip or extracted folder</span>
                           <span><strong>Checks:</strong> files, read/write, version</span>
                         </div>
-                        <a className="tool-button enhanced-guide-button" href="https://youtu.be/rBZZTcSJ9_s?si=41p0r_Enten3h5AQ" target="_blank" rel="noreferrer">
+                        <a
+                          className="tool-button enhanced-guide-button"
+                          href="https://youtu.be/rBZZTcSJ9_s?si=41p0r_Enten3h5AQ"
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            void openExternalUrl("https://youtu.be/rBZZTcSJ9_s?si=41p0r_Enten3h5AQ");
+                          }}
+                        >
                           <ExternalLink size={16} />
                           Open Dump Guide
                         </a>
@@ -1967,6 +2014,8 @@ function App() {
           </section>
         </div>
       )}
+
+      {startupVisible && <StartupOverlay status={backendStatus} exiting={startupExiting} onRetry={retryStartup} />}
     </main>
   );
 }

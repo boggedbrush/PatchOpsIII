@@ -22,4 +22,5 @@ interface DesktopBridge {
 
 interface Window {
   patchOpsDesktop?: DesktopBridge;
+  __TAURI_INTERNALS__?: unknown;
 }
