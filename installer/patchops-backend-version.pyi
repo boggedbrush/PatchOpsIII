@@ -16,9 +16,9 @@ VSVersionInfo(
         '040904B0',
         [
           StringStruct('CompanyName', 'PatchOpsIII'),
-          StringStruct('FileDescription', 'PatchOpsIII'),
+          StringStruct('FileDescription', 'PatchOpsIII Backend'),
           StringStruct('FileVersion', '1.3.0.0'),
-          StringStruct('InternalName', 'PatchOpsIII'),
+          StringStruct('InternalName', 'PatchOpsIII Backend'),
           StringStruct('OriginalFilename', 'patchops-backend.exe'),
           StringStruct('ProductName', 'PatchOpsIII'),
           StringStruct('ProductVersion', '1.3.0.0')
