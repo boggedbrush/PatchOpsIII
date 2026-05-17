@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import requests
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -340,6 +340,7 @@ _preset_names_cache: tuple[float | None, list[str]] | None = None
 _presets_cache: tuple[float | None, dict[str, Any]] | None = None
 _core_warning_logged = False
 _parent_watchdog_started = False
+_uvicorn_server: Any | None = None
 
 
 def _file_mtime(path: Path) -> float | None:
@@ -570,6 +571,18 @@ def _start_parent_watchdog() -> None:
                 os._exit(0)
 
     threading.Thread(target=watch_parent, name="patchops-parent-watchdog", daemon=True).start()
+
+
+def _request_backend_shutdown() -> None:
+    if _uvicorn_server is not None:
+        _uvicorn_server.should_exit = True
+        return
+
+    def stop_process() -> None:
+        time.sleep(0.25)
+        os._exit(0)
+
+    threading.Thread(target=stop_process, name="patchops-shutdown", daemon=True).start()
 
 
 def _core_status(game_dir: str | None) -> dict[str, Any] | None:
@@ -2502,6 +2515,17 @@ async def logs_clear() -> dict[str, Any]:
     return {"ok": True, "state": await _current_state_async()}
 
 
+@app.post("/api/shutdown")
+async def shutdown_backend(x_patchopsiii_shutdown_token: str | None = Header(default=None)) -> dict[str, Any]:
+    expected = os.environ.get("PATCHOPSIII_SHUTDOWN_TOKEN", "")
+    if expected and x_patchopsiii_shutdown_token != expected:
+        raise HTTPException(status_code=403, detail="Invalid shutdown token.")
+
+    write_log("Desktop host requested backend shutdown.", "Info", log_target)
+    _request_backend_shutdown()
+    return {"ok": True}
+
+
 @app.post("/api/mod-files/clear")
 async def clear_mod_files() -> dict[str, Any]:
     try:
@@ -2562,8 +2586,11 @@ if __name__ == "__main__":
 
     import uvicorn
 
-    uvicorn.run(
-        app,
-        host=os.environ.get("PATCHOPSIII_BACKEND_HOST", "127.0.0.1"),
-        port=int(os.environ.get("PATCHOPSIII_BACKEND_PORT", "8765")),
+    _uvicorn_server = uvicorn.Server(
+        uvicorn.Config(
+            app,
+            host=os.environ.get("PATCHOPSIII_BACKEND_HOST", "127.0.0.1"),
+            port=int(os.environ.get("PATCHOPSIII_BACKEND_PORT", "8765")),
+        )
     )
+    _uvicorn_server.run()

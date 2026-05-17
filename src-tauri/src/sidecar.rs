@@ -2,8 +2,11 @@
 use std::os::windows::process::CommandExt;
 use std::{
     env, fs,
+    io::{Read, Write},
+    net::TcpStream,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use tauri::{AppHandle, Manager};
@@ -18,8 +21,16 @@ struct BackendEnv {
     port: u16,
     version: String,
     parent_pid: u32,
+    shutdown_token: String,
     core_binary: Option<PathBuf>,
     resource_dir: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug)]
+struct BackendShutdown {
+    host: String,
+    port: u16,
+    token: String,
 }
 
 pub fn backend_host() -> String {
@@ -43,6 +54,7 @@ pub fn backend_url() -> String {
 #[derive(Default)]
 pub struct BackendSupervisor {
     child: Option<Child>,
+    shutdown: Option<BackendShutdown>,
 }
 
 impl BackendSupervisor {
@@ -84,14 +96,21 @@ impl BackendSupervisor {
             port,
             version: app_version(app, root.as_deref()),
             parent_pid: std::process::id(),
+            shutdown_token: shutdown_token(),
             core_binary: find_binary(app, "patchops-core"),
             resource_dir: resource_root(app),
+        };
+        let shutdown = BackendShutdown {
+            host: backend_env.host.clone(),
+            port: backend_env.port,
+            token: backend_env.shutdown_token.clone(),
         };
 
         apply_backend_env(&mut command, &backend_env);
         configure_backend_process(&mut command);
 
         self.child = Some(command.spawn().map_err(|error| error.to_string())?);
+        self.shutdown = Some(shutdown);
         Ok(())
     }
 
@@ -100,14 +119,31 @@ impl BackendSupervisor {
             return;
         };
 
+        if let Some(shutdown) = self.shutdown.take() {
+            let _ = request_backend_shutdown(&shutdown);
+            if wait_for_exit(&mut child, Duration::from_secs(4)) {
+                let _ = child.wait();
+                return;
+            }
+        }
+
         #[cfg(target_os = "windows")]
         {
             let _ = Command::new("taskkill")
-                .args(["/pid", &child.id().to_string(), "/t", "/f"])
+                .args(["/pid", &child.id().to_string(), "/t"])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status();
+
+            if !wait_for_exit(&mut child, Duration::from_secs(2)) {
+                let _ = Command::new("taskkill")
+                    .args(["/pid", &child.id().to_string(), "/t", "/f"])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+            }
         }
 
         #[cfg(not(target_os = "windows"))]
@@ -119,18 +155,9 @@ impl BackendSupervisor {
                 .stderr(Stdio::null())
                 .status();
 
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
-            loop {
-                match child.try_wait() {
-                    Ok(Some(_)) => return,
-                    Ok(None) if std::time::Instant::now() < deadline => {
-                        std::thread::sleep(std::time::Duration::from_millis(100));
-                    }
-                    _ => break,
-                }
+            if !wait_for_exit(&mut child, Duration::from_secs(3)) {
+                let _ = child.kill();
             }
-
-            let _ = child.kill();
         }
 
         let _ = child.wait();
@@ -149,8 +176,54 @@ fn apply_backend_env(command: &mut Command, backend_env: &BackendEnv) {
         .env("PATCHOPSIII_BACKEND_HOST", &backend_env.host)
         .env("PATCHOPSIII_BACKEND_PORT", backend_env.port.to_string())
         .env("PATCHOPSIII_PARENT_PID", backend_env.parent_pid.to_string())
+        .env("PATCHOPSIII_SHUTDOWN_TOKEN", &backend_env.shutdown_token)
         .env("PATCHOPSIII_VERSION", &backend_env.version)
         .env("PYTHONUNBUFFERED", "1");
+}
+
+fn shutdown_token() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    format!("{}-{nanos}", std::process::id())
+}
+
+fn request_backend_shutdown(shutdown: &BackendShutdown) -> std::io::Result<()> {
+    let mut stream = TcpStream::connect((&*shutdown.host, shutdown.port))?;
+    stream.set_read_timeout(Some(Duration::from_secs(1)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(1)))?;
+
+    let request = format!(
+        "POST /api/shutdown HTTP/1.1\r\nHost: {}:{}\r\nContent-Length: 0\r\nX-Patchopsiii-Shutdown-Token: {}\r\nConnection: close\r\n\r\n",
+        shutdown.host, shutdown.port, shutdown.token
+    );
+    stream.write_all(request.as_bytes())?;
+    stream.flush()?;
+
+    let mut response = String::new();
+    let _ = stream.read_to_string(&mut response);
+    if response.starts_with("HTTP/1.1 200") || response.starts_with("HTTP/1.0 200") {
+        Ok(())
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "backend rejected shutdown request",
+        ))
+    }
+}
+
+fn wait_for_exit(child: &mut Child, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return true,
+            Ok(None) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            _ => return false,
+        }
+    }
 }
 
 fn configure_backend_process(command: &mut Command) {
@@ -343,6 +416,7 @@ mod tests {
             port: 8767,
             version: "v1.3.0-beta3".to_string(),
             parent_pid: 4242,
+            shutdown_token: "shutdown-token-test".to_string(),
             core_binary: Some(PathBuf::from("patchops-core-test")),
             resource_dir: Some(PathBuf::from("resource-root-test")),
         };
@@ -353,6 +427,7 @@ mod tests {
         assert_eq!(env["PATCHOPSIII_BACKEND_HOST"], "127.0.0.1");
         assert_eq!(env["PATCHOPSIII_BACKEND_PORT"], "8767");
         assert_eq!(env["PATCHOPSIII_PARENT_PID"], "4242");
+        assert_eq!(env["PATCHOPSIII_SHUTDOWN_TOKEN"], "shutdown-token-test");
         assert_eq!(env["PATCHOPSIII_VERSION"], "v1.3.0-beta3");
         assert_eq!(env["PYTHONUNBUFFERED"], "1");
         assert_eq!(
@@ -377,6 +452,7 @@ mod tests {
             port: 8765,
             version: "1.3.0".to_string(),
             parent_pid: 2424,
+            shutdown_token: "shutdown-token-test".to_string(),
             core_binary: None,
             resource_dir: None,
         };
@@ -389,5 +465,6 @@ mod tests {
         assert_eq!(env["PATCHOPSIII_BACKEND_HOST"], "127.0.0.1");
         assert_eq!(env["PATCHOPSIII_BACKEND_PORT"], "8765");
         assert_eq!(env["PATCHOPSIII_PARENT_PID"], "2424");
+        assert_eq!(env["PATCHOPSIII_SHUTDOWN_TOKEN"], "shutdown-token-test");
     }
 }
