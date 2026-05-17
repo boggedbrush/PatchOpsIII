@@ -585,6 +585,17 @@ def _request_backend_shutdown() -> None:
     threading.Thread(target=stop_process, name="patchops-shutdown", daemon=True).start()
 
 
+def _set_windows_app_identity() -> None:
+    if platform.system() != "Windows":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("com.patchopsiii.desktop")
+    except Exception:
+        return
+
+
 def _core_status(game_dir: str | None) -> dict[str, Any] | None:
     if not game_dir:
         return None
@@ -2044,6 +2055,7 @@ def _apply_preset_values(game_dir: str, preset_name: str) -> None:
 
 @app.on_event("startup")
 async def startup() -> None:
+    _set_windows_app_identity()
     log_target.set_loop(asyncio.get_running_loop())
     _start_parent_watchdog()
 
