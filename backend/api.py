@@ -56,6 +56,10 @@ from bo3_enhanced import (
 )
 from t7_patch import (
     DEFAULT_STEAM_EXE_SHA256,
+    T7PATCH_COMPATIBLE_ONLY_FILES,
+    T7PATCH_PROFILE_COMPATIBLE,
+    T7PATCH_PROFILE_CURRENT,
+    T7PATCH_PROFILES,
     _resolve_t7patch_asset,
     add_defender_exclusion,
     backup_lpc_files,
@@ -686,11 +690,13 @@ def _exe_swap_status(game_dir: str | None) -> dict[str, Any]:
     latest_available = bool(executable and _validated_latest_build_backup_path(executable, log_untrusted=False))
     compatible_available = bool(executable and _validated_preserved_compatible_exe(executable, log_untrusted=False))
     enhanced_available = bool(executable and _validated_enhanced_backup_path(game_dir, executable, log_untrusted=False))
+    patch_profile = T7PATCH_PROFILE_COMPATIBLE if profile == COMPATIBLE_EXE_ID else T7PATCH_PROFILE_CURRENT
+    patch_label = T7PATCH_PROFILES[patch_profile]["patch_label"]
     return {
         "profile": profile,
         "modeLabel": "Compatible EXE" if profile == COMPATIBLE_EXE_ID else "Current EXE" if profile == CURRENT_EXE_ID else "Enhanced" if profile == ENHANCED_EXE_ID else "Unknown",
-        "patchLabel": "",
-        "displayLabel": integrity["message"],
+        "patchLabel": patch_label,
+        "displayLabel": f"{integrity['message']} T7 installs will use {patch_label}.",
         "state": integrity["status"],
         "activeBuildId": active_build_id,
         "activeBuildDate": active_build_date,
@@ -1322,8 +1328,14 @@ def _install_t7_patch(game_dir: str) -> None:
         add_defender_exclusion(str(MOD_FILES_DIR), log_target)
         add_defender_exclusion(game_dir, log_target)
 
-    write_log("Downloading T7 Patch...", "Info", log_target)
-    zip_url, expected_hashes = _resolve_t7patch_asset("Linux.Steamdeck.and.Manual.Windows.Install.zip", log_target)
+    status = _exe_swap_status(game_dir)
+    if not status["trustedExecutable"]:
+        raise RuntimeError(f"Cannot install T7 Patch for an unverified executable. {status['integrityMessage']}")
+
+    patch_profile = T7PATCH_PROFILE_COMPATIBLE if status["profile"] == COMPATIBLE_EXE_ID else T7PATCH_PROFILE_CURRENT
+    patch_config = T7PATCH_PROFILES[patch_profile]
+    write_log(f"Detected {status['modeLabel']}. Installing {patch_config['patch_label']}...", "Info", log_target)
+    zip_url, expected_hashes = _resolve_t7patch_asset(patch_config["archive_asset"], log_target)
     zip_dest = MOD_FILES_DIR / "T7Patch.zip"
     extract_dir = MOD_FILES_DIR / "T7Patch_extracted"
 
@@ -1350,6 +1362,12 @@ def _install_t7_patch(game_dir: str) -> None:
     if source_dir is None:
         raise RuntimeError("T7 Patch archive did not contain the expected T7 Patch files.")
 
+    if patch_profile == T7PATCH_PROFILE_CURRENT:
+        for filename in T7PATCH_COMPATIBLE_ONLY_FILES:
+            stale_path = Path(game_dir) / filename
+            if stale_path.exists():
+                stale_path.unlink()
+
     for root, _, files in os.walk(source_dir):
         relative = os.path.relpath(root, source_dir)
         destination = Path(game_dir) if relative == "." else Path(game_dir) / relative
@@ -1363,7 +1381,7 @@ def _install_t7_patch(game_dir: str) -> None:
         raise RuntimeError("Failed to back up LPC files.")
     if not install_lpc_files(game_dir, str(MOD_FILES_DIR), log_target):
         raise RuntimeError("Failed to install LPC files.")
-    write_log("Installed T7 Patch successfully.", "Success", log_target)
+    write_log(f"Installed {patch_config['patch_label']} successfully.", "Success", log_target)
 
 
 def _uninstall_t7_patch(game_dir: str) -> None:

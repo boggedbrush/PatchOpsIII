@@ -17,6 +17,8 @@ T7PATCH_CORE_REPOSITORY = "Scroptss/T7Patch"
 T7PATCH_CORE_TAG = "latest"
 T7PATCH_LEGACY_REPOSITORY = "shiversoftdev/t7patch"
 T7PATCH_LEGACY_TAG = "Current"
+T7PATCH_PROFILE_CURRENT = "current"
+T7PATCH_PROFILE_COMPATIBLE = "compatible"
 
 
 def _github_release_api(repo_name: str, tag_name: str) -> str:
@@ -34,7 +36,8 @@ def _github_release_asset_url(repo_name: str, tag_name: str, asset_name: str) ->
 # The maintained Feb 2026-compatible patch now lives in Scroptss/T7Patch. LPC is
 # still sourced from the legacy release because the new fork does not publish it.
 T7PATCH_ASSETS = {
-    "Linux.Steamdeck.and.Manual.Windows.Install.zip": {
+    "current_archive": {
+        "asset_name": "Linux.Steamdeck.and.Manual.Windows.Install.zip",
         "download_url": _github_release_asset_url(
             T7PATCH_CORE_REPOSITORY,
             T7PATCH_CORE_TAG,
@@ -42,7 +45,20 @@ T7PATCH_ASSETS = {
         ),
         "release_api": _github_release_api(T7PATCH_CORE_REPOSITORY, T7PATCH_CORE_TAG),
     },
-    "LPC.1.zip": {
+    "compatible_archive": {
+        "asset_name": "Linux.Steamdeck.and.Manual.Windows.Install.zip",
+        "download_url": _github_release_asset_url(
+            T7PATCH_LEGACY_REPOSITORY,
+            T7PATCH_LEGACY_TAG,
+            "Linux.Steamdeck.and.Manual.Windows.Install.zip",
+        ),
+        "release_api": _github_release_api(T7PATCH_LEGACY_REPOSITORY, T7PATCH_LEGACY_TAG),
+        "trusted_sha256": {
+            "388491c01643b0abd51f13290d0c36dec9737fcfbb0ed5e2f5ef6804e1b73dcb",
+        },
+    },
+    "lpc_archive": {
+        "asset_name": "LPC.1.zip",
         "download_url": _github_release_asset_url(
             T7PATCH_LEGACY_REPOSITORY,
             T7PATCH_LEGACY_TAG,
@@ -54,6 +70,19 @@ T7PATCH_ASSETS = {
         },
     },
 }
+T7PATCH_PROFILES = {
+    T7PATCH_PROFILE_CURRENT: {
+        "mode_label": "Current EXE",
+        "patch_label": f"T7 Patch {T7PATCH_CORE_REPOSITORY}",
+        "archive_asset": "current_archive",
+    },
+    T7PATCH_PROFILE_COMPATIBLE: {
+        "mode_label": "Compatible EXE",
+        "patch_label": "T7 Patch 2.04",
+        "archive_asset": "compatible_archive",
+    },
+}
+T7PATCH_COMPATIBLE_ONLY_FILES = {"discord_game_sdk.dll", "zbr2.dll"}
 
 _t7patch_release_assets_cache = {}
 defender_warning_logged = False
@@ -247,11 +276,12 @@ def _fetch_t7patch_release_assets(release_api):
     return release_assets
 
 
-def _resolve_t7patch_asset(asset_name, log_widget):
-    asset_meta = T7PATCH_ASSETS.get(asset_name)
+def _resolve_t7patch_asset(asset_key, log_widget):
+    asset_meta = T7PATCH_ASSETS.get(asset_key)
     if not asset_meta:
         return "", set()
 
+    asset_name = asset_meta["asset_name"]
     release_asset = _fetch_t7patch_release_assets(asset_meta["release_api"]).get(asset_name) or {}
     download_url = release_asset.get("download_url") or asset_meta["download_url"]
     api_digest = release_asset.get("sha256")
@@ -294,7 +324,7 @@ def download_file(url, filename, log_widget, expected_sha256=None):
 
 def install_lpc_files(game_dir, mod_files_dir, log_widget):
     """Download and install LPC files"""
-    zip_url, expected_hashes = _resolve_t7patch_asset("LPC.1.zip", log_widget)
+    zip_url, expected_hashes = _resolve_t7patch_asset("lpc_archive", log_widget)
     zip_dest = os.path.join(mod_files_dir, "LPC.zip")
     temp_dir = os.path.join(mod_files_dir, "LPC_temp")
     lpc_dir = os.path.join(game_dir, "LPC")
