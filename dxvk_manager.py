@@ -73,22 +73,28 @@ def get_latest_release():
 
 def get_download_url(release):
     assets = release.get("assets", {})
+    preferred_order = (".zip", ".tar.xz", ".tar.gz", ".tar.bz2", ".tar.zst", ".tzst")
+
     links = assets.get("links", [])
-    if links:
-        # Prefer archives we can extract natively before falling back to anything else
-        preferred_order = (".zip", ".tar.xz", ".tar.gz", ".tar.bz2", ".tar.zst", ".tzst")
-        for suffix in preferred_order:
-            for link in links:
-                url = link.get("url", "")
-                if url.lower().endswith(suffix):
-                    return url
-        return links[0]["url"]
+    for suffix in preferred_order:
+        for link in links:
+            url = link.get("url", "")
+            if url.lower().endswith(suffix):
+                return url
+
     sources = assets.get("sources", [])
-    if sources:
+    for suffix in preferred_order:
         for source in sources:
-            if source.get("format") == "zip":
-                return source.get("url")
+            url = source.get("url", "")
+            if url.lower().endswith(suffix) or source.get("format") == suffix.lstrip("."):
+                return url
+
+    # last resort: whatever's there, even without a recognizable extension
+    if links:
+        return links[0]["url"]
+    if sources:
         return sources[0].get("url")
+
     raise RuntimeError("No downloadable asset found in DXVK-GPLAsync release metadata")
 
 
