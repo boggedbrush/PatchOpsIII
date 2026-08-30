@@ -1,31 +1,18 @@
-# Python bytecode caches
-__pycache__/
-
-# Mod Files:
+# Local mod payloads
 BO3 Mod Files/
+bo3-enhanced-proton/BO3 Enhanced/
 
-# Virtual environment:
-.venv/
-
-# Build files:
-*.bat
-build/
-dist/
+# JavaScript and frontend output
 node_modules/
-.patchopsiii-dev/
+dist/
 
-# Log files:
+# Rust and Tauri output
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Local application data
 *.log
-
-# Executable files:
-*.exe
-
-# text files:
-*.txt
-!requirements.txt
-
-# vdf files:
 *.vdf
 
-# codex:
+# Codex workspace data
 .codex/

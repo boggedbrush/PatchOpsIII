@@ -1,0 +1,71 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "PatchOpsIII",
+  "version": "../package.json",
+  "identifier": "com.patchopsiii.app",
+  "build": {
+    "beforeDevCommand": "bun run dev:renderer",
+    "beforeBuildCommand": "bun run build:renderer",
+    "devUrl": "http://127.0.0.1:5173",
+    "frontendDist": "../dist/renderer"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "PatchOpsIII",
+        "width": 1320,
+        "height": 860,
+        "minWidth": 1100,
+        "minHeight": 720,
+        "resizable": true,
+        "decorations": false,
+        "fullscreen": false,
+        "theme": "Dark",
+        "backgroundColor": "#080806"
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' data:",
+        "font-src": "'self'",
+        "connect-src": "ipc: http://ipc.localhost",
+        "object-src": "'none'",
+        "base-uri": "'none'",
+        "frame-src": "'none'",
+        "frame-ancestors": "'none'"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "appimage", "deb"],
+    "category": "Utility",
+    "shortDescription": "Black Ops III maintenance and mod control center",
+    "icon": [
+      "../PatchOpsIII.ico",
+      "../website/assets/img/icon-512.png"
+    ],
+    "windows": {
+      "allowDowngrades": false,
+      "wix": {
+        "version": "1.3.4",
+        "upgradeCode": "a9a7e56f-6704-5167-96c9-3df300383a42",
+        "language": "en-US",
+        "bannerPath": "../installer/patchops-msi-banner.bmp",
+        "dialogImagePath": "../installer/patchops-msi-dialog.bmp"
+      }
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": false
+      },
+      "deb": {
+        "depends": ["libbz2-1.0"]
+      }
+    }
+  }
+}

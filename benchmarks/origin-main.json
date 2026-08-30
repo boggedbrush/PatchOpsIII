@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "revision": "f74c87bbf885e3692f77478b2ff32e89f82f0c73",
+  "capturedAt": "2026-08-29",
+  "host": {
+    "os": "CachyOS Linux",
+    "kernel": "7.1.8-1-cachyos-deckify",
+    "architecture": "x86_64",
+    "cpu": "AMD Ryzen 7 5800X3D 8-Core Processor",
+    "logicalCpus": 16,
+    "memoryKiB": 32771672,
+    "node": "26.7.0",
+    "bun": "1.3.13",
+    "python": "3.14.7",
+    "pyinstaller": "6.20.0"
+  },
+  "runtime": {
+    "method": "Pre-extracted AppImage; one unrecorded prime; per-run isolated HOME and XDG directories with fixture settings and Steam metadata; backend-ready health response; renderer readiness defined as the first successful /api/status response; aggregate process-tree PSS/RSS after two idle seconds; three 30-second CPU samples; native renderer close and complete process-tree shutdown",
+    "warmRuns": {
+      "backendReadyMs": [634.291205, 613.892555, 630.027117, 1037.389451, 620.120121],
+      "interactiveMs": [1576.340921, 965.876112, 953.672965, 1992.065442, 1797.735991],
+      "idlePssKiB": [235059, 235431, 235616, 235396, 235476],
+      "peakPssKiB": [236418, 237216, 237240, 236780, 236993],
+      "idleRssKiB": [520412, 520640, 520680, 521208, 520860],
+      "peakRssKiB": [521344, 522036, 521808, 522168, 522032],
+      "processCount": [8, 8, 8, 8, 8],
+      "shutdownMs": [29.3812, 23.211887, 22.88901, 23.643806, 22.526352]
+    },
+    "payloadColdInteractiveMs": [1859.413127, 1862.586482, 1141.86486],
+    "idleCpuPercent30s": [0.23333333333333336, 0.2, 0.16666666666666669],
+    "medians": {
+      "backendReadyMs": 630.027117,
+      "warmInteractiveMs": 1576.340921,
+      "payloadColdInteractiveMs": 1859.413127,
+      "idlePssKiB": 235431,
+      "peakPssKiB": 236993,
+      "idleRssKiB": 520680,
+      "peakRssKiB": 522032,
+      "idleCpuPercent30s": 0.2,
+      "processCount": 8,
+      "shutdownMs": 23.211887
+    }
+  },
+  "fixtureOperations": {
+    "method": "Synthetic BO3 directory with representative config/T7/DXVK markers and a deterministic non-sparse 256 MiB zero-filled executable",
+    "mediansMs": {
+      "steamDetectionCold": 0.055171,
+      "steamDetectionWarm": 0.002729789,
+      "gameDetectionCold": 0.045181,
+      "gameDetectionWarm": 0.017453731,
+      "configRead": 0.01738074,
+      "configWrite": 0.049981,
+      "executableSha256Cold": 140.692238,
+      "executableSha256Warm": 140.492865,
+      "stateRefreshCold": 290.534488,
+      "stateRefreshWarm": 290.300044
+    }
+  },
+  "build": {
+    "typecheckMs": [1296, 1264, 1259, 1345, 1287],
+    "electronMainMs": [571, 553, 581, 573, 559],
+    "frontendMs": [1290, 1312, 1296, 1290, 1284],
+    "fullRendererAndElectronMs": [3127, 3100, 3144],
+    "backendCleanMs": 14522,
+    "backendWarmMs": [343, 338],
+    "appImagePackageWarmMs": [2836, 2881, 2829],
+    "cleanFullAppImageMs": 20137,
+    "medians": {
+      "typecheckMs": 1287,
+      "electronMainMs": 571,
+      "frontendMs": 1290,
+      "fullRendererAndElectronMs": 3127,
+      "backendWarmMs": 340.5,
+      "appImagePackageWarmMs": 2836
+    }
+  },
+  "size": {
+    "appImageBytes": 122715005,
+    "electronBuilderUnpackedBytes": 258624095,
+    "extractedAppImageBytes": 259062312,
+    "rendererBytes": 318136,
+    "pythonBackendBytes": 25813992
+  },
+  "limitations": [
+    "No /dev/fuse was available, so both baseline and final runtime measurements use pre-extracted AppImages.",
+    "Payload-cold runs use POSIX_FADV_DONTNEED and are not equivalent to a reboot or privileged whole-system cache drop.",
+    "The host cannot build or run a Windows MSI; Windows validation must run in the repository Windows CI workflow.",
+    "Network-backed install and update timings are intentionally excluded because remote service variability would make the comparison irreproducible."
+  ]
+}

@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 1,
+  "revision": "working-tree",
+  "baseRevision": "f74c87bbf885e3692f77478b2ff32e89f82f0c73",
+  "capturedAt": "2026-08-30",
+  "recordScope": "Historical same-host migration benchmark; later exact-current operation and Ubuntu-native package evidence are recorded separately.",
+  "subsequentEvidence": {
+    "operations": "optimization-measurements.json#/exactCurrentOperationRefresh",
+    "linuxPackages": "optimization-final-package.json"
+  },
+  "host": {
+    "os": "CachyOS Linux",
+    "kernel": "7.1.8-1-cachyos-deckify",
+    "architecture": "x86_64",
+    "cpu": "AMD Ryzen 7 5800X3D 8-Core Processor",
+    "logicalCpus": 16,
+    "memoryKiB": 32771672,
+    "bun": "1.4.0",
+    "rustc": "1.98.0",
+    "cargo": "1.98.0",
+    "tauriCli": "2.11.4",
+    "tauri": "2.11.5"
+  },
+  "architecture": {
+    "desktopHost": "Tauri",
+    "ui": "React + TypeScript",
+    "applicationCore": "in-process Rust",
+    "localhostServer": false,
+    "pythonRuntime": false,
+    "electronRuntime": false,
+    "ordinaryCoreWorkerProcess": false
+  },
+  "runtime": {
+    "method": "Pre-extracted final AppImage AppDir; one unrecorded prime; per-run isolated HOME and XDG directories with fixture settings and Steam metadata; native-ready log marker; initial get_state completion marker; aggregate process-tree PSS/RSS after two idle seconds; three 30-second CPU samples; native WM_DELETE_WINDOW shutdown",
+    "artifact": "PatchOpsIII.AppDir",
+    "warmRuns": {
+      "nativeCoreReadyMs": [162.30734, 161.16518600000563, 166.11563000000024, 151.1130450000055, 155.07501800000318],
+      "interactiveMs": [919.02194, 912.8064200000008, 920.7679869999993, 903.6253780000116, 1415.082534999994],
+      "idlePssKiB": [320046, 320623, 319908, 319397, 319837],
+      "peakPssKiB": [322674, 322651, 322020, 322253, 322537],
+      "idleRssKiB": [504168, 505132, 503996, 503608, 504344],
+      "peakRssKiB": [506796, 507160, 506108, 506464, 507044],
+      "idleCpuPercent30s": [0.03332666849175878, 0, 0.19997304261399315],
+      "processCount": [3, 3, 3, 3, 3],
+      "shutdownMs": [37.65241099999548, 37.31610399999772, 26.883795000001555, 31.96053199999733, 31.986111999998684]
+    },
+    "payloadColdInteractiveMs": [1123.197892000011, 1115.4065180000034, 1118.4371419999952],
+    "medians": {
+      "nativeCoreReadyMs": 161.16518600000563,
+      "warmInteractiveMs": 919.02194,
+      "payloadColdInteractiveMs": 1118.4371419999952,
+      "idlePssKiB": 319908,
+      "peakPssKiB": 322537,
+      "idleRssKiB": 504168,
+      "peakRssKiB": 506796,
+      "idleCpuPercent30s": 0.03332666849175878,
+      "processCount": 3,
+      "shutdownMs": 31.986111999998684
+    }
+  },
+  "fixtureOperations": {
+    "method": "Optimized in-process Rust against the same synthetic BO3 directory, representative config/T7/DXVK markers, Steam metadata, deterministic non-sparse 256 MiB executable, and deterministic 4 MiB Deflate ZIP/tar.gz archives",
+    "samplesMs": {
+      "steamDetectionCold": [0.02834, 0.015750999999999998, 0.01811, 0.0146, 0.014491, 0.01451, 0.01455, 0.014691000000000001, 0.014610000000000001, 0.01473, 0.01464, 0.01464, 0.014620999999999999, 0.014610000000000001, 0.01466],
+      "steamDetectionWarm": [0.014421993, 0.014403543, 0.014405473, 0.015069146, 0.014433014, 0.014411873, 0.014393212],
+      "gameDetectionCold": [0.01037, 0.004019999999999999, 0.00379, 0.00368, 0.00367, 0.0038399999999999997, 0.0037, 0.0036899999999999997, 0.0037, 0.00392, 0.0039, 0.0037, 0.00368, 0.0036899999999999997, 0.00377],
+      "gameDetectionWarm": [0.003626656, 0.003670168, 0.004083145, 0.004354152, 0.003924172, 0.003630256, 0.004081436],
+      "configRead": [0.00428636, 0.003999364, 0.004565046, 0.004673978, 0.004214499, 0.003996934, 0.003993834],
+      "configWrite": [0.039331, 0.02615, 0.023561, 0.02319, 0.022311, 0.02211, 0.021951000000000002, 0.02208, 0.021790999999999998, 0.02204, 0.022221, 0.02223, 0.023031, 0.02211, 0.021790999999999998, 0.021840000000000002, 0.02195, 0.022061, 0.02223, 0.022401, 0.022180000000000002],
+      "executableSha256Cold": [141.138966, 140.593535, 139.93722, 139.770548, 140.028822],
+      "executableSha256Warm": [139.148844, 140.408821, 139.193005, 139.134503, 139.78859799999998],
+      "componentStatusWarm": [0.035914614, 0.036581689, 0.035455105, 0.03644553600000001, 0.036709931, 0.036537648, 0.037041139],
+      "zipDeflateExtract": [2.454111, 2.2080659999999996, 2.1933759999999998, 2.1783050000000004, 2.176406, 2.742398, 2.3202190000000003],
+      "tarGzExtract": [2.570734, 2.487002, 2.41795, 2.4324809999999997, 2.934792, 2.5043729999999997, 2.413381]
+    },
+    "mediansMs": {
+      "steamDetectionCold": 0.01464,
+      "steamDetectionWarm": 0.014411873,
+      "gameDetectionCold": 0.0037,
+      "gameDetectionWarm": 0.003924172,
+      "configRead": 0.004214499,
+      "configWrite": 0.022180000000000002,
+      "executableSha256Cold": 140.028822,
+      "executableSha256Warm": 139.193005,
+      "componentStatusWarm": 0.036537648,
+      "zipDeflateExtract": 2.2080659999999996,
+      "tarGzExtract": 2.487002
+    }
+  },
+  "build": {
+    "method": "Serialized monotonic wall-clock elapsed time; warm commands follow one unrecorded normalization build; clean Rust runs use an emptied isolated CARGO_TARGET_DIR while retaining downloaded dependency/system caches; clean full AppImage is one empty-target build completed with the pinned offline runtime after restricted-network linuxdeploy produced the final AppDir",
+    "typecheckMs": [1237.681614, 1220.219985, 1204.876918, 1200.9391610000002, 1220.7308919999996],
+    "frontendOnlyMs": [1321.5266689999999, 1277.9257810000008, 1273.8445609999999, 1255.9645340000006, 1266.5453100000013],
+    "fullRendererPipelineMs": [2445.151973, 2475.485864000002, 2494.982978, 2496.7400640000014, 2489.1529100000007],
+    "rustReleaseNoChangeMs": [226.903, 219.757, 216.091, 218.982, 219.999],
+    "appImagePackageWarmMs": [2612.703, 2607.847, 2605.634],
+    "cleanRustMs": [145504.316, 140931.689, 139660.434],
+    "cleanFullAppImageMs": [160623.289],
+    "rawDebBuildMs": [87799.001],
+    "medians": {
+      "typecheckMs": 1220.219985,
+      "frontendOnlyMs": 1273.8445609999999,
+      "fullRendererPipelineMs": 2489.1529100000007,
+      "rustReleaseNoChangeMs": 219.757,
+      "appImagePackageWarmMs": 2607.847,
+      "cleanRustMs": 140931.689
+    }
+  },
+  "size": {
+    "appImageBytes": 108526072,
+    "appDirBytes": 316864183,
+    "appDirUsrBinBytes": 15138032,
+    "appDirUsrLibBytes": 301309158,
+    "rendererBytes": 314329,
+    "nativeReleaseBinaryBytes": 15063696,
+    "bundledPatchedBinaryBytes": 15105616,
+    "rawDebBytes": 5895776,
+    "rawDebInstalledKiB": 14771
+  },
+  "packageValidation": {
+    "appImageBuild": "passed; final AppDir completed by Tauri and was packaged with the already-verified x86_64 runtime because network access is restricted",
+    "appImageGuiSmoke": "passed; packaged AppImage reached the interactive marker and closed through WM_DELETE_WINDOW",
+    "appImageRepackReproducibility": "passed; two serial packages of the same AppDir under the source epoch were byte-identical",
+    "appImageSha256": "c6253fdcd3cb11154f8c67a597d720fbc42976fbaf6375d37964268419c22b1c",
+    "nativeReleaseBinarySha256": "410225a5690fcc3c5ce838d0b10ea0098d31b010e2db59aa3b5defeb3b0ba643",
+    "rawDebBuild": "passed; Tauri artifact structurally inspected, canonical Debian repack and lifecycle require Ubuntu/dpkg-deb",
+    "rawDebSha256": "a2bb7f5b64bd6f033ad15ea3c5a294374fee7638a57d2079fff0a45d4b412371",
+    "windowsMsvcTargetCheck": "passed",
+    "windowsMsvcReleaseBuild": "passed",
+    "windowsReleaseBinaryBytes": 15184384,
+    "windowsReleaseBinarySha256": "052219858a53693043279e6582472dd0b1439f08abf06eb88b806a9784433cc5",
+    "msiWorkflowStaticValidation": "passed",
+    "msiUpgradeSmokeConfigured": "hash-pinned beta3 Electron MSI -> current Tauri MSI upgrade, single product registration, installed native-window launch, and clean shutdown before artifact upload; not executed locally",
+    "releaseWorkflowValidation": "YAML, embedded shell/Node, action pins, immutable tags, six-asset/sidecar validation, draft reruns, published no-op, trusted metadata, and secret boundaries passed local static/mocked review",
+    "msiBuildOnLinuxHost": "not supported by Tauri; requires Windows"
+  },
+  "limitations": [
+    "No /dev/fuse was available, so both baseline and final runtime measurements use pre-extracted AppImages.",
+    "Payload-cold runs use POSIX_FADV_DONTNEED and are not equivalent to a reboot or privileged whole-system cache drop.",
+    "Long-running host/WebKit state has two observed timing and proportional-memory regimes. This final refresh landed in the same approximately 0.92-second/320-MiB-PSS regime retained in optimization-measurements.json; every sample, including one 1.415-second warm outlier, is preserved.",
+    "The Windows MSVC target check and release link passed locally with cargo-xwin, producing a PE32+ GUI executable; Tauri and WiX still require windows-latest CI to author and exercise the actual MSI.",
+    "The local host lacks dpkg-deb, so the raw Tauri Debian artifact is recorded locally while deterministic canonicalization and install/upgrade/launch/purge testing remain Ubuntu CI gates.",
+    "The restricted shell blocked linuxdeploy's runtime download; the final AppDir was packaged offline with the already-hash-verified AppImage runtime. Repacking that fixed AppDir was reproducible.",
+    "Network-backed install and update timings are intentionally excluded because remote service variability would make the comparison irreproducible.",
+    "Install/uninstall CPU and wall-time were not compared because the implementations have different transaction and network boundaries.",
+    "The baseline full state refresh and final component-status benchmark do not have identical semantics, so no percentage is claimed for that row.",
+    "Sub-millisecond detection and config measurements are sensitive to timer and filesystem noise; the recorded medians use the fixed repeated workload.",
+    "Clean builds retain downloaded Cargo registry artifacts, installed system libraries, and cached packaging tools.",
+    "The local custom-sysroot AppImage used NO_STRIP=1 for system libraries; Rust symbol stripping remained enabled by the selected release profile. Hosted Ubuntu and Arch package smokes and a physical Steam Deck remain external gates."
+  ]
+}

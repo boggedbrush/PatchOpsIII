@@ -25,7 +25,8 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Toggle } from "./components/Toggle";
-import { apiRequest, makeSocket, resolveBackendUrl, type ApiResult, type LogEntry, type PatchOpsState } from "./lib/api";
+import * as desktop from "./lib/api";
+import type { LogEntry, PatchOpsState } from "./lib/api";
 import packageInfo from "../../package.json";
 import "./styles/app.css";
 
@@ -51,27 +52,7 @@ const navItems = [
 type ViewId = (typeof navItems)[number]["id"];
 type GraphicsTabId = "graphics" | "dxvk";
 type DxvkSettings = PatchOpsState["dxvk"]["settings"];
-type BackendStatus = "starting" | "ready" | "failed";
-
-type BrowseEntry = {
-  name: string;
-  path: string;
-  hasGameExecutable: boolean;
-};
-
-type BrowseLocation = {
-  label: string;
-  path: string;
-};
-
-type BrowseState = {
-  path: string;
-  parent: string | null;
-  hasGameExecutable: boolean;
-  roots: BrowseLocation[];
-  shortcuts: BrowseLocation[];
-  entries: BrowseEntry[];
-};
+type AppStatus = "starting" | "ready" | "failed";
 
 type DepotPromptState = {
   command: string;
@@ -89,7 +70,7 @@ const defaultExeSwap: PatchOpsState["exeSwap"] = {
   profile: "",
   modeLabel: "Unknown",
   patchLabel: "",
-  displayLabel: "EXE Swapper is unavailable until the local service restarts.",
+  displayLabel: "EXE Swapper is unavailable while PatchOpsIII is starting.",
   state: "unavailable",
   activeBuildId: "Unknown",
   activeBuildDate: "",
@@ -104,7 +85,7 @@ const defaultExeSwap: PatchOpsState["exeSwap"] = {
   executableHash: "",
   trustedExecutable: false,
   integrityStatus: "unavailable",
-  integrityMessage: "EXE Swapper is unavailable until the local service restarts.",
+  integrityMessage: "EXE Swapper is unavailable while PatchOpsIII is starting.",
   backupAvailable: false,
   latestAvailable: false,
   compatibleAvailable: false,
@@ -203,41 +184,35 @@ function TitleBar({ appVersion, updateDisabled, onCheckForUpdates }: { appVersio
   const [maximized, setMaximized] = useState(false);
   const isMac = platform === "darwin";
   const displayVersion = appVersion.toLowerCase().startsWith("v") ? appVersion : `v${appVersion}`;
-  const hasDesktopChrome = Boolean(window.patchOpsDesktop);
-  const usesNativeWindowControls = hasDesktopChrome && platform === "win32";
-  const showWindowControls = !isMac && !usesNativeWindowControls;
+  const usesNativeWindowControls = false;
+  const showWindowControls = true;
 
   useEffect(() => {
     let removeWindowStateListener: (() => void) | undefined;
-    void window.patchOpsDesktop?.getPlatform().then(setPlatform).catch(() => undefined);
-    void window.patchOpsDesktop?.getWindowState?.().then((state) => setMaximized(state.maximized));
-    removeWindowStateListener = window.patchOpsDesktop?.onWindowStateChange?.((state) => setMaximized(state.maximized));
+    void desktop.getPlatform().then(setPlatform).catch(() => undefined);
+    void desktop.getWindowState().then((state) => setMaximized(state.maximized));
+    void desktop.onWindowState((state) => setMaximized(state.maximized)).then((remove) => {
+      removeWindowStateListener = remove;
+    });
     return () => removeWindowStateListener?.();
   }, []);
 
   async function minimizeWindow() {
-    if (window.patchOpsDesktop) {
-      await window.patchOpsDesktop.minimizeWindow();
-    }
+    await desktop.minimizeWindow();
   }
 
   async function toggleMaximize() {
-    if (window.patchOpsDesktop) {
-      const state = await window.patchOpsDesktop.toggleMaximizeWindow();
-      setMaximized(state.maximized);
-    }
+    const state = await desktop.toggleMaximizeWindow();
+    setMaximized(state.maximized);
   }
 
   function closeWindow() {
-    if (window.patchOpsDesktop) {
-      void window.patchOpsDesktop.closeWindow();
-      return;
-    }
+    void desktop.closeWindow();
   }
 
   return (
-    <div className={cx("titlebar", isMac ? "titlebar-mac" : "titlebar-desktop", usesNativeWindowControls && "titlebar-native-overlay titlebar-mica")}>
-      <div className="titlebar-grip" aria-hidden="true" />
+    <div className={cx("titlebar", isMac ? "titlebar-mac" : "titlebar-desktop", usesNativeWindowControls && "titlebar-native-overlay titlebar-mica")} data-tauri-drag-region>
+      <div className="titlebar-grip" aria-hidden="true" data-tauri-drag-region />
       <div className="titlebar-brand">
         <img src={logoUrl} alt="" className="titlebar-logo" />
         <div className="titlebar-copy">
@@ -248,7 +223,7 @@ function TitleBar({ appVersion, updateDisabled, onCheckForUpdates }: { appVersio
           </button>
         </div>
       </div>
-      <div className="titlebar-drag" />
+      <div className="titlebar-drag" data-tauri-drag-region />
       {showWindowControls && (
         <div className="window-controls" aria-label="Window controls">
           <button type="button" className="window-control" aria-label="Minimize window" onClick={minimizeWindow}>
@@ -266,20 +241,13 @@ function TitleBar({ appVersion, updateDisabled, onCheckForUpdates }: { appVersio
   );
 }
 
-function isVisibleLog(entry: LogEntry) {
-  return entry.message !== "PatchOpsIII local API started.";
-}
-
 function logKey(entry: LogEntry) {
   return `${entry.line}|${entry.category}|${entry.message}`;
 }
 
-function uniqueVisibleLogs(entries: LogEntry[]) {
+function uniqueLogs(entries: LogEntry[]) {
   const seen = new Set<string>();
   return entries.filter((entry) => {
-    if (!isVisibleLog(entry)) {
-      return false;
-    }
     const key = logKey(entry);
     if (seen.has(key)) {
       return false;
@@ -290,25 +258,11 @@ function uniqueVisibleLogs(entries: LogEntry[]) {
 }
 
 function appendUniqueLog(current: LogEntry[], entry: LogEntry) {
-  if (!isVisibleLog(entry)) {
-    return current;
-  }
   const key = logKey(entry);
   if (current.some((item) => logKey(item) === key)) {
     return current;
   }
   return [...current.slice(-179), entry];
-}
-
-function browseErrorMessage(error: unknown) {
-  const message = error instanceof Error ? error.message : "";
-  if (message.includes("404")) {
-    return "Folder browser is unavailable. Restart PatchOpsIII and try again.";
-  }
-  if (message.includes("Failed to fetch")) {
-    return "Folder browser is unavailable because the local service is not running.";
-  }
-  return "Unable to browse folders right now.";
 }
 
 function detectedCompilerThreads() {
@@ -319,7 +273,7 @@ function detectedCompilerThreads() {
   return Math.max(1, logicalCores - 2);
 }
 
-function backendUnavailableMessage(status: BackendStatus) {
+function runtimeUnavailableMessage(status: AppStatus) {
   return status === "failed" ? "PatchOpsIII took longer than expected. Restart PatchOpsIII and try again." : "PatchOpsIII is still getting ready.";
 }
 
@@ -346,24 +300,7 @@ function formatTimestamp(value: string | null | undefined) {
   return date.toLocaleString();
 }
 
-async function waitForBackendReady(timeoutMs = 12000) {
-  const start = Date.now();
-  const backendUrl = await resolveBackendUrl();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const response = await fetch(`${backendUrl}/api/health`, { cache: "no-store" });
-      if (response.ok) {
-        return;
-      }
-    } catch {
-      // The backend process may still be extracting or importing.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error("PatchOpsIII local API did not become ready.");
-}
-
-function StartupScreen({ status, onRetry }: { status: BackendStatus; onRetry: () => void }) {
+function StartupScreen({ status, onRetry }: { status: AppStatus; onRetry: () => void }) {
   const failed = status === "failed";
   return (
     <section className={cx("startup-screen", failed && "startup-screen-failed")} aria-live="polite">
@@ -387,7 +324,7 @@ function StartupScreen({ status, onRetry }: { status: BackendStatus; onRetry: ()
 
 function App() {
   const [state, setState] = useState<PatchOpsState | null>(null);
-  const [backendStatus, setBackendStatus] = useState<BackendStatus>("starting");
+  const [appStatus, setAppStatus] = useState<AppStatus>("starting");
   const [bootAttempt, setBootAttempt] = useState(0);
   const [activeView, setActiveView] = useState<ViewId>("dashboard");
   const [activeGraphicsTab, setActiveGraphicsTab] = useState<GraphicsTabId>("graphics");
@@ -395,11 +332,6 @@ function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [selectedProfile, setSelectedProfile] = useState("default");
   const [error, setError] = useState<string | null>(null);
-  const [browseOpen, setBrowseOpen] = useState(false);
-  const [browseData, setBrowseData] = useState<BrowseState | null>(null);
-  const [browseInput, setBrowseInput] = useState("");
-  const [browseError, setBrowseError] = useState<string | null>(null);
-  const [browseMode, setBrowseMode] = useState<"game" | "dump">("game");
   const [depotPrompt, setDepotPrompt] = useState<DepotPromptState | null>(null);
   const depotWatchTimer = useRef<number | null>(null);
   const [t7Gamertag, setT7Gamertag] = useState("");
@@ -414,55 +346,32 @@ function App() {
   const [dxvkSettings, setDxvkSettings] = useState<DxvkSettings>(dxvkPresets.Recommended);
 
   async function refresh() {
-    const next = await apiRequest<PatchOpsState>("/api/status");
+    const next = await desktop.getState();
     setState(normalizeState(next));
-    setLogs(uniqueVisibleLogs(next.logs));
+    setLogs(uniqueLogs(next.logs));
   }
 
   async function checkForUpdates() {
-    await runAction("update-check", () =>
-      apiRequest<ApiResult<{ update: unknown }>>("/api/update-check", {
-        method: "POST"
-      })
-    );
+    await runAction("update-check", desktop.checkForUpdates);
   }
 
   async function setReleaseChannel(channel: PatchOpsState["releaseChannel"]) {
-    await runAction("release-channel", () =>
-      apiRequest<ApiResult>("/api/release-channel", {
-        method: "POST",
-        body: JSON.stringify({ channel })
-      })
-    );
+    await runAction("release-channel", () => desktop.setReleaseChannel(channel));
   }
 
   async function useCompatibleExe() {
-    if (backendStatus !== "ready") {
-      setError(backendUnavailableMessage(backendStatus));
+    if (appStatus !== "ready") {
+      setError(runtimeUnavailableMessage(appStatus));
       return;
     }
     setBusy("exe-compatible");
     setError(null);
     try {
-      const result = await apiRequest<ApiResult>("/api/exe-swap/compatible", {
-        method: "POST"
-      });
-      if (!result.ok) {
-        if (result.depotRequired && result.depotCommand) {
-          if (result.state) {
-            setState(normalizeState(result.state));
-            setLogs(uniqueVisibleLogs(result.state.logs));
-          }
-          setDepotPrompt({ command: result.depotCommand, copied: false, watching: false });
-          return;
-        }
-        throw new Error(result.error ?? "Compatible EXE swap failed.");
-      }
-      if (result.state) {
-        setState(normalizeState(result.state));
-        setLogs(uniqueVisibleLogs(result.state.logs));
-      } else {
-        await refresh();
+      const result = await desktop.activateCompatibleExe();
+      setState(normalizeState(result.state));
+      setLogs(uniqueLogs(result.state.logs));
+      if (result.depotCommand) {
+        setDepotPrompt({ command: result.depotCommand, copied: false, watching: false });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Compatible EXE swap failed.");
@@ -484,34 +393,23 @@ function App() {
       return;
     }
     setDepotPrompt((current) => current ? { ...current, watching: true } : current);
-    window.location.href = "steam://open/console";
+    await desktop.openExternal("steamConsole");
   }
 
   async function pollCompatibleDepot() {
     try {
-      const depotResult = await apiRequest<ApiResult<{ available: boolean }>>("/api/exe-swap/compatible-depot");
-      if (depotResult.state) {
-        setState(normalizeState(depotResult.state));
-        setLogs(uniqueVisibleLogs(depotResult.state.logs));
-      }
-      if (!depotResult.ok || !depotResult.available) {
+      const depotResult = await desktop.getCompatibleDepotStatus();
+      setState(normalizeState(depotResult.state));
+      setLogs(uniqueLogs(depotResult.state.logs));
+      if (!depotResult.available) {
         return;
       }
 
-      const swapResult = await apiRequest<ApiResult>("/api/exe-swap/compatible", {
-        method: "POST"
-      });
-      if (!swapResult.ok) {
-        if (swapResult.depotRequired) {
-          return;
-        }
-        throw new Error(swapResult.error ?? "Compatible EXE swap failed.");
-      }
-      if (swapResult.state) {
-        setState(normalizeState(swapResult.state));
-        setLogs(uniqueVisibleLogs(swapResult.state.logs));
-      } else {
-        await refresh();
+      const swapResult = await desktop.activateCompatibleExe();
+      setState(normalizeState(swapResult.state));
+      setLogs(uniqueLogs(swapResult.state.logs));
+      if (swapResult.depotCommand) {
+        return;
       }
       if (depotWatchTimer.current !== null) {
         window.clearInterval(depotWatchTimer.current);
@@ -530,44 +428,24 @@ function App() {
   }
 
   async function useCurrentExe() {
-    await runAction("exe-current", () =>
-      apiRequest<ApiResult>("/api/exe-swap/current", {
-        method: "POST"
-      })
-    );
+    await runAction("exe-current", desktop.activateCurrentExe);
   }
 
   async function useEnhancedExe() {
-    await runAction("exe-enhanced", () =>
-      apiRequest<ApiResult>("/api/exe-swap/enhanced", {
-        method: "POST"
-      })
-    );
+    await runAction("exe-enhanced", desktop.activateEnhancedExe);
   }
 
-  async function runAction<T>(id: string, action: () => Promise<ApiResult<T> | PatchOpsState | unknown>) {
-    if (backendStatus !== "ready") {
-      setError(backendUnavailableMessage(backendStatus));
+  async function runAction(id: string, action: () => Promise<PatchOpsState>) {
+    if (appStatus !== "ready") {
+      setError(runtimeUnavailableMessage(appStatus));
       return;
     }
     setBusy(id);
     setError(null);
     try {
       const result = await action();
-      if (typeof result === "object" && result && "ok" in result) {
-        const apiResult = result as ApiResult<T>;
-        if (!apiResult.ok) {
-          throw new Error(apiResult.error ?? "Action failed");
-        }
-        if (apiResult.state) {
-          setState(normalizeState(apiResult.state));
-          setLogs(uniqueVisibleLogs(apiResult.state.logs));
-        } else {
-          await refresh();
-        }
-      } else {
-        await refresh();
-      }
+      setState(normalizeState(result));
+      setLogs(uniqueLogs(result.logs));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -591,84 +469,35 @@ function App() {
               ? "2"
               : "0"
             : value;
-    await runAction(id, () =>
-      apiRequest<ApiResult>("/api/config", {
-        method: "POST",
-        body: JSON.stringify({ key: item.key, value: normalizedValue, comment: item.comment })
-      })
-    );
+    await runAction(id, () => desktop.setConfigValue(item.key, normalizedValue));
   }
 
   async function applyProfile() {
-    const profile = state?.launchProfiles.find((item) => item.id === selectedProfile);
-    await runAction("launch-options", () =>
-      apiRequest<ApiResult>("/api/launch-options", {
-        method: "POST",
-        body: JSON.stringify({ options: profile?.option ?? "", preserve_fs_game: false })
-      })
-    );
+    await runAction("launch-options", () => desktop.applyLaunchProfile(selectedProfile));
   }
 
   async function installSelectedProfile() {
-    await runAction("workshop-install", () =>
-      apiRequest<ApiResult>("/api/workshop-install", {
-        method: "POST",
-        body: JSON.stringify({ profileId: selectedProfile })
-      })
-    );
+    await runAction("workshop-install", () => desktop.installWorkshopProfile(selectedProfile));
   }
 
   async function toggleIntro(enabled: boolean) {
-    await runAction("intro", () =>
-      apiRequest<ApiResult>("/api/intro-skip", {
-        method: "POST",
-        body: JSON.stringify({ enabled })
-      })
-    );
+    await runAction("intro", () => desktop.setIntroSkip(enabled));
   }
 
   async function toggleD3dcompiler(enabled: boolean) {
-    await runAction("d3dcompiler", () =>
-      apiRequest<ApiResult>("/api/d3dcompiler", {
-        method: "POST",
-        body: JSON.stringify({ enabled })
-      })
-    );
+    await runAction("d3dcompiler", () => desktop.setD3dcompilerWorkaround(enabled));
   }
 
   async function toggleAllIntros(enabled: boolean) {
-    await runAction("all-intros", () =>
-      apiRequest<ApiResult>("/api/all-intros-skip", {
-        method: "POST",
-        body: JSON.stringify({ enabled })
-      })
-    );
+    await runAction("all-intros", () => desktop.setAllIntroSkip(enabled));
   }
 
   async function toggleAllQol(enabled: boolean) {
-    await runAction("qol-all", async () => {
-      await apiRequest<ApiResult>("/api/d3dcompiler", {
-        method: "POST",
-        body: JSON.stringify({ enabled })
-      });
-      await apiRequest<ApiResult>("/api/intro-skip", {
-        method: "POST",
-        body: JSON.stringify({ enabled })
-      });
-      return apiRequest<ApiResult>("/api/all-intros-skip", {
-        method: "POST",
-        body: JSON.stringify({ enabled })
-      });
-    });
+    await runAction("qol-all", () => desktop.setAllQol(enabled));
   }
 
   async function updateT7Gamertag() {
-    await runAction("t7-gamertag", () =>
-      apiRequest<ApiResult>("/api/t7-config", {
-        method: "POST",
-        body: JSON.stringify({ gamertag: t7Gamertag, colorCode: t7ColorCode })
-      })
-    );
+    await runAction("t7-gamertag", () => desktop.configureT7({ gamertag: t7Gamertag, colorCode: t7ColorCode }));
   }
 
   function resetT7GamertagEdits() {
@@ -680,21 +509,11 @@ function App() {
   }
 
   async function applyPreset(name: string) {
-    await runAction("preset", () =>
-      apiRequest<ApiResult>("/api/presets/apply", {
-        method: "POST",
-        body: JSON.stringify({ name })
-      })
-    );
+    await runAction("preset", () => desktop.applyPreset(name));
   }
 
   async function updateT7Password() {
-    await runAction("t7-password", () =>
-      apiRequest<ApiResult>("/api/t7-config", {
-        method: "POST",
-        body: JSON.stringify({ networkPassword: t7Password })
-      })
-    );
+    await runAction("t7-password", () => desktop.configureT7({ networkPassword: t7Password }));
     setT7PasswordTouched(false);
   }
 
@@ -714,54 +533,31 @@ function App() {
       return;
     }
     setT7PasswordTouched(true);
-    await runAction("t7-password-toggle", () =>
-      apiRequest<ApiResult>("/api/t7-config", {
-        method: "POST",
-        body: JSON.stringify({ networkPassword: "" })
-      })
-    );
+    await runAction("t7-password-toggle", () => desktop.configureT7({ networkPassword: "" }));
   }
 
   async function updateT7FriendsOnly(friendsOnly: boolean) {
-    await runAction("t7-friends", () =>
-      apiRequest<ApiResult>("/api/t7-config", {
-        method: "POST",
-        body: JSON.stringify({ friendsOnly })
-      })
-    );
+    await runAction("t7-friends", () => desktop.configureT7({ friendsOnly }));
   }
 
   async function installT7Patch() {
-    await runAction("t7-install", () =>
-      apiRequest<ApiResult>("/api/t7-install", {
-        method: "POST"
-      })
-    );
+    await runAction("t7-install", desktop.installT7);
   }
 
   async function uninstallT7Patch() {
     if (!window.confirm("Uninstall T7 Patch files and restore LPC backups?")) {
       return;
     }
-    await runAction("t7-uninstall", () =>
-      apiRequest<ApiResult>("/api/t7-uninstall", {
-        method: "POST"
-      })
-    );
+    await runAction("t7-uninstall", desktop.uninstallT7);
   }
 
   async function installEnhanced() {
-    await runAction("enhanced-install", () =>
-      apiRequest<ApiResult>("/api/enhanced-install", {
-        method: "POST",
-        body: JSON.stringify({ dumpSource: enhancedDumpSource })
-      })
-    );
+    await runAction("enhanced-install", () => desktop.installEnhanced(enhancedDumpSource));
   }
 
   async function validateEnhancedSource() {
-    if (backendStatus !== "ready") {
-      setError(backendUnavailableMessage(backendStatus));
+    if (appStatus !== "ready") {
+      setError(runtimeUnavailableMessage(appStatus));
       return;
     }
     const dumpSource = enhancedDumpSource.trim();
@@ -772,14 +568,9 @@ function App() {
     setBusy("enhanced-validate");
     setError(null);
     try {
-      const result = await apiRequest<ApiResult<{ valid: boolean; message?: string }>>("/api/enhanced-validate", {
-        method: "POST",
-        body: JSON.stringify({ dumpSource })
-      });
-      if (result.state) {
-        setState(normalizeState(result.state));
-        setLogs(uniqueVisibleLogs(result.state.logs));
-      }
+      const result = await desktop.validateEnhancedSource(dumpSource);
+      setState(normalizeState(result.state));
+      setLogs(uniqueLogs(result.state.logs));
       setEnhancedValidation({
         label: result.message ?? (result.valid ? "Ready" : "Not valid"),
         ok: result.valid,
@@ -793,87 +584,45 @@ function App() {
     }
   }
 
-  function useDroppedEnhancedSource(event: React.DragEvent<HTMLElement>) {
-    event.preventDefault();
-    const file = event.dataTransfer.files[0] as (File & { path?: string }) | undefined;
-    const nextSource = file?.path || file?.name || "";
-    if (nextSource) {
-      setEnhancedDumpSource(nextSource);
-      setEnhancedValidation({ label: "Not run", ok: null, checkedAt: null });
-    }
-  }
-
   async function uninstallEnhanced() {
     if (!window.confirm("Uninstall BO3 Enhanced files and restore backups?")) {
       return;
     }
-    await runAction("enhanced-uninstall", () =>
-      apiRequest<ApiResult>("/api/enhanced-uninstall", {
-        method: "POST"
-      })
-    );
+    await runAction("enhanced-uninstall", desktop.uninstallEnhanced);
   }
 
   async function applyDxvkSettings(nextSettings = dxvkSettings) {
-    await runAction("dxvk-config", () =>
-      apiRequest<ApiResult>("/api/dxvk-config", {
-        method: "POST",
-        body: JSON.stringify(nextSettings)
-      })
-    );
+    await runAction("dxvk-config", () => desktop.configureDxvk(nextSettings));
   }
 
   async function installDxvk() {
-    await runAction("dxvk-install", () =>
-      apiRequest<ApiResult>("/api/dxvk-install", {
-        method: "POST",
-        body: JSON.stringify(dxvkSettings)
-      })
-    );
+    await runAction("dxvk-install", () => desktop.installDxvk(dxvkSettings));
   }
 
   async function uninstallDxvk() {
     if (!window.confirm("Uninstall DXVK-GPLAsync and remove dxvk.conf?")) {
       return;
     }
-    await runAction("dxvk-uninstall", () =>
-      apiRequest<ApiResult>("/api/dxvk-uninstall", {
-        method: "POST"
-      })
-    );
+    await runAction("dxvk-uninstall", desktop.uninstallDxvk);
   }
 
   async function setConfigReadonly(enabled: boolean) {
-    await runAction("config-readonly", () =>
-      apiRequest<ApiResult>("/api/config-readonly", {
-        method: "POST",
-        body: JSON.stringify({ enabled })
-      })
-    );
+    await runAction("config-readonly", () => desktop.setConfigReadonly(enabled));
   }
 
   async function setVramTarget(limited: boolean, target = state?.advanced.vramTarget ?? 75) {
-    await runAction("vram-target", () =>
-      apiRequest<ApiResult>("/api/vram-target", {
-        method: "POST",
-        body: JSON.stringify({ limited, target })
-      })
-    );
+    await runAction("vram-target", () => desktop.setVramTarget(limited, target));
   }
 
   async function copyLogs() {
-    if (backendStatus !== "ready") {
-      setError(backendUnavailableMessage(backendStatus));
+    if (appStatus !== "ready") {
+      setError(runtimeUnavailableMessage(appStatus));
       return;
     }
     setBusy("copy-logs");
     setError(null);
     try {
-      const result = await apiRequest<{ ok: boolean; payload: string; error?: string }>("/api/logs/payload");
-      if (!result.ok) {
-        throw new Error(result.error ?? "Unable to read logs.");
-      }
-      await navigator.clipboard.writeText(result.payload);
+      await navigator.clipboard.writeText(await desktop.getLogPayload());
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to copy logs.");
@@ -883,129 +632,77 @@ function App() {
   }
 
   async function clearLogs() {
-    await runAction("clear-logs", () =>
-      apiRequest<ApiResult>("/api/logs/clear", {
-        method: "POST"
-      })
-    );
+    await runAction("clear-logs", desktop.clearLogs);
   }
 
   async function clearModFiles() {
     if (!window.confirm("Clear cached downloaded mod files?")) {
       return;
     }
-    await runAction("clear-mod-files", () =>
-      apiRequest<ApiResult>("/api/mod-files/clear", {
-        method: "POST"
-      })
-    );
+    await runAction("clear-mod-files", desktop.clearModFiles);
   }
 
   async function resetToStock() {
     if (!window.confirm("Reset PatchOpsIII-managed files and settings to stock?")) {
       return;
     }
-    await runAction("reset-stock", () =>
-      apiRequest<ApiResult>("/api/reset-stock", {
-        method: "POST"
-      })
-    );
+    await runAction("reset-stock", desktop.resetToStock);
   }
 
-  async function loadBrowse(path?: string) {
-    if (backendStatus !== "ready") {
-      setBrowseError(backendUnavailableMessage(backendStatus));
-      setBrowseData((current) => current ?? {
-        path: path ?? "",
-        parent: null,
-        hasGameExecutable: false,
-        roots: [],
-        shortcuts: [],
-        entries: []
-      });
-      setBrowseInput(path ?? "");
+  async function openBrowseMenu(mode: "game" | "dumpFolder" | "dumpArchive" = "game") {
+    if (appStatus !== "ready") {
+      setError(runtimeUnavailableMessage(appStatus));
       return;
     }
-    setBrowseError(null);
     try {
-      const query = path ? `?path=${encodeURIComponent(path)}` : "";
-      const next = await apiRequest<BrowseState>(`/api/browse${query}`);
-      setBrowseData(next);
-      setBrowseInput(next.path);
+      const path = mode === "dumpFolder"
+        ? await desktop.pickDumpSource()
+        : mode === "dumpArchive"
+          ? await desktop.pickDumpArchive()
+          : await desktop.pickGameDirectory();
+      if (!path) return;
+      if (mode !== "game") {
+        setEnhancedDumpSource(path);
+        setEnhancedValidation({ label: "Not run", ok: null, checkedAt: null });
+      } else {
+        await runAction("directory", () => desktop.setGameDirectory(path));
+      }
     } catch (err) {
-      setBrowseError(browseErrorMessage(err));
-      setBrowseData((current) => current ?? {
-        path: path ?? "",
-        parent: null,
-        hasGameExecutable: false,
-        roots: [],
-        shortcuts: [],
-        entries: []
-      });
-      setBrowseInput(path ?? "");
+      setError(err instanceof Error ? err.message : "Unable to select a local source.");
     }
-  }
-
-  async function openBrowseMenu(mode: "game" | "dump" = "game") {
-    setBrowseMode(mode);
-    setBrowseOpen(true);
-    await loadBrowse(mode === "dump" ? enhancedDumpSource || state?.gameDir || undefined : state?.gameDir ?? undefined);
-  }
-
-  async function selectBrowsePath(path: string) {
-    if (browseMode === "dump") {
-      setEnhancedDumpSource(path);
-      setEnhancedValidation({ label: "Not run", ok: null, checkedAt: null });
-      setBrowseOpen(false);
-      return;
-    }
-    await runAction("directory", () =>
-      apiRequest<ApiResult>("/api/game-directory", {
-        method: "POST",
-        body: JSON.stringify({ path })
-      })
-    );
-    setBrowseOpen(false);
   }
 
   useEffect(() => {
     let cancelled = false;
-    let socket: WebSocket | null = null;
+    let removeLogListener: (() => void) | undefined;
     async function boot() {
-      setBackendStatus("starting");
+      setAppStatus("starting");
       try {
-        await waitForBackendReady();
+        removeLogListener = await desktop.onLog((entry) => {
+          setLogs((current) => appendUniqueLog(current, entry));
+        });
+        if (cancelled) {
+          removeLogListener();
+          return;
+        }
+        const next = await desktop.getState();
         if (cancelled) {
           return;
         }
-        setBackendStatus("ready");
-        await refresh();
-        if (cancelled) {
-          return;
-        }
-        socket = await makeSocket();
-        if (cancelled) {
-          socket.close();
-          return;
-        }
-        socket.onmessage = (event) => {
-          const data = JSON.parse(event.data);
-          if (data.type === "log") {
-            const entry = data.payload as LogEntry;
-            setLogs((current) => appendUniqueLog(current, entry));
-          }
-        };
+        setState(normalizeState(next));
+        setLogs(uniqueLogs(next.logs));
+        setAppStatus("ready");
       } catch (err) {
         if (!cancelled) {
-          setBackendStatus("failed");
-          setError(err instanceof Error ? err.message : backendUnavailableMessage("failed"));
+          setAppStatus("failed");
+          setError(err instanceof Error ? err.message : runtimeUnavailableMessage("failed"));
         }
       }
     }
     void boot();
     return () => {
       cancelled = true;
-      socket?.close();
+      removeLogListener?.();
     };
   }, [bootAttempt]);
 
@@ -1032,6 +729,20 @@ function App() {
       setEnhancedDumpSource(state.enhanced.dumpSource);
     }
   }, [state?.enhanced.dumpSource]);
+
+  useEffect(() => {
+    let removeFileDropListener: (() => void) | undefined;
+    void desktop.onFileDrop((paths) => {
+      const nextSource = paths[0];
+      if (nextSource) {
+        setEnhancedDumpSource(nextSource);
+        setEnhancedValidation({ label: "Not run", ok: null, checkedAt: null });
+      }
+    }).then((remove) => {
+      removeFileDropListener = remove;
+    });
+    return () => removeFileDropListener?.();
+  }, []);
 
   useEffect(() => {
     if (state?.dxvk.settings) {
@@ -1071,7 +782,7 @@ function App() {
   const t7GamertagPending = Boolean(state?.t7 && (t7Gamertag !== state.t7.plainName || t7ColorCode !== state.t7.colorCode));
   const t7SecurityPending = Boolean(state?.t7 && (t7NetworkPasswordEnabled !== Boolean(state.t7.networkPassword) || t7Password !== state.t7.networkPassword));
   const dxvkDetectedThreads = detectedCompilerThreads();
-  const backendReady = backendStatus === "ready";
+  const appReady = appStatus === "ready";
   const appVersion = state?.appVersion ?? packageVersion;
   const latestError = logs
     .slice()
@@ -1090,22 +801,22 @@ function App() {
 
   function retryStartup() {
     setError(null);
-    setBackendStatus("starting");
+    setAppStatus("starting");
     setBootAttempt((current) => current + 1);
   }
 
-  if (!state && backendStatus !== "ready") {
+  if (!state && appStatus !== "ready") {
     return (
       <main className="app-shell">
         <TitleBar appVersion={appVersion} updateDisabled onCheckForUpdates={checkForUpdates} />
-        <StartupScreen status={backendStatus} onRetry={retryStartup} />
+        <StartupScreen status={appStatus} onRetry={retryStartup} />
       </main>
     );
   }
 
   return (
     <main className="app-shell">
-      <TitleBar appVersion={appVersion} updateDisabled={!backendReady || busy === "update-check"} onCheckForUpdates={checkForUpdates} />
+      <TitleBar appVersion={appVersion} updateDisabled={!appReady || busy === "update-check"} onCheckForUpdates={checkForUpdates} />
 
       <div className="directory-row">
         <label>
@@ -1114,22 +825,22 @@ function App() {
         </label>
         <button
           className="tool-button browse"
-          disabled={!backendReady}
+          disabled={!appReady}
           onClick={() => void openBrowseMenu("game")}
         >
           <FolderOpen size={17} />
           Browse...
         </button>
-        <button className="tool-button primary launch" disabled={!backendReady} onClick={() => runAction("launch", () => apiRequest<ApiResult>("/api/launch", { method: "POST" }))}>
+        <button className="tool-button primary launch" disabled={!appReady} onClick={() => runAction("launch", desktop.launchGame)}>
           <PlaySquare size={16} />
           Launch Game
         </button>
       </div>
 
-      {backendStatus !== "ready" && (
+      {appStatus !== "ready" && (
         <div className="error-strip">
           <AlertTriangle size={16} />
-          <span>{backendStatus === "starting" ? "PatchOpsIII is still getting ready." : backendUnavailableMessage("failed")}</span>
+          <span>{appStatus === "starting" ? "PatchOpsIII is still getting ready." : runtimeUnavailableMessage("failed")}</span>
         </div>
       )}
 
@@ -1220,7 +931,7 @@ function App() {
                     <button className="small-button" disabled={!selectedProfileInstallable || busy === "workshop-install"} onClick={installSelectedProfile}>
                       Install Selected Mod
                     </button>
-                    <button className="small-button" onClick={() => runAction("refresh", refresh)}>
+                    <button className="small-button" onClick={() => runAction("refresh", desktop.getState)}>
                       Refresh
                     </button>
                     <button className="small-button" onClick={applyProfile}>
@@ -1516,15 +1227,19 @@ function App() {
                           Install Source
                         </h3>
                         <div className="enhanced-source-body">
-                          <div className="enhanced-drop-zone" onDragOver={(event) => event.preventDefault()} onDrop={useDroppedEnhancedSource}>
+                          <div className="enhanced-drop-zone">
                             <strong>Drop DUMP.zip or extracted folder here</strong>
                             <span>or browse to the dump source manually</span>
                           </div>
                           <div className="enhanced-source-controls">
                             <div className="enhanced-source-actions">
-                              <button type="button" className="tool-button" onClick={() => void openBrowseMenu("dump")}>
+                              <button type="button" className="tool-button" onClick={() => void openBrowseMenu("dumpFolder")}>
                                 <FolderOpen size={16} />
-                                Browse
+                                Browse Folder
+                              </button>
+                              <button type="button" className="tool-button" onClick={() => void openBrowseMenu("dumpArchive")}>
+                                <Download size={16} />
+                                Browse ZIP
                               </button>
                               <button type="button" className="tool-button" disabled={!enhancedDumpSource.trim() || busy === "enhanced-validate"} onClick={validateEnhancedSource}>
                                 <CheckCircle2 size={16} />
@@ -1571,10 +1286,10 @@ function App() {
                           <span><strong>Sources:</strong> DUMP.zip or extracted folder</span>
                           <span><strong>Checks:</strong> files, read/write, version</span>
                         </div>
-                        <a className="tool-button enhanced-guide-button" href="https://youtu.be/rBZZTcSJ9_s?si=41p0r_Enten3h5AQ" target="_blank" rel="noreferrer">
+                        <button type="button" className="tool-button enhanced-guide-button" onClick={() => void desktop.openExternal("enhancedGuide")}>
                           <ExternalLink size={16} />
                           Open Dump Guide
-                        </a>
+                        </button>
                       </section>
                     </div>
 
@@ -1644,24 +1359,24 @@ function App() {
                   <Panel title="Graphics Settings" className="graphics-settings-panel">
                     <div className="graphics-settings-shell">
                       <div className="graphics-quick-grid">
-                        <SelectRow label="Preset" value="" options={state.presets.map((preset) => ({ value: preset, label: preset }))} placeholder="Choose preset" onChange={applyPreset} />
-                        <SelectRow label="Display Mode" value={String(state.graphics.displayMode)} options={displayModes.map((mode) => ({ value: String(mode.value), label: mode.label }))} onChange={(value) => setConfig("displayMode", Number(value))} />
-                        <TextRow label="Resolution" value={state.graphics.resolution} onCommit={(value) => setConfig("resolution", value)} />
-                        <NumberRow label="Refresh Rate" value={state.graphics.refreshRate} min={1} max={240} onCommit={(value) => setConfig("refreshRate", value)} />
+                        <SelectRow label="Preset" value="" options={state.presets.map((preset) => ({ value: preset, label: preset }))} placeholder="Choose preset" disabled={state.advanced.configReadonly} onChange={applyPreset} />
+                        <SelectRow label="Display Mode" value={String(state.graphics.displayMode)} options={displayModes.map((mode) => ({ value: String(mode.value), label: mode.label }))} disabled={state.advanced.configReadonly} onChange={(value) => setConfig("displayMode", Number(value))} />
+                        <TextRow label="Resolution" value={state.graphics.resolution} disabled={state.advanced.configReadonly} onCommit={(value) => setConfig("resolution", value)} />
+                        <NumberRow label="Refresh Rate" value={state.graphics.refreshRate} min={1} max={240} disabled={state.advanced.configReadonly} onCommit={(value) => setConfig("refreshRate", value)} />
                       </div>
 
                       <div className="graphics-section-grid">
                         <section className="graphics-settings-group">
                           <h3>Performance</h3>
-                          <NumberRow label="Max FPS" value={state.graphics.maxFps} min={0} max={1000} onCommit={(value) => setConfig("maxFps", value)} />
-                          <ToggleRow label="Vertical sync" checked={state.graphics.vsync} onChange={(value) => setConfig("vsync", value)} />
-                          <ToggleRow label="FPS counter" checked={state.graphics.drawFps} onChange={(value) => setConfig("drawFps", value)} />
+                          <NumberRow label="Max FPS" value={state.graphics.maxFps} min={0} max={1000} disabled={state.advanced.configReadonly} onCommit={(value) => setConfig("maxFps", value)} />
+                          <ToggleRow label="Vertical sync" checked={state.graphics.vsync} disabled={state.advanced.configReadonly} onChange={(value) => setConfig("vsync", value)} />
+                          <ToggleRow label="FPS counter" checked={state.graphics.drawFps} disabled={state.advanced.configReadonly} onChange={(value) => setConfig("drawFps", value)} />
                         </section>
 
                         <section className="graphics-settings-group">
                           <h3>Quality</h3>
-                          <SliderControl label="Render Resolution" value={state.graphics.renderResolution} min={50} max={200} onCommit={(value) => setConfig("renderResolution", value)} />
-                          <SliderControl label="Field of View" value={state.graphics.fov} min={65} max={120} onCommit={(value) => setConfig("fov", value)} />
+                          <SliderControl label="Render Resolution" value={state.graphics.renderResolution} min={50} max={200} disabled={state.advanced.configReadonly} onCommit={(value) => setConfig("renderResolution", value)} />
+                          <SliderControl label="Field of View" value={state.graphics.fov} min={65} max={120} disabled={state.advanced.configReadonly} onCommit={(value) => setConfig("fov", value)} />
                         </section>
                       </div>
 
@@ -1673,12 +1388,12 @@ function App() {
                           </span>
                         </summary>
                         <div className="graphics-advanced-grid">
-                          <ToggleRow label="Smooth framerate" checked={state.advanced.smoothFramerate} onChange={(value) => setConfig("smoothFramerate", value)} />
-                          <ToggleRow label="Expose hidden graphics" checked={state.advanced.unlockOptions} onChange={(value) => setConfig("unlockOptions", value)} />
-                          <ToggleRow label="Reduce CPU pressure" checked={state.advanced.reduceCpu} onChange={(value) => setConfig("reduceCpu", value)} />
-                          <NumberRow label="Frame latency" value={state.advanced.maxFrameLatency} min={0} max={4} onCommit={(value) => setConfig("maxFrameLatency", value)} />
-                          <ToggleRow label="Limit VRAM target" checked={state.advanced.vramLimited} onChange={(value) => setVramTarget(value)} />
-                          <NumberRow label="VRAM target %" value={state.advanced.vramTarget} min={75} max={100} disabled={!state.advanced.vramLimited} onCommit={(value) => setVramTarget(true, value)} />
+                          <ToggleRow label="Smooth framerate" checked={state.advanced.smoothFramerate} disabled={state.advanced.configReadonly} onChange={(value) => setConfig("smoothFramerate", value)} />
+                          <ToggleRow label="Expose hidden graphics" checked={state.advanced.unlockOptions} disabled={state.advanced.configReadonly} onChange={(value) => setConfig("unlockOptions", value)} />
+                          <ToggleRow label="Reduce CPU pressure" checked={state.advanced.reduceCpu} disabled={state.advanced.configReadonly} onChange={(value) => setConfig("reduceCpu", value)} />
+                          <NumberRow label="Frame latency" value={state.advanced.maxFrameLatency} min={0} max={4} disabled={state.advanced.configReadonly} onCommit={(value) => setConfig("maxFrameLatency", value)} />
+                          <ToggleRow label="Limit VRAM target" checked={state.advanced.vramLimited} disabled={state.advanced.configReadonly} onChange={(value) => setVramTarget(value)} />
+                          <NumberRow label="VRAM target %" value={state.advanced.vramTarget} min={75} max={100} disabled={state.advanced.configReadonly || !state.advanced.vramLimited} onCommit={(value) => setVramTarget(true, value)} />
                           <ToggleRow label="Lock config.ini" checked={state.advanced.configReadonly} onChange={setConfigReadonly} />
                         </div>
                       </details>
@@ -1701,7 +1416,7 @@ function App() {
                             <Trash2 size={15} />
                             Uninstall
                           </button>
-                          <button className="small-button" disabled={busy === "dxvk-config"} onClick={() => applyDxvkSettings()}>
+                          <button className="small-button" disabled={!state.dxvk.installed || busy === "dxvk-config"} onClick={() => applyDxvkSettings()}>
                             <Save size={15} />
                             Apply
                           </button>
@@ -1799,7 +1514,7 @@ function App() {
                       <ToolMetric label="Current" value={releaseChannelLabel} ok />
                       <ToolMetric label="Last checked" value="On demand" />
                     </div>
-                    <button type="button" className="small-button action-button" disabled={!backendReady || busy === "update-check"} onClick={checkForUpdates}>
+                    <button type="button" className="small-button action-button" disabled={!appReady || busy === "update-check"} onClick={checkForUpdates}>
                       <RefreshCw size={15} />
                       Check for Updates
                     </button>
@@ -1865,79 +1580,6 @@ function App() {
           </div>
         </Panel>
       </section>
-
-      {browseOpen && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setBrowseOpen(false)}>
-          <section className="browse-modal" role="dialog" aria-modal="true" aria-labelledby="browse-title" onMouseDown={(event) => event.stopPropagation()}>
-            <header className="browse-head">
-              <div>
-                <h2 id="browse-title">{browseMode === "game" ? "Select Game Directory" : "Select Dump Folder"}</h2>
-                <p>{browseMode === "game" ? "Choose the folder that contains BlackOps3.exe or BlackOpsIII.exe." : "Choose an extracted dump folder, or type a DUMP.zip path above."}</p>
-              </div>
-              <button className="icon-action" aria-label="Close browser" onClick={() => setBrowseOpen(false)}>
-                <X size={18} />
-              </button>
-            </header>
-
-            <div className="browse-path-row">
-              <input value={browseInput} onChange={(event) => setBrowseInput(event.target.value)} onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  void loadBrowse(browseInput);
-                }
-              }} />
-              <button className="small-button" onClick={() => loadBrowse(browseInput)}>Go</button>
-            </div>
-
-            {browseError && (
-              <div className="browse-error">
-                <AlertTriangle size={15} />
-                {browseError}
-              </div>
-            )}
-
-            <div className="browse-grid">
-              <aside className="browse-shortcuts">
-                <h3>Locations</h3>
-                {[...(browseData?.roots ?? []), ...(browseData?.shortcuts ?? [])].map((item) => (
-                  <button key={`${item.label}-${item.path}`} onClick={() => loadBrowse(item.path)}>
-                    {item.label}
-                  </button>
-                ))}
-              </aside>
-
-              <div className="browse-list">
-                <div className="browse-current">
-                  <span>{browseData?.path || (browseError ? "Folder browser unavailable" : "Loading...")}</span>
-                  {browseData?.hasGameExecutable && <strong>BO3 detected</strong>}
-                </div>
-                <div className="folder-list">
-                  {browseData?.parent && (
-                    <button className="folder-row" onClick={() => loadBrowse(browseData.parent ?? undefined)}>
-                      <FolderOpen size={17} />
-                      ..
-                    </button>
-                  )}
-                  {browseData?.entries.map((entry) => (
-                    <button key={entry.path} className="folder-row" onClick={() => loadBrowse(entry.path)}>
-                      <FolderOpen size={17} />
-                      <span>{entry.name}</span>
-                      {entry.hasGameExecutable && <strong>BO3</strong>}
-                    </button>
-                  ))}
-                  {browseData && browseData.entries.length === 0 && <p className="empty-folder">No folders found.</p>}
-                </div>
-              </div>
-            </div>
-
-            <footer className="browse-actions">
-              <button className="tool-button" onClick={() => setBrowseOpen(false)}>Cancel</button>
-              <button className="tool-button primary" disabled={browseMode === "game" && !browseData?.hasGameExecutable} onClick={() => browseData && selectBrowsePath(browseData.path)}>
-                {browseMode === "game" ? "Use Selected Folder" : "Use Dump Folder"}
-              </button>
-            </footer>
-          </section>
-        </div>
-      )}
 
       {depotPrompt && (
         <div className="modal-backdrop depot-backdrop" role="presentation">
@@ -2064,18 +1706,20 @@ function SelectRow({
   value,
   options,
   placeholder,
+  disabled,
   onChange
 }: {
   label: string;
   value: string;
   options: Array<{ value: string; label: string }>;
   placeholder?: string;
+  disabled?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
     <div className="setting-row form-row">
       <span>{label}</span>
-      <select value={value} onChange={(event) => event.target.value && onChange(event.target.value)}>
+      <select value={value} disabled={disabled} onChange={(event) => event.target.value && onChange(event.target.value)}>
         {placeholder && <option value="">{placeholder}</option>}
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -2087,13 +1731,13 @@ function SelectRow({
   );
 }
 
-function TextRow({ label, value, onCommit }: { label: string; value: string; onCommit: (value: string) => void }) {
+function TextRow({ label, value, disabled, onCommit }: { label: string; value: string; disabled?: boolean; onCommit: (value: string) => void }) {
   const [localValue, setLocalValue] = useState(value);
   useEffect(() => setLocalValue(value), [value]);
   return (
     <div className="setting-row form-row">
       <span>{label}</span>
-      <input value={localValue} onChange={(event) => setLocalValue(event.target.value)} onBlur={() => onCommit(localValue)} onKeyDown={(event) => {
+      <input value={localValue} disabled={disabled} onChange={(event) => setLocalValue(event.target.value)} onBlur={() => onCommit(localValue)} onKeyDown={(event) => {
         if (event.key === "Enter") {
           onCommit(localValue);
         }
@@ -2138,13 +1782,13 @@ function NumberRow({
   );
 }
 
-function SliderControl({ label, value, min, max, onCommit }: { label: string; value: number; min: number; max: number; onCommit: (value: number) => void }) {
+function SliderControl({ label, value, min, max, disabled, onCommit }: { label: string; value: number; min: number; max: number; disabled?: boolean; onCommit: (value: number) => void }) {
   const [localValue, setLocalValue] = useState(value);
   useEffect(() => setLocalValue(value), [value]);
   return (
     <div className="setting-row slider-row">
       <span>{label}</span>
-      <input type="range" min={min} max={max} value={localValue} onChange={(event) => setLocalValue(Number(event.target.value))} onMouseUp={() => onCommit(localValue)} onTouchEnd={() => onCommit(localValue)} />
+      <input type="range" min={min} max={max} disabled={disabled} value={localValue} onChange={(event) => setLocalValue(Number(event.target.value))} onMouseUp={() => onCommit(localValue)} onTouchEnd={() => onCommit(localValue)} />
       <strong>{localValue}</strong>
     </div>
   );

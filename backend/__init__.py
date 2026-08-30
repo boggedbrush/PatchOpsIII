@@ -1,1 +1,0 @@
-"""PatchOpsIII headless backend package."""

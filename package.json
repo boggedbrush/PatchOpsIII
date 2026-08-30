@@ -1,111 +1,36 @@
 {
-  "name": "patchopsiii-electron",
-  "version": "v1.3.0-beta3",
-  "description": "Electron control center for Call of Duty: Black Ops III maintenance, mod setup, and performance tuning.",
+  "name": "patchopsiii",
+  "version": "1.3.0-beta4",
+  "description": "Tauri control center for Call of Duty: Black Ops III maintenance, mod setup, and performance tuning.",
   "author": "boggedbrush",
   "private": true,
   "type": "module",
-  "main": "dist/main/main.js",
   "scripts": {
-    "dev": "bun scripts/dev-server.ts",
-    "dev:desktop": "bun run build:main && bun scripts/dev.ts",
-    "dev:cleanup": "bun scripts/dev-cleanup.ts",
-    "build": "bun run typecheck && bun run build:main && vite build",
-    "build:main": "bun scripts/clean-main.ts && tsc -p tsconfig.electron.json",
-    "dist": "bun run build && bun x electron-builder@26.8.1",
-    "build:backend:linux": "bun scripts/check-backend-build.ts linux && .venv/bin/python -m PyInstaller --onefile --name patchops-backend --distpath dist/backend --workpath build/pyinstaller --specpath build/pyinstaller --hidden-import uvicorn.logging --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.protocols.websockets --hidden-import uvicorn.protocols.websockets.auto --hidden-import uvicorn.lifespan --hidden-import uvicorn.lifespan.on backend/api.py",
-    "build:backend:win": "bun scripts/check-backend-build.ts win && .venv/Scripts/python.exe -m PyInstaller --onefile --name patchops-backend --distpath dist/backend --workpath build/pyinstaller --specpath build/pyinstaller --hidden-import uvicorn.logging --hidden-import uvicorn.loops --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols --hidden-import uvicorn.protocols.http --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.protocols.websockets --hidden-import uvicorn.protocols.websockets.auto --hidden-import uvicorn.lifespan --hidden-import uvicorn.lifespan.on backend/api.py",
-    "dist:linux": "bun run build && bun run build:backend:linux && bun x electron-builder@26.8.1 --linux AppImage --publish never",
-    "dist:win": "bun run build && bun run build:backend:win && bun x electron-builder@26.8.1 --win --publish never --config.win.signAndEditExecutable=false",
+    "dev": "tauri dev",
+    "dev:renderer": "vite --host 127.0.0.1 --port 5173 --strictPort",
+    "start": "tauri dev",
+    "build": "bun run build:renderer",
+    "build:renderer": "bun run typecheck && vite build",
+    "dist": "tauri build",
+    "dist:linux": "tauri build --bundles appimage,deb",
+    "dist:win": "tauri build --bundles msi",
+    "test": "bun run test:renderer && bun run test:rust",
+    "test:renderer": "bun test src/renderer",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
     "typecheck": "tsc --noEmit",
-    "start": "bun run build:main && electron ."
+    "verify": "bun run typecheck && bun run test && bun run verify:release",
+    "verify:release": "node scripts/verify-release-metadata.mjs"
   },
-  "build": {
-    "appId": "com.patchopsiii.app",
-    "productName": "PatchOpsIII",
-    "directories": {
-      "output": "dist/packages"
-    },
-    "electronLanguages": [
-      "en-US"
-    ],
-    "msiProjectCreated": "scripts/brand-msi.cjs",
-    "files": [
-      "dist/main/**",
-      "dist/renderer/**",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "dist/backend",
-        "to": "backend-bin"
-      },
-      {
-        "from": "presets.json",
-        "to": "presets.json"
-      },
-      {
-        "from": "PatchOpsIII.ico",
-        "to": "PatchOpsIII.ico"
-      },
-      {
-        "from": "website/assets/img/icon-512.png",
-        "to": "icon-512.png"
-      }
-    ],
-    "win": {
-      "target": [
-        {
-          "target": "msi",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "PatchOpsIII.ico"
-    },
-    "msi": {
-      "artifactName": "PatchOpsIII.msi",
-      "oneClick": false,
-      "perMachine": true,
-      "runAfterFinish": false
-    },
-    "nsis": {
-      "artifactName": "PatchOpsIII.exe",
-      "oneClick": false,
-      "perMachine": false,
-      "runAfterFinish": false
-    },
-    "linux": {
-      "target": [
-        {
-          "target": "AppImage",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "website/assets/img/icon-512.png",
-      "category": "Utility",
-      "artifactName": "PatchOpsIII.AppImage"
-    }
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0"
   },
-  "dependencies": {},
   "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
     "@tailwindcss/vite": "^4.0.0",
     "@vitejs/plugin-react": "^5.0.0",
     "@types/bun": "^1.1.0",
-    "@types/node": "^22.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
-    "electron": "^31.0.0",
-    "electron-builder": "^26.8.1",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

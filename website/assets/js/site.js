@@ -243,6 +243,12 @@ function setHref(selector, href) {
   });
 }
 
+function setHidden(selector, hidden) {
+  document.querySelectorAll(selector).forEach((el) => {
+    el.hidden = hidden;
+  });
+}
+
 function normalizeHeaderTitle(text) {
   return safeText(text).replace(/[^\w\s]/g, "").trim().toLowerCase();
 }
@@ -342,10 +348,13 @@ function mapRelease(repoSlug, rel) {
     highlights: extractHighlights(body),
     downloads: {
       windows: {
-        url: pickAssetUrl(assets, "PatchOpsIII.exe", [".exe"]) || `${fallbackBase}/PatchOpsIII.exe`,
+        url: pickAssetUrl(assets, "PatchOpsIII.msi", [".msi", ".exe"]) || url,
       },
       linux: {
         url: pickAssetUrl(assets, "PatchOpsIII.AppImage", [".AppImage"]) || `${fallbackBase}/PatchOpsIII.AppImage`,
+      },
+      deb: {
+        url: pickAssetUrl(assets, "PatchOpsIII.deb", [".deb"]),
       },
     },
   };
@@ -494,11 +503,14 @@ function applyReleaseData(mappedLatest) {
   const url = safeText(mappedLatest?.url);
   const winUrl = safeText(mappedLatest?.downloads?.windows?.url);
   const linuxUrl = safeText(mappedLatest?.downloads?.linux?.url);
+  const debUrl = safeText(mappedLatest?.downloads?.deb?.url);
 
   if (tag) setText("[data-latest-version]", tag);
   if (url) setHref("[data-latest-release-url]", url);
   if (winUrl) setHref("[data-download-windows]", winUrl);
   if (linuxUrl) setHref("[data-download-linux]", linuxUrl);
+  setHidden("[data-download-deb]", !debUrl);
+  if (debUrl) setHref("[data-download-deb]", debUrl);
 }
 
 function applyChangelog(mappedReleases, currentStableTag) {

@@ -1,0 +1,1784 @@
+{
+  "schemaVersion": 1,
+  "revision": "working-tree",
+  "baseRevision": "f74c87bbf885e3692f77478b2ff32e89f82f0c73",
+  "optimizationSnapshotSourceDigestSha256": "33885bcc9aa018674a11d1b1f0c7057c9d91b6d720fedcec1eeaea99bd4ecf0a",
+  "postParitySourceDigestSha256": "2e96f23ecee5afa0b9518f6084b100a644c5cd89ea910d834f5f8ada333a93fd",
+  "host": {
+    "kernel": "Linux cachyos 7.1.8-1-cachyos-deckify x86_64",
+    "rustc": "1.98.0 (88d9e12ae 2026-08-18)",
+    "cargo": "1.98.0 (797e8a9bc 2026-08-05)",
+    "bun": "1.4.0"
+  },
+  "methods": {
+    "optimizationSnapshotSourceDigest": "SHA-256 of the sorted sha256sum manifest for src-tauri/src, src/renderer, benchmark inputs and non-optimization benchmark records, Cargo/build/Tauri manifests, package.json, bun.lock, and presets.json; optimization-*.json outputs excluded. This historical digest identifies the source used to select Candidate A.",
+    "postParitySourceDigest": "SHA-256 of the sorted sha256sum manifest for application and Tauri source/config/capabilities, Cargo/Bun/frontend metadata, workflows and packaging scripts/artwork, release documentation, website/wiki source, and benchmark inputs/non-optimization records; optimization-*.json outputs excluded. This digest identifies the later fully accepted source and evidence refresh.",
+    "postParitySourceDigestCommand": "find .github/workflows 'Release Notes' benchmarks bo3-enhanced-proton installer scripts src src-tauri/src src-tauri/capabilities src-tauri/gen website wiki README.md PatchOpsIII.ico bun.lock package.json presets.json tsconfig.json vite.config.ts src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/build.rs src-tauri/tauri.conf.json -type f ! -name 'optimization-*.json' -print0 | sort -z | xargs -0 sha256sum | sha256sum",
+    "cleanBuild": "Fresh isolated CARGO_TARGET_DIR; downloaded crate and system-library caches retained; three serialized runs; seconds are shell monotonic wall time.",
+    "noChangeBuild": "Five serialized cargo build --release --locked invocations after one unrecorded normalization build; milliseconds are Bun monotonic wall time. This preserves the existing release-no-change methodology and is not a one-source-file rebuild.",
+    "runtime": "Pre-extracted AppImage; one unrecorded prime; per-run isolated HOME/XDG directories and fixed Steam/settings fixture; five warm runs, three payload-cold runs, three 30-second CPU samples; native WM_DELETE_WINDOW shutdown.",
+    "operations": "Optimized Rust test helper; fixed 256 MiB executable fixture; payload-cold advice before cold hashes; fresh deterministic 4 MiB Deflate ZIP and tar.gz extraction destinations; prepared offline T7, DXVK, Enhanced, and Linux compatibility transaction-core fixtures; validation, restoration assertions, and cleanup outside timed regions.",
+    "appDirHostAdjustment": "For the profile-selection snapshot, the custom local sysroot's AppImage bundler omitted four WebKit subprocess/injected-bundle files. The same four required files were copied into every measured AppDir; MiniBrowser and jsc were not copied. Compressed AppImage bytes are unmodified.",
+    "runtimePairing": "Long-running host state shifted WebKit memory and renderer timing materially. Profile selection compares its final run to a baseline run primed and recorded immediately afterward in the same lower-memory regime. Earlier raw runs remain below as drift evidence."
+  },
+  "baseline": {
+    "profile": {
+      "optLevel": 3,
+      "lto": false,
+      "codegenUnits": 16,
+      "strip": "none",
+      "panic": "unwind"
+    },
+    "build": {
+      "cleanSeconds": [87.946, 78.206, 77.394],
+      "cleanMedianSeconds": 78.206,
+      "noChangeMilliseconds": [233.467241, 229.71776100000002, 229.60635800000006, 229.066685, 216.65555099999995],
+      "noChangeMedianMilliseconds": 229.60635800000006
+    },
+    "artifacts": {
+      "nativeBinaryBytes": 25676192,
+      "nativeBinarySha256": "f13b42930066fa82fd332b1c2ab2d2b0b264b237318d2d6d26ea006aca56d0a5",
+      "strippedCopyBytes": 17715760,
+      "strippedCopySha256": "3fa3a55461622f6919449280fdd3624130d95f5b6a3476dc4e508dfe4040f091",
+      "bundledBinaryBytes": 25833032,
+      "appImageBytes": 109865464,
+      "appImageSha256": "8bfddd672bc967df227ea3cd6b53a2dbafa272e9fa8e21f35a232d613df90cf1",
+      "appDirBytes": 327547383,
+      "usrBinBytes": 25865448,
+      "usrLibBytes": 301264942,
+      "rawDebFeasibilityBytes": 7405484,
+      "rawDebInstalledKiB": 25139
+    },
+    "sectionsBytes": {
+      "gccExceptTable": 1204156,
+      "rodata": 2353824,
+      "ehFrameHdr": 194388,
+      "ehFrame": 1370272,
+      "text": 11322790,
+      "data": 7152,
+      "bss": 15520,
+      "symtab": 1413672,
+      "strtab": 6546605
+    },
+    "runtimeInitial": {
+      "coreReadyMs": [173.517859, 175.47353999999905, 172.96940599998925, 166.70845299999928, 165.65178999998898],
+      "interactiveMs": [936.647526, 941.748520000001, 941.0288299999957, 929.4451600000029, 941.5210559999978],
+      "payloadColdInteractiveMs": [1143.642789999998, 1140.4117610000103, 1137.260764000006],
+      "idlePssKiB": [301071, 301473, 300056, 301894, 300360],
+      "peakPssKiB": [303359, 303355, 302496, 304242, 302548],
+      "idleRssKiB": [523308, 523980, 522544, 524248, 522756],
+      "peakRssKiB": [525596, 525880, 524984, 526596, 524944],
+      "idleCpuPercent": [0.06665794960440112, 0.033328221490714946, 0.09998414449770153],
+      "processCount": [3, 3, 3, 3, 3],
+      "shutdownMs": [31.99148000000423, 32.25222599999688, 31.993630000011763, 32.15417300000263, 26.958622999998624]
+    },
+    "runtimePairedForCandidates": {
+      "coreReadyMs": [162.04717, 155.790359000006, 165.8183250000002, 156.64429100000416, 166.4367540000094],
+      "interactiveMs": [923.3192379999999, 920.2738370000006, 933.9857040000061, 917.1458149999962, 921.6237910000054],
+      "payloadColdInteractiveMs": [1129.2798620000103, 1106.3335680000018, 1125.1125549999997],
+      "idlePssKiB": [322703, 321810, 322011, 321467, 322243],
+      "peakPssKiB": [324227, 324142, 324627, 323971, 324163],
+      "idleRssKiB": [506480, 505468, 505844, 505520, 506268],
+      "peakRssKiB": [508004, 507812, 508460, 508128, 508188],
+      "idleCpuPercent": [0.03332887187277439, 0.03332901923174977, 0.033328929180862554],
+      "processCount": [3, 3, 3, 3, 3],
+      "shutdownMs": [36.99593900000036, 37.16552199999569, 32.983110000001034, 37.10493000000133, 31.976537999988068],
+      "medians": {
+        "coreReadyMs": 162.04717,
+        "interactiveMs": 921.6237910000054,
+        "payloadColdInteractiveMs": 1125.1125549999997,
+        "idlePssKiB": 322011,
+        "peakPssKiB": 324163,
+        "idleRssKiB": 505844,
+        "peakRssKiB": 508128,
+        "idleCpuPercent": 0.033328929180862554,
+        "processCount": 3,
+        "shutdownMs": 36.99593900000036
+      }
+    },
+    "runtimePairedForFinal": {
+      "coreReadyMs": [150.69933, 149.4468650000017, 154.6450760000007, 154.85826200000884, 149.91681799999787],
+      "interactiveMs": [422.672032, 419.2620539999989, 420.9672949999949, 421.05119100000593, 419.64275199999975],
+      "payloadColdInteractiveMs": [611.7151659999945, 605.3849130000017, 602.8548100000044],
+      "idlePssKiB": [275422, 275193, 278343, 278230, 279315],
+      "peakPssKiB": [278614, 279257, 279687, 280158, 279823],
+      "idleRssKiB": [462520, 462408, 465840, 465640, 466780],
+      "peakRssKiB": [464944, 465700, 467164, 467560, 467288],
+      "idleCpuPercent": [0.09998843898005969, 0.03332939717374435, 0.06665666849078884],
+      "processCount": [3, 3, 3, 3, 3],
+      "shutdownMs": [26.96673600000213, 26.926525000002584, 26.84492400000454, 26.971507000009296, 27.10765900000115],
+      "medians": {
+        "coreReadyMs": 150.69933,
+        "interactiveMs": 420.9672949999949,
+        "payloadColdInteractiveMs": 605.3849130000017,
+        "idlePssKiB": 278230,
+        "peakPssKiB": 279687,
+        "idleRssKiB": 465640,
+        "peakRssKiB": 467164,
+        "idleCpuPercent": 0.06665666849078884,
+        "processCount": 3,
+        "shutdownMs": 26.96673600000213
+      }
+    },
+    "operations": {
+      "samplesMs": {
+        "componentStatusWarm": [0.036729571, 0.036915536, 0.036544488, 0.036506617, 0.037438867, 0.036930036, 0.038692704],
+        "configRead": [0.004273081, 0.004800273, 0.004216479, 0.004182029, 0.004181129, 0.004182319, 0.004938815],
+        "configWrite": [0.039521, 0.027001, 0.024159999999999997, 0.022881, 0.027601, 0.02282, 0.022699999999999998, 0.022851, 0.023180000000000003, 0.023191, 0.022690000000000002, 0.022461000000000002, 0.02291, 0.023051, 0.02265, 0.022521, 0.022690000000000002, 0.023131, 0.02293, 0.022501, 0.022690000000000002],
+        "executableSha256Cold": [144.228461, 143.76456000000002, 143.53849499999998, 144.80942299999998, 143.411273],
+        "executableSha256Warm": [143.37201199999998, 144.29868100000002, 142.841901, 142.72763799999998, 143.29650999999998],
+        "gameDetectionCold": [0.00539, 0.004019999999999999, 0.00381, 0.00377, 0.00382, 0.0038500000000000006, 0.00418, 0.00386, 0.00386, 0.00376, 0.00412, 0.0038, 0.00401, 0.003791, 0.00386],
+        "gameDetectionWarm": [0.003744149, 0.00373149, 0.004324412, 0.003841722, 0.003969354, 0.004159099, 0.003740859],
+        "steamDetectionCold": [0.03171, 0.019991, 0.01996, 0.016311, 0.01616, 0.016291, 0.01619, 0.01645, 0.016381, 0.01634, 0.016521, 0.01633, 0.01638, 0.016321, 0.01621],
+        "steamDetectionWarm": [0.014968329, 0.014735934, 0.014751164, 0.014755644, 0.014747694, 0.014775844, 0.014777805],
+        "tarGzExtract": [2.5478039999999997, 2.4503820000000003, 2.446993, 2.4515819999999997, 2.445502, 2.456583, 2.7699890000000003],
+        "zipDeflateExtract": [2.508073, 2.223967, 2.205937, 2.2121779999999998, 2.2120569999999997, 2.188316, 2.192347]
+      },
+      "mediansMs": {
+        "componentStatusWarm": 0.036915536,
+        "configRead": 0.004216479,
+        "configWrite": 0.022881,
+        "executableSha256Cold": 143.76456000000002,
+        "executableSha256Warm": 143.29650999999998,
+        "gameDetectionCold": 0.00386,
+        "gameDetectionWarm": 0.003841722,
+        "steamDetectionCold": 0.01634,
+        "steamDetectionWarm": 0.014755644,
+        "tarGzExtract": 2.4515819999999997,
+        "zipDeflateExtract": 2.2120569999999997
+      }
+    }
+  },
+  "candidates": {
+    "A": {
+      "profile": { "lto": "thin", "codegenUnits": 1, "strip": "symbols", "optLevel": 3 },
+      "cleanSeconds": [138.350, 139.183, 139.536],
+      "cleanMedianSeconds": 139.183,
+      "noChangeMedianMillisecondsAfterDependencyNormalization": 212.623027,
+      "nativeBinaryBytes": 15069456,
+      "nativeBinarySha256": "5ebec155f601762557e0d71dbbb227b67866d0e87d4b88a74c232e8bb4c57d22",
+      "bundledBinaryBytes": 14922720,
+      "appImageBytes": 108464632,
+      "appImageSha256": "7d681b4c62c95f0862e2fc48fe67238a7888f034ddaef9b542492b1e57d70246",
+      "appDirBytes": 316680695,
+      "runtime": {
+        "coreReadyMs": [174.436851, 162.22088400000212, 160.8349670000025, 160.468664, 170.41785200001323],
+        "interactiveMs": [929.449811, 926.1459800000011, 919.813764999999, 920.0820380000077, 924.9666730000026],
+        "payloadColdInteractiveMs": [1118.3024149999983, 1109.479137000002, 1112.2287139999971],
+        "idlePssKiB": [323075, 319046, 320268, 320691, 322197],
+        "peakPssKiB": [324630, 324818, 323765, 322375, 324333],
+        "idleRssKiB": [504736, 502392, 504440, 504976, 506100],
+        "peakRssKiB": [505808, 508164, 507712, 506660, 508464],
+        "idleCpuPercent": [0.09998699981026908, 0.09997992894594748, 0.03332882973410996],
+        "processCount": [3, 3, 3, 3, 3],
+        "shutdownMs": [26.917034999998577, 31.883943000008003, 31.9556339999981, 32.00145500000508, 32.02159499999834]
+      },
+      "operationMediansMs": {
+        "componentStatusWarm": 0.036598662,
+        "configRead": 0.004153091,
+        "configWrite": 0.022271,
+        "executableSha256Cold": 142.577977,
+        "executableSha256Warm": 141.86188099999998,
+        "gameDetectionCold": 0.00377,
+        "gameDetectionWarm": 0.003922886,
+        "steamDetectionCold": 0.01464,
+        "steamDetectionWarm": 0.014449657,
+        "tarGzExtract": 2.4014029999999997,
+        "zipDeflateExtract": 2.180908
+      },
+      "decision": "selected profile; all paired runtime and operation gates passed"
+    },
+    "B": {
+      "profile": { "lto": true, "codegenUnits": 1, "strip": "symbols", "optLevel": 3 },
+      "cleanSeconds": [165.358, 164.743, 164.793],
+      "cleanMedianSeconds": 164.793,
+      "noChangeMilliseconds": [216.58017600000002, 210.664312, 210.437887, 210.1641410000001, 208.67669000000012],
+      "noChangeMedianMilliseconds": 210.437887,
+      "nativeBinaryBytes": 14090768,
+      "nativeBinarySha256": "f45c0a933845b90466b21c6c37c6463a12a67eb04aeac590bf66a682a6546e1b",
+      "bundledBinaryBytes": 14035296,
+      "appImageBytes": 108403192,
+      "appImageSha256": "8c6565e972d46870aa843fafef4f9e77a22c67fbb56089505510dec850c8e1d8",
+      "appDirBytes": 315791815,
+      "runtime": {
+        "coreReadyMs": [166.54913200000001, 160.53043899999466, 165.95093399999314, 161.3234220000013, 161.19476899999427],
+        "interactiveMs": [922.3805, 920.4557269999932, 937.9973150000005, 918.823000000004, 920.7016799999983],
+        "payloadColdInteractiveMs": [1115.8363329999993, 1106.1494519999978, 1104.8540030000004],
+        "idlePssKiB": [330803, 329751, 329914, 329873, 330588],
+        "peakPssKiB": [332575, 330815, 332746, 332233, 332148],
+        "idleRssKiB": [524316, 523456, 523748, 523672, 524284],
+        "peakRssKiB": [526088, 524520, 526788, 526032, 525844],
+        "idleCpuPercent": [0.0666586231305942, 0.09998649318125462, 0.06665767663247422],
+        "processCount": [3, 3, 3, 3, 3],
+        "shutdownMs": [36.89005000000179, 37.108462999996846, 31.944180999998935, 32.005913000000874, 32.41551099999924]
+      },
+      "operationMediansMs": {
+        "componentStatusWarm": 0.035872895,
+        "configRead": 0.0041483,
+        "configWrite": 0.02198,
+        "executableSha256Cold": 142.356718,
+        "executableSha256Warm": 142.11871200000002,
+        "gameDetectionCold": 0.00379,
+        "gameDetectionWarm": 0.003893324,
+        "steamDetectionCold": 0.014780999999999999,
+        "steamDetectionWarm": 0.014539644,
+        "tarGzExtract": 2.404602,
+        "zipDeflateExtract": 2.184797
+      },
+      "decision": "rejected: paired idle PSS and RSS were 2.5% and 3.5% above baseline, and the AppImage was only 61440 bytes smaller than A"
+    },
+    "C": {
+      "profile": { "lto": "thin", "codegenUnits": 1, "strip": "symbols", "optLevel": "s" },
+      "precedingProfile": "A; B failed the memory gate",
+      "cleanSeconds": [115.346, 114.681, 115.294],
+      "cleanMedianSeconds": 115.294,
+      "noChangeMilliseconds": [218.98784, 212.20556599999998, 211.93814100000003, 210.0236, 210.51282100000003],
+      "noChangeMedianMilliseconds": 211.93814100000003,
+      "nativeBinaryBytes": 12845584,
+      "nativeBinarySha256": "7843754f722ca23ec5e04a7dbf321ffebbd933f198e91a3993daa0cbedd36d48",
+      "bundledBinaryBytes": 13012840,
+      "appImageBytes": 107510264,
+      "appImageSha256": "25709deef0024891637347c0fc8028d641aadbeee8eb16203a1699b580aa4da6",
+      "appDirBytes": 314772031,
+      "runtime": {
+        "coreReadyMs": [161.023456, 166.22790800000075, 173.97751299999072, 165.63608899999235, 160.64907400000084],
+        "interactiveMs": [1409.801876, 1408.311941, 1415.3405859999912, 1411.7654889999976, 1406.1739050000033],
+        "payloadColdInteractiveMs": [1611.579641999997, 1602.9723209999938, 1594.6447169999883],
+        "idlePssKiB": [327791, 328004, 330237, 329833, 328325],
+        "peakPssKiB": [330563, 328916, 331701, 330753, 328605],
+        "idleRssKiB": [522592, 522648, 524900, 524192, 522972],
+        "peakRssKiB": [525488, 523560, 526364, 525112, 523252],
+        "idleCpuPercent": [0, 0.033326231826597656, 0.06665770522033032],
+        "processCount": [3, 3, 3, 3, 3],
+        "shutdownMs": [37.29664299999422, 39.28385399999388, 32.15545900000143, 26.94455700000981, 37.136467000003904]
+      },
+      "operationMediansMs": {
+        "componentStatusWarm": 0.037064724,
+        "configRead": 0.004190702999999999,
+        "configWrite": 0.02234,
+        "executableSha256Cold": 619.614288,
+        "executableSha256Warm": 618.625163,
+        "gameDetectionCold": 0.00386,
+        "gameDetectionWarm": 0.0038455560000000004,
+        "steamDetectionCold": 0.01508,
+        "steamDetectionWarm": 0.014903635,
+        "tarGzExtract": 2.465598,
+        "zipDeflateExtract": 2.196864
+      },
+      "decision": "rejected: warm interactive startup regressed 53.0%, payload-cold startup regressed 42.5%, and 256 MiB hashing regressed more than 330%"
+    }
+  },
+  "final": {
+    "profile": { "lto": "thin", "codegenUnits": 1, "strip": "symbols", "optLevel": 3, "panic": "unwind" },
+    "dependencyChange": "Removed the unused direct zstd declaration; retained zip deflate, bzip2, and zstd features.",
+    "build": {
+      "cleanSeconds": [137.877, 137.439, 135.304],
+      "cleanMedianSeconds": 137.439,
+      "noChangeMilliseconds": [215.471958, 212.623027, 210.58687500000002, 211.17464799999993, 212.72061900000006],
+      "noChangeMedianMilliseconds": 212.623027
+    },
+    "artifacts": {
+      "nativeBinaryBytes": 14790288,
+      "nativeBinarySha256": "789c131150f83113c807417f13a987ae2ee20a99810a2d6e8e54cc0fe907e592",
+      "bundledBinaryBytes": 14691912,
+      "appImageBytes": 108362232,
+      "appImageSha256": "148ec6b71448da8ff09b26ea5f58761e89b8e492103b3ee0ee05e6fa800f0459",
+      "appDirBytes": 316406263,
+      "usrBinBytes": 14724328,
+      "usrLibBytes": 301264942,
+      "rawTauriDebBytes": 5695022,
+      "rawTauriDebSha256": "09e23bbc1c2800431bc3b66d858bf8c8a44dd6dbf702cb09dfde19325c8e4794",
+      "rawTauriDebVersion": "1.3.0-beta4",
+      "releaseDebVersion": "1.3.0~beta4",
+      "debInstalledKiB": 14364,
+      "debDepends": ["libbz2-1.0", "libwebkit2gtk-4.1-0", "libgtk-3-0"],
+      "debHashLimitation": "The checked-in workflow repacks the beta control version and computes the release hash. This host lacks dpkg-deb, so the exact local hash is for the structurally inspected pre-canonicalization Tauri package and will differ from the CI release package.",
+      "windowsCrossLinkedExeBytes": 15046656,
+      "windowsCrossLinkedExeSha256": "d0dd7c097b164f99068bd8c2a6d385aeb1c1f61ed68f6cacb91c1b77c8ce6eb5"
+    },
+    "sectionsBytes": {
+      "rodata": 2290341,
+      "gccExceptTable": 529728,
+      "ehFrameHdr": 106140,
+      "ehFrame": 826280,
+      "text": 10064022,
+      "dataRelRo": 362144,
+      "data": 7112,
+      "bss": 15612,
+      "symtab": 0,
+      "strtab": 0
+    },
+    "runtime": {
+      "coreReadyMs": [160.459855, 148.16083900000012, 154.65879800000403, 159.66678499999398, 154.37512399999832],
+      "interactiveMs": [432.146515, 416.65981699999975, 423.0615170000019, 431.2557550000056, 424.3330100000021],
+      "payloadColdInteractiveMs": [603.3490820000006, 604.5508869999903, 605.0855900000024],
+      "idlePssKiB": [278863, 274398, 277104, 277127, 277856],
+      "peakPssKiB": [279323, 279322, 278424, 279207, 279132],
+      "idleRssKiB": [466460, 461736, 464352, 464396, 465736],
+      "peakRssKiB": [467040, 466660, 465428, 466348, 472752],
+      "idleCpuPercent": [0.03332934779992461, 0.06665873701885748, 0.06665885010991919],
+      "processCount": [3, 3, 3, 3, 3],
+      "shutdownMs": [26.933524000000034, 27.41918400000577, 24.643597000002046, 25.08760600000096, 26.97136500000488],
+      "medians": {
+        "coreReadyMs": 154.65879800000403,
+        "interactiveMs": 424.3330100000021,
+        "payloadColdInteractiveMs": 604.5508869999903,
+        "idlePssKiB": 277127,
+        "peakPssKiB": 279207,
+        "idleRssKiB": 464396,
+        "peakRssKiB": 466660,
+        "idleCpuPercent": 0.06665873701885748,
+        "processCount": 3,
+        "shutdownMs": 26.933524000000034
+      }
+    },
+    "operations": {
+      "samplesMs": {
+        "componentStatusWarm": [0.035162779, 0.035701431, 0.036044557, 0.035380404, 0.036541718, 0.036071798, 0.035499907],
+        "configRead": [0.004268919, 0.004356962, 0.004226109, 0.003939252, 0.003933543, 0.003967313, 0.003935233],
+        "configWrite": [0.034900999999999995, 0.025051, 0.02258, 0.022041, 0.02183, 0.02142, 0.021321, 0.02116, 0.021551, 0.021500000000000002, 0.021601, 0.02152, 0.021261, 0.021060000000000002, 0.021191, 0.021759999999999998, 0.02138, 0.021511000000000002, 0.021169999999999998, 0.021431, 0.0214],
+        "executableSha256Cold": [141.800521, 141.32534099999998, 140.3076, 140.90067200000001, 139.427481],
+        "executableSha256Warm": [140.280378, 140.677148, 140.081374, 139.56257399999998, 138.52745199999998],
+        "gameDetectionCold": [0.005481, 0.004030000000000001, 0.0037500000000000003, 0.0038399999999999997, 0.00382, 0.0039299999999999995, 0.00381, 0.00377, 0.00373, 0.00382, 0.0038299999999999996, 0.0037500000000000003, 0.00366, 0.00373, 0.00377],
+        "gameDetectionWarm": [0.003649427, 0.003673427, 0.004114497, 0.0037253980000000004, 0.003991284, 0.003826031, 0.003948243],
+        "steamDetectionCold": [0.027379999999999998, 0.01565, 0.014830000000000001, 0.014551, 0.01464, 0.01449, 0.014450999999999999, 0.0145, 0.01453, 0.014551, 0.01468, 0.01464, 0.014791, 0.01463, 0.014651],
+        "steamDetectionWarm": [0.014948724, 0.014175878, 0.014249989, 0.014202939, 0.014703449, 0.014375592, 0.014287410000000002],
+        "tarGzExtract": [2.6042140000000003, 2.41524, 2.40691, 2.40368, 2.40103, 2.41101, 2.37633],
+        "zipDeflateExtract": [2.323929, 2.190156, 2.156895, 2.1542250000000003, 2.1413550000000003, 2.159166, 2.676926]
+      },
+      "mediansMs": {
+        "componentStatusWarm": 0.035701431,
+        "configRead": 0.003967313,
+        "configWrite": 0.021500000000000002,
+        "executableSha256Cold": 140.90067200000001,
+        "executableSha256Warm": 140.081374,
+        "gameDetectionCold": 0.00381,
+        "gameDetectionWarm": 0.003826031,
+        "steamDetectionCold": 0.01464,
+        "steamDetectionWarm": 0.014287410000000002,
+        "tarGzExtract": 2.40691,
+        "zipDeflateExtract": 2.159166
+      }
+    },
+    "gates": {
+      "warmInteractiveDeltaPercent": 0.7995193545872075,
+      "payloadColdInteractiveDeltaPercent": -0.1377678865299639,
+      "idlePssDeltaPercent": -0.39643460446393275,
+      "idleRssDeltaPercent": -0.26715917876471096,
+      "sha256ColdDeltaPercent": -1.9920681425241404,
+      "sha256WarmDeltaPercent": -2.2436945603211136,
+      "tarGzExtractDeltaPercent": -1.8221703373576843,
+      "zipDeflateExtractDeltaPercent": -2.3910324191465335,
+      "archiveSafetyTests": "9 passed",
+      "windowsMsvcCheck": "passed with cargo-xwin 0.23.1",
+      "windowsMsvcReleaseLink": "passed; PE32+ x86-64 GUI executable",
+      "selected": true
+    }
+  },
+  "postParityRefresh": {
+    "capturedAt": "2026-08-30",
+    "sourceRecord": "final-tauri.json",
+    "scope": "Fresh measurements and artifact hashes after the legacy-compatibility, rollback, security, packaging, and release-parity work. The selected Thin-LTO profile and dependency decision did not change; the historical final block above remains the evidence used to select it. final-tauri.json retains every raw timing sample.",
+    "profile": {
+      "lto": "thin",
+      "codegenUnits": 1,
+      "strip": "symbols",
+      "optLevel": 3,
+      "panic": "unwind"
+    },
+    "build": {
+      "typecheckMedianMilliseconds": 1220.219985,
+      "frontendOnlyMedianMilliseconds": 1273.8445609999999,
+      "fullRendererPipelineMedianMilliseconds": 2489.1529100000007,
+      "releaseNoChangeMedianMilliseconds": 219.757,
+      "appImagePackageMedianMilliseconds": 2607.847,
+      "cleanRustMedianMilliseconds": 140931.689,
+      "cleanFullAppImageMilliseconds": [160623.289],
+      "rawDebBuildMilliseconds": [87799.001]
+    },
+    "artifacts": {
+      "nativeBinaryBytes": 15063696,
+      "nativeBinarySha256": "410225a5690fcc3c5ce838d0b10ea0098d31b010e2db59aa3b5defeb3b0ba643",
+      "bundledBinaryBytes": 15105616,
+      "appImageBytes": 108526072,
+      "appImageSha256": "c6253fdcd3cb11154f8c67a597d720fbc42976fbaf6375d37964268419c22b1c",
+      "appDirBytes": 316864183,
+      "usrBinBytes": 15138032,
+      "usrLibBytes": 301309158,
+      "rawTauriDebBytes": 5895776,
+      "rawTauriDebSha256": "a2bb7f5b64bd6f033ad15ea3c5a294374fee7638a57d2079fff0a45d4b412371",
+      "rawTauriDebVersion": "1.3.0-beta4",
+      "releaseDebVersion": "1.3.0~beta4",
+      "debInstalledKiB": 14771,
+      "windowsCrossLinkedExeBytes": 15184384,
+      "windowsCrossLinkedExeSha256": "052219858a53693043279e6582472dd0b1439f08abf06eb88b806a9784433cc5"
+    },
+    "runtimeMedians": {
+      "coreReadyMs": 161.16518600000563,
+      "interactiveMs": 919.02194,
+      "payloadColdInteractiveMs": 1118.4371419999952,
+      "idlePssKiB": 319908,
+      "peakPssKiB": 322537,
+      "idleRssKiB": 504168,
+      "peakRssKiB": 506796,
+      "idleCpuPercent": 0.03332666849175878,
+      "processCount": 3,
+      "shutdownMs": 31.986111999998684
+    },
+    "operationMediansMs": {
+      "componentStatusWarm": 0.036537648,
+      "configRead": 0.004214499,
+      "configWrite": 0.022180000000000002,
+      "executableSha256Cold": 140.028822,
+      "executableSha256Warm": 139.193005,
+      "gameDetectionCold": 0.0037,
+      "gameDetectionWarm": 0.003924172,
+      "steamDetectionCold": 0.01464,
+      "steamDetectionWarm": 0.014411873,
+      "tarGzExtract": 2.487002,
+      "zipDeflateExtract": 2.2080659999999996
+    },
+    "validation": {
+      "appImageGuiSmoke": "passed",
+      "appImageFixedAppDirRepack": "byte-identical across two serial packages",
+      "windowsMsvcTargetCheck": "passed with cargo-xwin 0.23.1",
+      "windowsMsvcReleaseLink": "passed; PE32+ x86-64 GUI executable",
+      "nativeStrictClippy": "passed",
+      "rustTests": "83 passed, 0 failed, 1 explicit benchmark ignored",
+      "rendererTests": "5 passed",
+      "externalGates": "Actual MSI authoring/upgrade, canonical Debian lifecycle, hosted Ubuntu/Arch smokes, and physical Steam Deck validation require their corresponding runners or hardware."
+    }
+  },
+  "exactCurrentOperationRefresh": {
+    "capturedAt": "2026-08-30",
+    "sourceDigestSha256": "b3550e1bd1ae3dbaa9d511e3888236e34a8a0df91c2915be165cf3446f38398c",
+    "method": "Same-host exact-current refresh. Each release-profile variant received one unrecorded normalization run followed by one serialized recorded run. The fixed fixture contains a physically written 256 MiB BlackOps3.exe with SHA-256 a6d72ac7690f53be6ae46ba88506bd97302a093f7108472bd9efc3cefda06484. Prepared deterministic payloads exercise production T7, DXVK, Enhanced, and Linux compatibility transaction cores; seven raw samples per transaction metric and their medians are retained. Download/current-release lookup, the application-global mutation lock, command logging, real HOME/Steam discovery, and process control are excluded. Correctness and restoration assertions run outside timed regions.",
+    "deltaConvention": "(candidate - baseline) / baseline * 100; positive is a regression",
+    "variants": {
+      "baseline": {
+        "profile": {
+          "optLevel": 3,
+          "lto": false,
+          "codegenUnits": 16,
+          "strip": "none",
+          "panic": "unwind"
+        },
+        "samplesMs": {
+          "componentStatusWarm": [
+            0.039363841,
+            0.039632516,
+            0.040851144,
+            0.040247489,
+            0.039694829,
+            0.040322001,
+            0.039694339
+          ],
+          "configRead": [
+            0.004523207,
+            0.004519787,
+            0.004507886,
+            0.004513576,
+            0.004504237,
+            0.004451275,
+            0.004481285
+          ],
+          "configWrite": [
+            11.056226,
+            0.611743,
+            0.5743820000000001,
+            0.569382,
+            0.585353,
+            0.579202,
+            0.606373,
+            0.590143,
+            0.5834320000000001,
+            0.576363,
+            0.580972,
+            0.5781719999999999,
+            0.577423,
+            0.575592,
+            0.592903,
+            0.565602,
+            0.571162,
+            0.6870850000000001,
+            0.6384230000000001,
+            0.613663,
+            0.6012930000000001
+          ],
+          "dxvkConfigureTransactionCore": [
+            14.254574000000002,
+            14.282826,
+            14.990691,
+            15.264126,
+            14.094101,
+            14.014778999999999,
+            14.645613
+          ],
+          "dxvkInstallTransactionCore": [
+            20.13332,
+            19.744472,
+            19.934966,
+            18.464015,
+            18.624528,
+            18.629658,
+            17.732399
+          ],
+          "dxvkStatusTransactionCoreWarm": [
+            0.010864062,
+            0.011383663,
+            0.011344912,
+            0.011341012,
+            0.010858103,
+            0.010782881,
+            0.011410184
+          ],
+          "dxvkUninstallTransactionCore": [
+            8.152974,
+            8.450831,
+            8.026002,
+            8.779547,
+            8.020961,
+            8.010441,
+            8.074713000000001
+          ],
+          "enhancedInstallTransactionCore": [
+            372.817686,
+            371.641431,
+            371.558339,
+            371.40994700000005,
+            370.851145,
+            369.888764,
+            369.02857500000005
+          ],
+          "enhancedLinuxCompatibilityCleanupTransactionCore": [
+            2.867351,
+            2.738649,
+            2.740358,
+            2.905442,
+            2.9840829999999996,
+            2.773499,
+            2.718808
+          ],
+          "enhancedLinuxCompatibilityConfigureTransactionCore": [
+            20.654821000000002,
+            6.493358000000001,
+            6.318275,
+            6.3113850000000005,
+            6.396837,
+            6.5035989999999995,
+            6.316104999999999
+          ],
+          "enhancedStatusTransactionCoreWarm": [
+            0.0253025,
+            0.025232739,
+            0.025788481,
+            0.02525357,
+            0.025227969,
+            0.025779661,
+            0.025296021
+          ],
+          "enhancedUninstallTransactionCore": [
+            321.37681699999996,
+            323.360519,
+            310.415453,
+            322.793057,
+            322.91117,
+            313.171561,
+            321.892278
+          ],
+          "executableSha256Cold": [
+            193.503735,
+            190.990242,
+            193.640298,
+            189.789455,
+            191.350099
+          ],
+          "executableSha256Warm": [
+            140.714427,
+            138.670803,
+            136.843874,
+            139.56338200000002,
+            139.474551
+          ],
+          "gameDetectionCold": [
+            0.00817,
+            0.0042699999999999995,
+            0.00423,
+            0.00411,
+            0.0043100000000000005,
+            0.00418,
+            0.0041400000000000005,
+            0.00409,
+            0.00408,
+            0.00418,
+            0.00411,
+            0.00409,
+            0.00407,
+            0.004171,
+            0.00408
+          ],
+          "gameDetectionWarm": [
+            0.004408004,
+            0.004186249,
+            0.003973865,
+            0.003968305,
+            0.003967365,
+            0.003971015,
+            0.003961214
+          ],
+          "steamDetectionCold": [
+            0.058521,
+            0.047931,
+            0.046190999999999996,
+            0.045631,
+            0.051441,
+            0.046291,
+            0.044931,
+            0.044771000000000005,
+            0.044511,
+            0.044621,
+            0.044681,
+            0.044511,
+            0.04451,
+            0.044601,
+            0.044521000000000005
+          ],
+          "steamDetectionWarm": [
+            0.036462209,
+            0.036444398,
+            0.035848286,
+            0.036267276,
+            0.035359975,
+            0.036302706000000004,
+            0.035877306
+          ],
+          "t7ConfigureTransactionCore": [
+            1.237207,
+            1.337569,
+            1.3186280000000001,
+            1.293387,
+            1.363209,
+            1.329598,
+            1.39022
+          ],
+          "t7InstallTransactionCore": [
+            6.434577,
+            5.951477000000001,
+            5.625321,
+            5.891626,
+            6.313605,
+            6.1021,
+            6.269643
+          ],
+          "t7StatusTransactionCoreWarm": [
+            0.010232239,
+            0.009659696,
+            0.00983113,
+            0.009877851,
+            0.009987053,
+            0.009995183,
+            0.00983886
+          ],
+          "t7UninstallTransactionCore": [
+            2.947623,
+            2.8306709999999997,
+            2.826511,
+            2.800309,
+            2.79081,
+            2.833201,
+            2.7943
+          ],
+          "tarGzExtract": [
+            7.116383000000001,
+            8.489582,
+            7.445739,
+            7.300736000000001,
+            6.838936,
+            6.654903,
+            6.694363
+          ],
+          "zipDeflateExtract": [
+            9.186036,
+            8.346718,
+            9.174306,
+            7.093652,
+            8.924651,
+            8.135034,
+            6.902107999999999
+          ]
+        },
+        "mediansMs": {
+          "componentStatusWarm": 0.039694829,
+          "configRead": 0.004507886,
+          "configWrite": 0.5834320000000001,
+          "dxvkConfigureTransactionCore": 14.282826,
+          "dxvkInstallTransactionCore": 18.629658,
+          "dxvkStatusTransactionCoreWarm": 0.011341012,
+          "dxvkUninstallTransactionCore": 8.074713000000001,
+          "enhancedInstallTransactionCore": 371.40994700000005,
+          "enhancedLinuxCompatibilityCleanupTransactionCore": 2.773499,
+          "enhancedLinuxCompatibilityConfigureTransactionCore": 6.396837,
+          "enhancedStatusTransactionCoreWarm": 0.025296021,
+          "enhancedUninstallTransactionCore": 321.892278,
+          "executableSha256Cold": 191.350099,
+          "executableSha256Warm": 139.474551,
+          "gameDetectionCold": 0.0041400000000000005,
+          "gameDetectionWarm": 0.003971015,
+          "steamDetectionCold": 0.044771000000000005,
+          "steamDetectionWarm": 0.036267276,
+          "t7ConfigureTransactionCore": 1.329598,
+          "t7InstallTransactionCore": 6.1021,
+          "t7StatusTransactionCoreWarm": 0.009877851,
+          "t7UninstallTransactionCore": 2.826511,
+          "tarGzExtract": 7.116383000000001,
+          "zipDeflateExtract": 8.346718
+        }
+      },
+      "A": {
+        "profile": {
+          "optLevel": 3,
+          "lto": "thin",
+          "codegenUnits": 1,
+          "strip": "symbols",
+          "panic": "unwind"
+        },
+        "samplesMs": {
+          "componentStatusWarm": [
+            0.039686839,
+            0.039571405,
+            0.039837061,
+            0.039189998,
+            0.039849551,
+            0.039817331,
+            0.039523295
+          ],
+          "configRead": [
+            0.004456385,
+            0.004721261,
+            0.004778562,
+            0.0044318249999999995,
+            0.004513997,
+            0.004508976,
+            0.004515176
+          ],
+          "configWrite": [
+            0.6208239999999999,
+            0.551592,
+            0.547111,
+            0.543242,
+            0.543782,
+            0.5454410000000001,
+            0.5416719999999999,
+            0.5329510000000001,
+            0.543292,
+            0.543601,
+            0.543332,
+            0.541772,
+            0.553101,
+            0.556582,
+            0.546762,
+            0.5466219999999999,
+            0.547631,
+            0.553572,
+            0.540092,
+            0.5352210000000001,
+            0.536532
+          ],
+          "dxvkConfigureTransactionCore": [
+            14.235044,
+            14.060931,
+            15.44066,
+            14.605902,
+            14.571491,
+            14.416458,
+            15.339297
+          ],
+          "dxvkInstallTransactionCore": [
+            19.671530999999998,
+            20.211112,
+            18.890924,
+            17.873621999999997,
+            19.465536,
+            18.516835999999998,
+            19.482556000000002
+          ],
+          "dxvkStatusTransactionCoreWarm": [
+            0.011313271,
+            0.011980796,
+            0.011626849,
+            0.011479465,
+            0.011201188999999999,
+            0.011281191,
+            0.011286591
+          ],
+          "dxvkUninstallTransactionCore": [
+            8.202676,
+            8.888480000000001,
+            8.053132,
+            8.169435,
+            8.115674,
+            8.063572,
+            8.049442
+          ],
+          "enhancedInstallTransactionCore": [
+            371.553109,
+            368.87965299999996,
+            371.836526,
+            370.076988,
+            369.914244,
+            372.68192300000004,
+            369.768932
+          ],
+          "enhancedLinuxCompatibilityCleanupTransactionCore": [
+            2.8042700000000003,
+            2.81156,
+            2.8901920000000003,
+            2.9628430000000003,
+            2.9079219999999997,
+            3.005084,
+            2.721639
+          ],
+          "enhancedLinuxCompatibilityConfigureTransactionCore": [
+            19.872165,
+            6.413177,
+            6.479399,
+            6.477748,
+            6.323195,
+            6.404147,
+            6.3255550000000005
+          ],
+          "enhancedStatusTransactionCoreWarm": [
+            0.025877072,
+            0.02483,
+            0.024840501,
+            0.025075445999999998,
+            0.025467045,
+            0.025049926,
+            0.025054795
+          ],
+          "enhancedUninstallTransactionCore": [
+            321.846418,
+            323.11994500000003,
+            321.562591,
+            320.977589,
+            323.50222299999996,
+            322.97797099999997,
+            321.584602
+          ],
+          "executableSha256Cold": [
+            191.90253099999998,
+            192.216587,
+            191.917621,
+            192.241318,
+            191.934001
+          ],
+          "executableSha256Warm": [
+            140.74447800000002,
+            137.78220399999998,
+            139.526081,
+            138.665464,
+            140.291187
+          ],
+          "gameDetectionCold": [
+            0.00783,
+            0.00418,
+            0.00396,
+            0.004071,
+            0.00407,
+            0.004,
+            0.00398,
+            0.00395,
+            0.0039299999999999995,
+            0.00399,
+            0.003921,
+            0.0039700000000000004,
+            0.00392,
+            0.00396,
+            0.00396
+          ],
+          "gameDetectionWarm": [
+            0.003886183,
+            0.004282862,
+            0.004162199,
+            0.003888223,
+            0.003910053,
+            0.003841892,
+            0.003875773
+          ],
+          "steamDetectionCold": [
+            0.057540999999999995,
+            0.048521,
+            0.046411,
+            0.045881000000000005,
+            0.046079999999999996,
+            0.045521,
+            0.045571,
+            0.045641,
+            0.050720999999999995,
+            0.046321,
+            0.045431,
+            0.045551,
+            0.045161,
+            0.045681,
+            0.045260999999999996
+          ],
+          "steamDetectionWarm": [
+            0.03650528,
+            0.03603033,
+            0.034688762,
+            0.035401406,
+            0.034804314,
+            0.034844294,
+            0.035440608
+          ],
+          "t7ConfigureTransactionCore": [
+            1.173225,
+            1.231056,
+            1.1870859999999999,
+            1.319238,
+            1.397789,
+            1.3568289999999998,
+            1.36626
+          ],
+          "t7InstallTransactionCore": [
+            23.623595,
+            6.04327,
+            5.529097999999999,
+            5.9485980000000005,
+            5.824394,
+            6.273194,
+            6.1868419999999995
+          ],
+          "t7StatusTransactionCoreWarm": [
+            0.010238989,
+            0.009753769,
+            0.009648366000000002,
+            0.009900662,
+            0.010143656,
+            0.009383651,
+            0.009659526
+          ],
+          "t7UninstallTransactionCore": [
+            2.768009,
+            2.992344,
+            2.734789,
+            2.7731090000000003,
+            2.79436,
+            2.776329,
+            3.1014570000000004
+          ],
+          "tarGzExtract": [
+            6.660022,
+            6.636502,
+            7.96461,
+            6.895677999999999,
+            7.2713350000000005,
+            7.889049,
+            6.875097
+          ],
+          "zipDeflateExtract": [
+            8.42567,
+            7.640174,
+            6.615310999999999,
+            7.149883,
+            8.3858,
+            7.743515,
+            7.836657000000001
+          ]
+        },
+        "mediansMs": {
+          "componentStatusWarm": 0.039686839,
+          "configRead": 0.004513997,
+          "configWrite": 0.543782,
+          "dxvkConfigureTransactionCore": 14.571491,
+          "dxvkInstallTransactionCore": 19.465536,
+          "dxvkStatusTransactionCoreWarm": 0.011313271,
+          "dxvkUninstallTransactionCore": 8.115674,
+          "enhancedInstallTransactionCore": 370.076988,
+          "enhancedLinuxCompatibilityCleanupTransactionCore": 2.8901920000000003,
+          "enhancedLinuxCompatibilityConfigureTransactionCore": 6.413177,
+          "enhancedStatusTransactionCoreWarm": 0.025054795,
+          "enhancedUninstallTransactionCore": 321.846418,
+          "executableSha256Cold": 191.934001,
+          "executableSha256Warm": 139.526081,
+          "gameDetectionCold": 0.0039700000000000004,
+          "gameDetectionWarm": 0.003888223,
+          "steamDetectionCold": 0.045681,
+          "steamDetectionWarm": 0.035401406,
+          "t7ConfigureTransactionCore": 1.319238,
+          "t7InstallTransactionCore": 6.04327,
+          "t7StatusTransactionCoreWarm": 0.009753769,
+          "t7UninstallTransactionCore": 2.776329,
+          "tarGzExtract": 6.895677999999999,
+          "zipDeflateExtract": 7.743515
+        }
+      },
+      "B": {
+        "profile": {
+          "optLevel": 3,
+          "lto": true,
+          "codegenUnits": 1,
+          "strip": "symbols",
+          "panic": "unwind"
+        },
+        "samplesMs": {
+          "componentStatusWarm": [
+            0.039822332,
+            0.039367541,
+            0.039569425,
+            0.040487866,
+            0.039579756,
+            0.039563465,
+            0.039498504
+          ],
+          "configRead": [
+            0.00467779,
+            0.00467171,
+            0.004664429,
+            0.00466683,
+            0.004656359,
+            0.00466862,
+            0.004646639
+          ],
+          "configWrite": [
+            0.633693,
+            0.575712,
+            0.558762,
+            0.562632,
+            0.554152,
+            0.585733,
+            0.556382,
+            0.560662,
+            0.560361,
+            0.698195,
+            0.564073,
+            0.559762,
+            0.571712,
+            0.5597519999999999,
+            0.5741620000000001,
+            0.562232,
+            0.560402,
+            0.560382,
+            0.5636420000000001,
+            0.572742,
+            0.5756030000000001
+          ],
+          "dxvkConfigureTransactionCore": [
+            15.381397999999999,
+            14.284455,
+            14.697014,
+            14.081531,
+            14.661064,
+            14.665594,
+            15.112093
+          ],
+          "dxvkInstallTransactionCore": [
+            19.852194,
+            19.388754000000002,
+            17.720169000000002,
+            18.089106,
+            18.923004,
+            17.477684,
+            18.090347
+          ],
+          "dxvkStatusTransactionCoreWarm": [
+            0.011414253,
+            0.011172279,
+            0.011410684,
+            0.010901543,
+            0.01076686,
+            0.011392873,
+            0.011507696
+          ],
+          "dxvkUninstallTransactionCore": [
+            8.010602,
+            8.170475,
+            8.008531,
+            8.013091,
+            7.9992410000000005,
+            8.019982,
+            8.006371
+          ],
+          "enhancedInstallTransactionCore": [
+            373.029742,
+            370.84083499999997,
+            368.328971,
+            371.178712,
+            370.697902,
+            371.09895,
+            369.68403900000004
+          ],
+          "enhancedLinuxCompatibilityCleanupTransactionCore": [
+            2.79977,
+            2.82118,
+            2.737429,
+            2.709268,
+            2.679598,
+            2.767089,
+            2.888052
+          ],
+          "enhancedLinuxCompatibilityConfigureTransactionCore": [
+            17.402911,
+            6.517979,
+            6.619322,
+            6.295904,
+            6.324345,
+            6.251684,
+            6.252813000000001
+          ],
+          "enhancedStatusTransactionCoreWarm": [
+            0.02527494,
+            0.025218729,
+            0.025702669,
+            0.025126907,
+            0.025177588,
+            0.026231741,
+            0.02528116
+          ],
+          "enhancedUninstallTransactionCore": [
+            314.02914100000004,
+            320.813635,
+            322.677095,
+            325.557407,
+            321.44360900000004,
+            323.560334,
+            320.647152
+          ],
+          "executableSha256Cold": [
+            192.259198,
+            191.470791,
+            192.165167,
+            191.793608,
+            192.450022
+          ],
+          "executableSha256Warm": [
+            140.85138999999998,
+            138.37941800000002,
+            137.74951299999998,
+            138.98828,
+            139.97326099999998
+          ],
+          "gameDetectionCold": [
+            0.0077800000000000005,
+            0.004301,
+            0.00417,
+            0.0040999999999999995,
+            0.0047,
+            0.00424,
+            0.00408,
+            0.0040609999999999995,
+            0.00404,
+            0.00415,
+            0.00404,
+            0.004030000000000001,
+            0.00407,
+            0.004030000000000001,
+            0.004111
+          ],
+          "gameDetectionWarm": [
+            0.003903113,
+            0.003901913,
+            0.003890784,
+            0.003945644,
+            0.003941234,
+            0.003941154,
+            0.003947515
+          ],
+          "steamDetectionCold": [
+            0.065181,
+            0.048661,
+            0.047131,
+            0.046100999999999996,
+            0.045751,
+            0.045760999999999996,
+            0.046161,
+            0.045701,
+            0.045621,
+            0.045701,
+            0.045170999999999996,
+            0.045601,
+            0.045471,
+            0.045411,
+            0.045451000000000005
+          ],
+          "steamDetectionWarm": [
+            0.036256885,
+            0.035356386,
+            0.035335645,
+            0.03609277100000001,
+            0.035268574,
+            0.035684342,
+            0.035140291
+          ],
+          "t7ConfigureTransactionCore": [
+            1.2942170000000002,
+            1.172965,
+            1.304988,
+            1.340929,
+            1.3513789999999999,
+            1.371869,
+            1.6586459999999998
+          ],
+          "t7InstallTransactionCore": [
+            22.96032,
+            5.671541,
+            5.925077,
+            5.791034,
+            6.1693620000000005,
+            6.195623,
+            6.207232
+          ],
+          "t7StatusTransactionCoreWarm": [
+            0.010509424,
+            0.009781609,
+            0.010035515,
+            0.010531965,
+            0.009954592,
+            0.0098611,
+            0.010141047
+          ],
+          "t7UninstallTransactionCore": [
+            2.730368,
+            3.201908,
+            2.7498489999999998,
+            2.842151,
+            3.0655859999999997,
+            2.736439,
+            2.784679
+          ],
+          "tarGzExtract": [
+            6.7179329999999995,
+            6.5653,
+            7.896389,
+            7.00327,
+            6.908557,
+            6.786365,
+            7.271276
+          ],
+          "zipDeflateExtract": [
+            8.331668,
+            6.471588000000001,
+            6.348785,
+            6.814305,
+            6.887307,
+            6.494679,
+            7.098072
+          ]
+        },
+        "mediansMs": {
+          "componentStatusWarm": 0.039569425,
+          "configRead": 0.00466683,
+          "configWrite": 0.562632,
+          "dxvkConfigureTransactionCore": 14.665594,
+          "dxvkInstallTransactionCore": 18.090347,
+          "dxvkStatusTransactionCoreWarm": 0.011392873,
+          "dxvkUninstallTransactionCore": 8.010602,
+          "enhancedInstallTransactionCore": 370.84083499999997,
+          "enhancedLinuxCompatibilityCleanupTransactionCore": 2.767089,
+          "enhancedLinuxCompatibilityConfigureTransactionCore": 6.324345,
+          "enhancedStatusTransactionCoreWarm": 0.02527494,
+          "enhancedUninstallTransactionCore": 321.44360900000004,
+          "executableSha256Cold": 192.165167,
+          "executableSha256Warm": 138.98828,
+          "gameDetectionCold": 0.0040999999999999995,
+          "gameDetectionWarm": 0.003941154,
+          "steamDetectionCold": 0.045701,
+          "steamDetectionWarm": 0.035356386,
+          "t7ConfigureTransactionCore": 1.340929,
+          "t7InstallTransactionCore": 6.1693620000000005,
+          "t7StatusTransactionCoreWarm": 0.010035515,
+          "t7UninstallTransactionCore": 2.784679,
+          "tarGzExtract": 6.908557,
+          "zipDeflateExtract": 6.814305
+        }
+      },
+      "C": {
+        "profile": {
+          "optLevel": "s",
+          "lto": "thin",
+          "codegenUnits": 1,
+          "strip": "symbols",
+          "panic": "unwind"
+        },
+        "samplesMs": {
+          "componentStatusWarm": [
+            0.041964686,
+            0.041270793,
+            0.041802523,
+            0.041581218,
+            0.041978678,
+            0.040352142,
+            0.041428825
+          ],
+          "configRead": [
+            0.004578738,
+            0.004573768,
+            0.004568037,
+            0.004571738,
+            0.004573348,
+            0.004575368,
+            0.004566217
+          ],
+          "configWrite": [
+            11.20574,
+            0.724205,
+            0.735076,
+            0.6155229999999999,
+            0.621724,
+            0.603452,
+            0.6114539999999999,
+            0.668334,
+            0.620583,
+            0.613723,
+            0.603873,
+            0.6194529999999999,
+            0.623194,
+            0.642463,
+            0.600103,
+            0.594523,
+            0.610023,
+            0.5953430000000001,
+            0.590872,
+            0.580253,
+            0.585212
+          ],
+          "dxvkConfigureTransactionCore": [
+            60.140085000000006,
+            61.205158000000004,
+            61.563775,
+            61.418032,
+            62.934875,
+            62.855253,
+            61.495234
+          ],
+          "dxvkInstallTransactionCore": [
+            66.89908,
+            67.47743200000001,
+            67.79077799999999,
+            65.81250700000001,
+            65.675043,
+            66.572012,
+            65.278515
+          ],
+          "dxvkStatusTransactionCoreWarm": [
+            0.010863962,
+            0.010838742,
+            0.010814401,
+            0.011375083,
+            0.011994626,
+            0.010812001,
+            0.010805661
+          ],
+          "dxvkUninstallTransactionCore": [
+            31.065504,
+            31.220817,
+            31.309609000000002,
+            31.708676999999998,
+            31.841251,
+            31.462512999999998,
+            31.37517
+          ],
+          "enhancedInstallTransactionCore": [
+            1356.7937350000002,
+            1362.218271,
+            1367.782911,
+            1374.7950099999998,
+            1361.18653,
+            1368.310882,
+            1405.8902950000002
+          ],
+          "enhancedLinuxCompatibilityCleanupTransactionCore": [
+            2.9759740000000003,
+            2.917823,
+            2.890162,
+            2.912472,
+            2.698038,
+            2.6615860000000002,
+            2.644237
+          ],
+          "enhancedLinuxCompatibilityConfigureTransactionCore": [
+            20.436336,
+            6.829946,
+            6.653293000000001,
+            6.691743,
+            6.131411,
+            6.0957099999999995,
+            6.155002
+          ],
+          "enhancedStatusTransactionCoreWarm": [
+            0.025376733,
+            0.026320413,
+            0.025689399,
+            0.025512696,
+            0.025423293,
+            0.025393282,
+            0.025630567
+          ],
+          "enhancedUninstallTransactionCore": [
+            1288.752801,
+            1292.950411,
+            1295.972265,
+            1290.530549,
+            1295.4125940000001,
+            1289.788414,
+            1293.262289
+          ],
+          "executableSha256Cold": [
+            689.335532,
+            693.7744270000001,
+            688.048464,
+            685.5688210000001,
+            687.602995
+          ],
+          "executableSha256Warm": [
+            625.2977830000001,
+            624.631119,
+            627.9266700000001,
+            629.042813,
+            624.736582
+          ],
+          "gameDetectionCold": [
+            0.013061000000000001,
+            0.00591,
+            0.00535,
+            0.00522,
+            0.00533,
+            0.00553,
+            0.00523,
+            0.00515,
+            0.00512,
+            0.0050100000000000006,
+            0.005169999999999999,
+            0.0050799999999999994,
+            0.00505,
+            0.0050799999999999994,
+            0.005181
+          ],
+          "gameDetectionWarm": [
+            0.004599168,
+            0.003981555,
+            0.003960575,
+            0.003959164,
+            0.003965825,
+            0.003962765,
+            0.003956004
+          ],
+          "steamDetectionCold": [
+            0.056251,
+            0.045291,
+            0.042790999999999996,
+            0.042611,
+            0.042041,
+            0.041871,
+            0.041801000000000005,
+            0.042191000000000006,
+            0.042041,
+            0.041950999999999995,
+            0.041741,
+            0.041851000000000006,
+            0.041501,
+            0.041610999999999995,
+            0.041361
+          ],
+          "steamDetectionWarm": [
+            0.036706374,
+            0.035520049,
+            0.036758526,
+            0.035614031,
+            0.035616641,
+            0.035609991,
+            0.035577211
+          ],
+          "t7ConfigureTransactionCore": [
+            1.2977480000000001,
+            1.171545,
+            1.173195,
+            1.232166,
+            1.4402810000000001,
+            1.4562519999999999,
+            1.4350109999999998
+          ],
+          "t7InstallTransactionCore": [
+            44.513991000000004,
+            9.657106,
+            9.476263000000001,
+            9.82028,
+            10.957834,
+            10.125525999999999,
+            11.006385
+          ],
+          "t7StatusTransactionCoreWarm": [
+            0.009531104,
+            0.009752598,
+            0.010156127,
+            0.010522115,
+            0.010042685,
+            0.010684478,
+            0.009730468
+          ],
+          "t7UninstallTransactionCore": [
+            4.727900999999999,
+            5.355355,
+            4.792603000000001,
+            4.820622999999999,
+            5.384965,
+            5.448457,
+            5.522658
+          ],
+          "tarGzExtract": [
+            6.7226539999999995,
+            7.4682,
+            8.180895000000001,
+            7.614693,
+            7.048411,
+            7.5515110000000005,
+            6.685863
+          ],
+          "zipDeflateExtract": [
+            9.099545,
+            7.737736,
+            6.722444,
+            6.607992,
+            7.1161319999999995,
+            6.746424,
+            7.128693
+          ]
+        },
+        "mediansMs": {
+          "componentStatusWarm": 0.041581218,
+          "configRead": 0.004573348,
+          "configWrite": 0.613723,
+          "dxvkConfigureTransactionCore": 61.495234,
+          "dxvkInstallTransactionCore": 66.572012,
+          "dxvkStatusTransactionCoreWarm": 0.010838742,
+          "dxvkUninstallTransactionCore": 31.37517,
+          "enhancedInstallTransactionCore": 1367.782911,
+          "enhancedLinuxCompatibilityCleanupTransactionCore": 2.890162,
+          "enhancedLinuxCompatibilityConfigureTransactionCore": 6.653293000000001,
+          "enhancedStatusTransactionCoreWarm": 0.025512696,
+          "enhancedUninstallTransactionCore": 1292.950411,
+          "executableSha256Cold": 688.048464,
+          "executableSha256Warm": 625.2977830000001,
+          "gameDetectionCold": 0.005181,
+          "gameDetectionWarm": 0.003962765,
+          "steamDetectionCold": 0.041950999999999995,
+          "steamDetectionWarm": 0.035614031,
+          "t7ConfigureTransactionCore": 1.2977480000000001,
+          "t7InstallTransactionCore": 10.125525999999999,
+          "t7StatusTransactionCoreWarm": 0.010042685,
+          "t7UninstallTransactionCore": 5.355355,
+          "tarGzExtract": 7.4682,
+          "zipDeflateExtract": 7.1161319999999995
+        }
+      }
+    },
+    "deltaPercentVsBaseline": {
+      "A": {
+        "componentStatusWarm": -0.020128566368177038,
+        "configRead": 0.13556243436501314,
+        "configWrite": -6.795993363408257,
+        "dxvkConfigureTransactionCore": 2.0210636186424167,
+        "dxvkInstallTransactionCore": 4.486813445528635,
+        "dxvkStatusTransactionCoreWarm": -0.2446078004326204,
+        "dxvkUninstallTransactionCore": 0.5072749954084975,
+        "enhancedInstallTransactionCore": -0.35889157271279903,
+        "enhancedLinuxCompatibilityCleanupTransactionCore": 4.207428955265538,
+        "enhancedLinuxCompatibilityConfigureTransactionCore": 0.25543874261608457,
+        "enhancedStatusTransactionCoreWarm": -0.9536124278201586,
+        "enhancedUninstallTransactionCore": -0.014247002222261398,
+        "executableSha256Cold": 0.30514852255184605,
+        "executableSha256Warm": 0.036945808128117825,
+        "gameDetectionCold": -4.1062801932367154,
+        "gameDetectionWarm": -2.084907762876733,
+        "steamDetectionCold": 2.0325657233476893,
+        "steamDetectionWarm": -2.387469078184967,
+        "t7ConfigureTransactionCore": -0.7791828808406862,
+        "t7InstallTransactionCore": -0.9640943281821074,
+        "t7StatusTransactionCoreWarm": -1.2561639166251781,
+        "t7UninstallTransactionCore": -1.775404376632532,
+        "tarGzExtract": -3.1013648366031097,
+        "zipDeflateExtract": -7.226828557044803
+      },
+      "B": {
+        "componentStatusWarm": -0.31592024240739913,
+        "configRead": 3.5259099276246175,
+        "configWrite": -3.5651112726076115,
+        "dxvkConfigureTransactionCore": 2.6799178257860206,
+        "dxvkInstallTransactionCore": -2.894905531813831,
+        "dxvkStatusTransactionCoreWarm": 0.45728723327336457,
+        "dxvkUninstallTransactionCore": -0.7939724916538887,
+        "enhancedInstallTransactionCore": -0.15323014491049025,
+        "enhancedLinuxCompatibilityCleanupTransactionCore": -0.2311160018446103,
+        "enhancedLinuxCompatibilityConfigureTransactionCore": -1.1332475721985658,
+        "enhancedStatusTransactionCoreWarm": -0.08333721734338845,
+        "enhancedUninstallTransactionCore": -0.1393848286102528,
+        "executableSha256Cold": 0.42595640360760756,
+        "executableSha256Warm": -0.3486449653456765,
+        "gameDetectionCold": -0.9661835748792504,
+        "gameDetectionWarm": -0.7519739915361678,
+        "steamDetectionCold": 2.0772374974871974,
+        "steamDetectionWarm": -2.5116030219639445,
+        "t7ConfigureTransactionCore": 0.852212473243791,
+        "t7InstallTransactionCore": 1.1022762655479321,
+        "t7StatusTransactionCoreWarm": 1.5961366495607199,
+        "t7UninstallTransactionCore": -1.4799871643874682,
+        "tarGzExtract": -2.920388067927214,
+        "zipDeflateExtract": -18.359467757266977
+      },
+      "C": {
+        "componentStatusWarm": 4.752228558535929,
+        "configRead": 1.4521662703981344,
+        "configWrite": 5.191864690315231,
+        "dxvkConfigureTransactionCore": 330.5536873445073,
+        "dxvkInstallTransactionCore": 257.3442518375807,
+        "dxvkStatusTransactionCoreWarm": -4.428793479805851,
+        "dxvkUninstallTransactionCore": 288.56080705283273,
+        "enhancedInstallTransactionCore": 268.2677112037604,
+        "enhancedLinuxCompatibilityCleanupTransactionCore": 4.206347289110252,
+        "enhancedLinuxCompatibilityConfigureTransactionCore": 4.009106375541552,
+        "enhancedStatusTransactionCoreWarm": 0.8565576380570011,
+        "enhancedUninstallTransactionCore": 301.6717701441723,
+        "executableSha256Cold": 259.57570317222564,
+        "executableSha256Warm": 348.3239261333059,
+        "gameDetectionCold": 25.144927536231865,
+        "gameDetectionWarm": -0.20775544791443945,
+        "steamDetectionCold": -6.298720153670925,
+        "steamDetectionWarm": -1.8011967593044587,
+        "t7ConfigureTransactionCore": -2.395460883665584,
+        "t7InstallTransactionCore": 65.93510430835285,
+        "t7StatusTransactionCoreWarm": 1.66872328809172,
+        "t7UninstallTransactionCore": 89.46874786618557,
+        "tarGzExtract": 4.943761458594901,
+        "zipDeflateExtract": -14.743351818043928
+      }
+    },
+    "gates": {
+      "thresholds": {
+        "sha256OrArchiveMaximumRegressionPercent": 3,
+        "subMillisecondMetrics": "ignore percentage swings unless the absolute change is operationally meaningful",
+        "transactionCorrectness": "zero failures"
+      },
+      "A": {
+        "hashAndArchiveDeltaPercent": {
+          "executableSha256Cold": 0.30514852255184605,
+          "executableSha256Warm": 0.036945808128117825,
+          "tarGzExtract": -3.1013648366031097,
+          "zipDeflateExtract": -7.226828557044803
+        },
+        "hashAndArchiveWithinThreePercent": true,
+        "transactionAssertions": "passed",
+        "statusAndOtherSubMillisecondDeltas": "informational; absolute changes are not operationally meaningful"
+      },
+      "B": {
+        "hashAndArchiveDeltaPercent": {
+          "executableSha256Cold": 0.42595640360760756,
+          "executableSha256Warm": -0.3486449653456765,
+          "tarGzExtract": -2.920388067927214,
+          "zipDeflateExtract": -18.359467757266977
+        },
+        "hashAndArchiveWithinThreePercent": true,
+        "transactionAssertions": "passed",
+        "statusAndOtherSubMillisecondDeltas": "informational; absolute changes are not operationally meaningful"
+      },
+      "C": {
+        "hashAndArchiveDeltaPercent": {
+          "executableSha256Cold": 259.57570317222564,
+          "executableSha256Warm": 348.3239261333059,
+          "tarGzExtract": 4.943761458594901,
+          "zipDeflateExtract": -14.743351818043928
+        },
+        "hashAndArchiveWithinThreePercent": false,
+        "transactionAssertions": "passed",
+        "statusAndOtherSubMillisecondDeltas": "informational; absolute changes are not operationally meaningful"
+      }
+    },
+    "validation": {
+      "eachVariant": "1 benchmark passed, 0 failed, 83 filtered; all transaction restoration and unrelated-file assertions passed",
+      "fullRustSuite": "83 passed, 0 failed, 1 explicit benchmark ignored",
+      "strictClippy": "passed with --all-targets and -D warnings",
+      "independentCodeReview": "no actionable issues",
+      "windowsMsvcTargetCheck": "passed with cargo-xwin 0.23.1",
+      "windowsMsvcReleaseLink": {
+        "result": "passed; PE32+ x86-64 Windows GUI executable",
+        "bytes": 15184896,
+        "sha256": "aa03732b8f6c7b3cff4ef452af74f0ab1fe88a5811bada02574dd9a08ed5d58c"
+      },
+      "windowsMsi": "not authored on Linux; Windows runner acceptance remains external"
+    },
+    "decision": "Candidate A remains selected. It passes the exact-current SHA-256 and archive gates and all representative transaction assertions. Candidate B also passes these operation gates but remains rejected by the retained same-host memory evidence. Candidate C is rejected again: size optimization materially regresses 256 MiB hashing and the hash-heavy DXVK, T7, and Enhanced transaction cores, and also exceeds the 3% tar.gz extraction gate."
+  },
+  "ubuntu2204NativeRelease": {
+    "capturedAt": "2026-08-30",
+    "sourceDigestSha256": "b3550e1bd1ae3dbaa9d511e3888236e34a8a0df91c2915be165cf3446f38398c",
+    "sourceRecord": "optimization-final-package.json",
+    "environment": {
+      "base": "Ubuntu Base 22.04.5 LTS amd64",
+      "baseArchiveSha256": "242cd8898b33ea806ef5f13b1076ed7c76f9f989d18384452f7166692438ff1a",
+      "glibc": "2.35",
+      "sourceDateEpoch": 1779660559
+    },
+    "artifacts": {
+      "nativeBinaryBytes": 15086240,
+      "nativeBinarySha256": "5b0ed287a036cf230cdc446cdaf35ade5e7161bc5383dd274af9b209f4c0963d",
+      "appImageBytes": 83167736,
+      "appImageSha256": "49f6f548cea81addc171c2bd2d9ace2a91a49d27bd04f8683a44f86db054a2a4",
+      "appDirBytes": 264398455,
+      "usrBinBytes": 15156171,
+      "usrLibBytes": 248550358,
+      "rawTauriDebBuilds": [
+        {
+          "bytes": 5905960,
+          "sha256": "e4e2e6e95b9d1b1bc0ee45d31d2ebe7c3d331b7f0bcc273f145bbab916467499"
+        },
+        {
+          "bytes": 5905958,
+          "sha256": "14dfbb29248c070eb9ebee351fc4f11b9083b8f0f043a6d9e69297c9373359f3"
+        }
+      ],
+      "canonicalDebBytes": 4578248,
+      "canonicalDebSha256": "0d68f3db495713d06fe26a245be11830fd5640f25a77ecb655303fcb0543d2fe",
+      "canonicalDebPackage": "patch-ops-iii",
+      "canonicalDebVersion": "1.3.0~beta4",
+      "canonicalDebInstalledKiB": 14793,
+      "canonicalDebDepends": ["libbz2-1.0", "libwebkit2gtk-4.1-0", "libgtk-3-0"]
+    },
+    "compatibility": {
+      "elfFiles": 170,
+      "nativeMaximumGlibc": "GLIBC_2.34",
+      "wholeAppDirMaximumGlibc": "GLIBC_2.35"
+    },
+    "reproducibility": {
+      "nativeBinary": "byte-identical across two package-scoped clean builds",
+      "appImage": "byte-identical across two package-scoped clean builds",
+      "rawTauriDeb": "not byte-identical because of container timestamps",
+      "canonicalDeb": "byte-identical when independently produced from both raw builds"
+    },
+    "validation": {
+      "cleanUbuntuAppImageUid1000": "passed on the exact-current AppImage; the renderer-to-Rust interactive marker was observed under UID 1000 with system GTK, WebKitGTK, and Ayatana AppIndicator packages absent",
+      "cleanArchAppImageUid1000": "not passed in the final official signed Arch root; startup reached WebKit under UID 1000 with the system GUI packages absent, then the controlled Xvfb environment failed to create a default EGL display (EGL_BAD_PARAMETER)",
+      "debianInstallUpgradePurge": "not completed for the exact-current canonical package; the earlier provisional old/current package GUI smokes passed, but the final artifact lifecycle rerun has no completion evidence",
+      "windowsMsvcTargetCheck": "passed",
+      "windowsMsvcReleaseBytes": 15184896,
+      "windowsMsvcReleaseSha256": "aa03732b8f6c7b3cff4ef452af74f0ab1fe88a5811bada02574dd9a08ed5d58c",
+      "actualWindowsMsi": "external Windows runner gate"
+    },
+    "comparisonCaveat": "Ubuntu-native AppImage and AppDir sizes are not attributed to Rust-profile savings relative to the CachyOS host artifacts because distribution library builds and dependency closures differ. The canonical Debian package is smaller by moving WebKitGTK/GTK into declared system dependencies, not by deleting them from the portable AppImage."
+  },
+  "dependencyAndClosureAudit": {
+    "directZstdSourceUses": 0,
+    "retainedZipMethods": ["stored", "deflate", "bzip2", "zstd"],
+    "directZstdDefaultFeaturesRemoved": ["arrays", "legacy", "zdict_builder"],
+    "appImageUsrLibByteDelta": 0,
+    "duplicateRealFileGroups": 8,
+    "duplicateExtractedBytesAreSquashfsDeduplicated": true,
+    "developmentFilesFound": 0,
+    "decision": "No bundled library was removed. Static DT_NEEDED analysis cannot prove runtime-loaded WebKit, GTK, GIO, image, input, TLS, or helper modules unreachable."
+  },
+  "limitations": [
+    "Local AppImage smoke covered window creation, the renderer-to-Rust get_state path (including fixture Steam detection), images rendered by the main UI, and native clean shutdown. Network download latency is deliberately excluded from the reproducible benchmark.",
+    "The exact-current Ubuntu AppImage smoke passed. The final official Arch root smoke reached WebKit but did not pass because the controlled Xvfb environment could not create an EGL display.",
+    "The exact-current Debian install/upgrade/purge rerun did not complete; only the earlier provisional old/current package GUI smokes have completion markers.",
+    "A real Steam Deck and real Windows MSI authoring/upgrade run remain external-runner gates.",
+    "The local sysroot required NO_STRIP=1 for AppImage bundling; Rust symbol stripping still applies to the selected release profile."
+  ]
+}

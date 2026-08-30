@@ -7,10 +7,10 @@ This directory contains the static website for `https://patchopsiii.com`.
 From the repo root:
 
 ```bash
-python -m http.server -d website 5173
+bun x vite website --host 127.0.0.1 --port 5173
 ```
 
-Then open `http://localhost:5173`.
+Open the URL printed by Vite.
 
 ## Editing content
 
