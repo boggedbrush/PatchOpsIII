@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   scan-release-assets:
-    name: Scan MSI, AppImage, and Debian release assets
+    name: Scan MSI and AppImage release assets
     runs-on: ubuntu-latest
     env:
       VT_CLI_LINUX_SHA256: a340bcb2ee98aff6f19bde1de30702ddf106cbbc63b4309f60b33058e7689266
@@ -39,19 +39,17 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --pattern '*.msi' \
             --pattern '*.AppImage' \
-            --pattern '*.deb' \
             --pattern '*.sha256' \
             --dir release-assets
           shopt -s nullglob
           msi_assets=(release-assets/*.msi)
           appimage_assets=(release-assets/*.AppImage)
-          deb_assets=(release-assets/*.deb)
-          if [ "${#msi_assets[@]}" -eq 0 ] || [ "${#appimage_assets[@]}" -eq 0 ] || [ "${#deb_assets[@]}" -eq 0 ]; then
-            echo "Expected at least one .msi, .AppImage, and .deb asset for $TAG." >&2
+          if [ "${#msi_assets[@]}" -eq 0 ] || [ "${#appimage_assets[@]}" -eq 0 ]; then
+            echo "Expected at least one .msi and .AppImage asset for $TAG." >&2
             find release-assets -maxdepth 1 -type f -print >&2
             exit 1
           fi
-          for asset in "${msi_assets[@]}" "${appimage_assets[@]}" "${deb_assets[@]}"; do
+          for asset in "${msi_assets[@]}" "${appimage_assets[@]}"; do
             sidecar="${asset}.sha256"
             if [ ! -f "$sidecar" ]; then
               printf 'Missing checksum sidecar for %s\n' "$(basename "$asset")" >&2
@@ -96,9 +94,9 @@ jobs:
             vt_url="https://www.virustotal.com/gui/file/$hash"
             printf '| `%s` | `%s` | [Report](%s) |\n' \
               "$(basename "$asset")" "$hash" "$vt_url" >> "$GITHUB_STEP_SUMMARY"
-          done < <(find release-assets -maxdepth 1 -type f \( -name '*.msi' -o -name '*.AppImage' -o -name '*.deb' \) -print0)
+          done < <(find release-assets -maxdepth 1 -type f \( -name '*.msi' -o -name '*.AppImage' \) -print0)
 
           if [ "$found" -eq 0 ]; then
-            echo "No MSI, AppImage, or Debian assets found for $TAG." >&2
+            echo "No MSI or AppImage assets found for $TAG." >&2
             exit 1
           fi

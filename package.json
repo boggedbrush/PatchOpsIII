@@ -12,7 +12,7 @@
     "build": "bun run build:renderer",
     "build:renderer": "bun run typecheck && vite build",
     "dist": "tauri build",
-    "dist:linux": "tauri build --bundles appimage,deb",
+    "dist:linux": "tauri build --bundles appimage",
     "dist:win": "tauri build --bundles msi",
     "test": "bun run test:renderer && bun run test:rust",
     "test:renderer": "bun test src/renderer",

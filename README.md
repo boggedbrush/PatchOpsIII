@@ -41,8 +41,7 @@ When upgrading an older PatchOpsIII-managed mod install, the Rust backend adopts
 Release packages are available from [GitHub Releases](https://github.com/boggedbrush/PatchOpsIII/releases):
 
 - Windows 10/11 x64: `PatchOpsIII.msi` (or `PatchOpsIII-Beta.msi` for prereleases).
-- Linux x86_64 and Steam Deck desktop mode: `PatchOpsIII.AppImage` (or `PatchOpsIII-Beta.AppImage`) is the primary portable, self-contained application bundle.
-- Debian/Ubuntu x86_64: `PatchOpsIII.deb` (or `PatchOpsIII-Beta.deb`) is a much smaller package that uses compatible system libraries installed through APT.
+- Linux x86_64 and Steam Deck desktop mode: `PatchOpsIII.AppImage` (or `PatchOpsIII-Beta.AppImage`) is the portable application bundle.
 
 macOS is not currently packaged. Platform-specific game workflows are shown only where they apply.
 
@@ -53,13 +52,7 @@ chmod +x PatchOpsIII.AppImage
 ./PatchOpsIII.AppImage
 ```
 
-On Debian or Ubuntu, the smaller system-integrated alternative is:
-
-```bash
-sudo apt install ./PatchOpsIII.deb
-```
-
-Each release includes a matching `.sha256` file. Verify a Linux download with `sha256sum -c PatchOpsIII.AppImage.sha256` or `sha256sum -c PatchOpsIII.deb.sha256`, or compare the Windows value with `Get-FileHash PatchOpsIII.msi -Algorithm SHA256` in PowerShell. Release notes also link to the VirusTotal hash lookup for each package; CI submits a scan when `VT_API_KEY` is configured.
+Each release includes a matching `.sha256` file. Verify a Linux download with `sha256sum -c PatchOpsIII.AppImage.sha256`, or compare the Windows value with `Get-FileHash PatchOpsIII.msi -Algorithm SHA256` in PowerShell. Release notes also link to the VirusTotal hash lookup for each package; CI submits a scan when `VT_API_KEY` is configured.
 
 ## Developer setup
 
@@ -88,11 +81,11 @@ bun run test:renderer   # renderer tests
 bun run test:rust       # Rust tests
 bun run verify          # all checks and tests
 bun run build           # production renderer assets
-bun run dist:linux      # AppImage and .deb, on Linux
+bun run dist:linux      # AppImage, on Linux
 bun run dist:win        # MSI, on Windows
 ```
 
-Local Tauri packages are written below `src-tauri/target/release/bundle/`. CI tests before packaging and publishes canonical `PatchOpsIII.AppImage`, `PatchOpsIII.deb`, and `PatchOpsIII.msi` artifacts with SHA-256 files. Linux CI starts and cleanly closes the AppImage on an Ubuntu 22.04 runner, exercises `.deb` install, upgrade, launch, purge, and user-data preservation on a separate Ubuntu 22.04 runner, and repeats the AppImage startup check as a non-root user in a fresh `archlinux:base` container. These are headless X11 package smoke tests, not proof of compatibility with every distribution, display server, GPU driver, or Steam Deck configuration. Before uploading a Windows artifact, CI also installs the hash-pinned beta3 Electron MSI, verifies that the new Tauri MSI replaces it with one current product registration, launches the installed executable, observes its native window, and closes it cleanly.
+Local Tauri packages are written below `src-tauri/target/release/bundle/`. CI tests before packaging and publishes canonical `PatchOpsIII.AppImage` and `PatchOpsIII.msi` artifacts with SHA-256 files. Linux CI starts and cleanly closes the AppImage on an Ubuntu 22.04 runner and repeats the AppImage startup check as a non-root user in a fresh `archlinux:base` container. These are headless X11 package smoke tests, not proof of compatibility with every distribution, display server, GPU driver, or Steam Deck configuration. Before uploading a Windows artifact, CI also installs the hash-pinned beta3 Electron MSI, verifies that the new Tauri MSI replaces it with one current product registration, launches the installed executable, observes its native window, and closes it cleanly.
 
 The Windows MSI keeps the original Electron installer's UpgradeCode so an existing installation upgrades in place. `bun run verify:release` also enforces an ordered three-field MSI version: beta `M.m.p-betaN` maps to `M.m.(p*256+N)`, while stable `M.m.p` maps to `M.m.(p*256+255)`. Beta numbers must be 1–254 and patch numbers 0–255, matching [Windows Installer's three-field comparison rules](https://learn.microsoft.com/en-us/windows/win32/msi/productversion).
 
@@ -130,7 +123,7 @@ The Windows MSI keeps the original Electron installer's UpgradeCode so an existi
 
 - The full [All-around Enhancement Mod](https://steamcommunity.com/sharedfiles/filedetails/?id=2631943123) is not exposed as a launch profile because it can crash before the game finishes launching; use the Lite profile.
 - Steam launch-option behavior can vary across Linux distributions and Proton versions.
-- The `.deb` is intended for Debian/Ubuntu and depends on compatible system packages; users on other Linux distributions should use the AppImage. AppImage smoke coverage currently includes Ubuntu 22.04 and an Arch base container, not every Linux environment or physical Steam Deck hardware.
+- AppImage smoke coverage currently includes Ubuntu 22.04 and an Arch base container, not every Linux environment or physical Steam Deck hardware.
 - Report bugs through [GitHub Issues](https://github.com/boggedbrush/PatchOpsIII/issues) and include the in-app log plus your platform details. More usage notes live in the [project wiki](wiki/home.md).
 
 ## Acknowledgements

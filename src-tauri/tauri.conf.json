@@ -42,7 +42,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["msi", "appimage", "deb"],
+    "targets": ["msi", "appimage"],
     "category": "Utility",
     "shortDescription": "Black Ops III maintenance and mod control center",
     "icon": [
@@ -61,10 +61,11 @@
     },
     "linux": {
       "appimage": {
-        "bundleMediaFramework": false
-      },
-      "deb": {
-        "depends": ["libbz2-1.0"]
+        "bundleMediaFramework": false,
+        "files": {
+          "usr/lib/libfribidi.so.0": "/usr/lib/x86_64-linux-gnu/libfribidi.so.0",
+          "usr/lib/libharfbuzz.so.0": "/usr/lib/x86_64-linux-gnu/libharfbuzz.so.0"
+        }
       }
     }
   }

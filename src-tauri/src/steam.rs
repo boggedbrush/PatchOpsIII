@@ -3844,7 +3844,7 @@ mod tests {
             )
             .unwrap_err();
             assert!(
-                error.contains("No such file") || error.contains("not found"),
+                error.contains(&missing.display().to_string()),
                 "{error}"
             );
             assert!(!missing.exists());

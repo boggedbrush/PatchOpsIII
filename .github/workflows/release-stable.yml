@@ -186,32 +186,24 @@ jobs:
       - name: Verify and organize assets
         env:
           APPIMAGE_HASH: ${{ needs.build-linux.outputs.appimage_hash }}
-          DEB_HASH: ${{ needs.build-linux.outputs.deb_hash }}
           WINDOWS_HASH: ${{ needs.build-windows.outputs.hash }}
         run: |
           set -euo pipefail
           : "${APPIMAGE_HASH:?Missing AppImage hash}"
-          : "${DEB_HASH:?Missing Debian package hash}"
           : "${WINDOWS_HASH:?Missing Windows package hash}"
           (cd artifacts/windows && sha256sum -c PatchOpsIII.msi.sha256)
           (cd artifacts/linux && sha256sum -c PatchOpsIII.AppImage.sha256)
-          (cd artifacts/linux && sha256sum -c PatchOpsIII.deb.sha256)
           [ "$(sha256sum artifacts/windows/PatchOpsIII.msi | awk '{print $1}')" = "$WINDOWS_HASH" ]
           [ "$(sha256sum artifacts/linux/PatchOpsIII.AppImage | awk '{print $1}')" = "$APPIMAGE_HASH" ]
-          [ "$(sha256sum artifacts/linux/PatchOpsIII.deb | awk '{print $1}')" = "$DEB_HASH" ]
           mkdir release
           cp artifacts/windows/PatchOpsIII.msi release/PatchOpsIII.msi
           cp artifacts/linux/PatchOpsIII.AppImage release/PatchOpsIII.AppImage
-          cp artifacts/linux/PatchOpsIII.deb release/PatchOpsIII.deb
           chmod +x release/PatchOpsIII.AppImage
           printf '%s  PatchOpsIII.msi\n' "$WINDOWS_HASH" > release/PatchOpsIII.msi.sha256
           printf '%s  PatchOpsIII.AppImage\n' "$APPIMAGE_HASH" > release/PatchOpsIII.AppImage.sha256
-          printf '%s  PatchOpsIII.deb\n' "$DEB_HASH" > release/PatchOpsIII.deb.sha256
 
       - name: Prepare release notes
         env:
-          DEB_HASH: ${{ needs.build-linux.outputs.deb_hash }}
-          DEB_VT_URL: ${{ needs.build-linux.outputs.deb_vt_url }}
           LINUX_HASH: ${{ needs.build-linux.outputs.appimage_hash }}
           LINUX_VT_URL: ${{ needs.build-linux.outputs.appimage_vt_url }}
           NOTES_FILE: ${{ needs.prepare.outputs.notes_file }}
@@ -237,12 +229,6 @@ jobs:
             LINUX_SHA256_URL: `${base}/PatchOpsIII.AppImage.sha256`,
             LINUX_VT_URL: process.env.LINUX_VT_URL,
             LINUX_VT_STATUS_OR_URL: `[Linux hash lookup](${process.env.LINUX_VT_URL})`,
-            DEB_DOWNLOAD_URL: `${base}/PatchOpsIII.deb`,
-            DEB_SHA256: process.env.DEB_HASH,
-            DEB_SHA256_FILENAME: 'PatchOpsIII.deb.sha256',
-            DEB_SHA256_URL: `${base}/PatchOpsIII.deb.sha256`,
-            DEB_VT_URL: process.env.DEB_VT_URL,
-            DEB_VT_STATUS_OR_URL: `[Debian hash lookup](${process.env.DEB_VT_URL})`,
           };
 
           let notes = fs.readFileSync(process.env.NOTES_FILE, 'utf8');
@@ -257,7 +243,6 @@ jobs:
           const verification = [
             [`Windows MSI`, values.WINDOWS_DOWNLOAD_URL, process.env.WINDOWS_HASH, values.WINDOWS_VT_STATUS_OR_URL],
             [`Linux AppImage`, values.LINUX_DOWNLOAD_URL, process.env.LINUX_HASH, values.LINUX_VT_STATUS_OR_URL],
-            [`Debian package`, values.DEB_DOWNLOAD_URL, process.env.DEB_HASH, values.DEB_VT_STATUS_OR_URL],
           ].filter(([, , hash]) => !notes.includes(hash));
           if (verification.length > 0) {
             notes += `\n\n## Build verification\n\n` + verification
@@ -272,7 +257,6 @@ jobs:
           CREATE_TAG: ${{ inputs.create_tag }}
           GH_TOKEN: ${{ secrets.RELEASE_PAT || github.token }}
           LOCAL_APPIMAGE_HASH: ${{ needs.build-linux.outputs.appimage_hash }}
-          LOCAL_DEB_HASH: ${{ needs.build-linux.outputs.deb_hash }}
           LOCAL_WINDOWS_HASH: ${{ needs.build-windows.outputs.hash }}
           RELEASE_MAKE_LATEST: "true"
           RELEASE_PRERELEASE: "false"
@@ -321,18 +305,15 @@ jobs:
             PatchOpsIII.msi.sha256
             PatchOpsIII.AppImage
             PatchOpsIII.AppImage.sha256
-            PatchOpsIII.deb
-            PatchOpsIII.deb.sha256
           )
           expected_binaries=(
             PatchOpsIII.msi
             PatchOpsIII.AppImage
-            PatchOpsIII.deb
           )
 
           is_expected_asset() {
             case "$1" in
-              PatchOpsIII.msi|PatchOpsIII.msi.sha256|PatchOpsIII.AppImage|PatchOpsIII.AppImage.sha256|PatchOpsIII.deb|PatchOpsIII.deb.sha256)
+              PatchOpsIII.msi|PatchOpsIII.msi.sha256|PatchOpsIII.AppImage|PatchOpsIII.AppImage.sha256)
                 return 0
                 ;;
               *)
@@ -395,7 +376,6 @@ jobs:
             remote_asset_dir="$(mktemp -d "$RUNNER_TEMP/patchops-release-download.XXXXXX")"
             remote_windows_hash=""
             remote_appimage_hash=""
-            remote_deb_hash=""
 
             for binary in "${expected_binaries[@]}"; do
               sidecar="${binary}.sha256"
@@ -421,13 +401,11 @@ jobs:
               case "$binary" in
                 *.msi) remote_windows_hash="$actual_hash" ;;
                 *.AppImage) remote_appimage_hash="$actual_hash" ;;
-                *.deb) remote_deb_hash="$actual_hash" ;;
               esac
             done
 
             [ -n "$remote_windows_hash" ]
             [ -n "$remote_appimage_hash" ]
-            [ -n "$remote_deb_hash" ]
           }
 
           validate_release_metadata() {
@@ -443,7 +421,6 @@ jobs:
             VALIDATE_BODY="$validate_body" \
             REMOTE_WINDOWS_HASH="${remote_windows_hash:-}" \
             REMOTE_APPIMAGE_HASH="${remote_appimage_hash:-}" \
-            REMOTE_DEB_HASH="${remote_deb_hash:-}" \
               node <<'NODE'
           const fs = require('node:fs');
 
@@ -466,7 +443,6 @@ jobs:
           const hashPairs = [
             ['WINDOWS', process.env.LOCAL_WINDOWS_HASH, process.env.REMOTE_WINDOWS_HASH],
             ['APPIMAGE', process.env.LOCAL_APPIMAGE_HASH, process.env.REMOTE_APPIMAGE_HASH],
-            ['DEB', process.env.LOCAL_DEB_HASH, process.env.REMOTE_DEB_HASH],
           ];
           const normalize = (value, index) => {
             let result = String(value ?? '').replace(/\r\n/g, '\n').trimEnd();

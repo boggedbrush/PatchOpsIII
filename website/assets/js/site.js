@@ -353,9 +353,6 @@ function mapRelease(repoSlug, rel) {
       linux: {
         url: pickAssetUrl(assets, "PatchOpsIII.AppImage", [".AppImage"]) || `${fallbackBase}/PatchOpsIII.AppImage`,
       },
-      deb: {
-        url: pickAssetUrl(assets, "PatchOpsIII.deb", [".deb"]),
-      },
     },
   };
 }
@@ -503,14 +500,11 @@ function applyReleaseData(mappedLatest) {
   const url = safeText(mappedLatest?.url);
   const winUrl = safeText(mappedLatest?.downloads?.windows?.url);
   const linuxUrl = safeText(mappedLatest?.downloads?.linux?.url);
-  const debUrl = safeText(mappedLatest?.downloads?.deb?.url);
 
   if (tag) setText("[data-latest-version]", tag);
   if (url) setHref("[data-latest-release-url]", url);
   if (winUrl) setHref("[data-download-windows]", winUrl);
   if (linuxUrl) setHref("[data-download-linux]", linuxUrl);
-  setHidden("[data-download-deb]", !debUrl);
-  if (debUrl) setHref("[data-download-deb]", debUrl);
 }
 
 function applyChangelog(mappedReleases, currentStableTag) {

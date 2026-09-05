@@ -67,7 +67,7 @@ Build native packages on their target platform:
 
 ```bash
 bun run dist:win    # Windows MSI
-bun run dist:linux  # Linux AppImage + Debian package
+bun run dist:linux  # Linux AppImage
 ```
 
 Historical release notes may describe previous implementations. Current development should use typed Tauri commands and in-process Rust workflows.
