@@ -16,6 +16,73 @@ const MAX_ARCHIVE_BYTES: u64 = 16 * 1024 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 100_000;
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+pub(crate) struct Snapshot {
+    entries: Vec<(PathBuf, Option<PathBuf>)>,
+}
+
+pub(crate) fn remove_file_if_present(path: &Path) -> Result<(), String> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => Err(format!(
+            "refusing to remove non-file path {}",
+            path.display()
+        )),
+        Ok(_) => fs::remove_file(path).map_err(|error| error.to_string()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+impl Snapshot {
+    pub(crate) fn capture(targets: &[PathBuf], directory: &Path) -> Result<Self, String> {
+        fs::create_dir_all(directory).map_err(|error| error.to_string())?;
+        let mut seen = HashSet::new();
+        let mut entries = Vec::new();
+        for target in targets {
+            if !seen.insert(target.clone()) {
+                continue;
+            }
+            let backup = match fs::symlink_metadata(target) {
+                Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
+                    let backup = directory.join(entries.len().to_string());
+                    fs::copy(target, &backup).map_err(|error| error.to_string())?;
+                    Some(backup)
+                }
+                Ok(_) => return Err(format!("refusing to replace {}", target.display())),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) => return Err(error.to_string()),
+            };
+            entries.push((target.clone(), backup));
+        }
+        Ok(Self { entries })
+    }
+
+    pub(crate) fn restore(&self) -> Result<(), String> {
+        let mut errors = Vec::new();
+        for (target, backup) in self.entries.iter().rev() {
+            if let Err(error) = remove_file_if_present(target) {
+                errors.push(error);
+                continue;
+            }
+            if let Some(backup) = backup {
+                if let Some(parent) = target.parent() {
+                    if let Err(error) = fs::create_dir_all(parent) {
+                        errors.push(format!("failed to recreate {}: {error}", parent.display()));
+                        continue;
+                    }
+                }
+                if let Err(error) = fs::copy(backup, target) {
+                    errors.push(format!("failed to restore {}: {error}", target.display()));
+                }
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("; "))
+        }
+    }
+}
+
 pub fn sha256_file(path: &Path) -> Result<String, String> {
     let mut file = File::open(path).map_err(|error| format!("{}: {error}", path.display()))?;
     let mut digest = Sha256::new();
@@ -374,6 +441,27 @@ mod tests {
             writer.write_all(contents).unwrap();
         }
         writer.finish().unwrap();
+    }
+
+    #[test]
+    fn snapshot_restores_deleted_parents_and_removes_new_files() {
+        let root = TestDirectory::new("snapshot");
+        let parent = root.path().join("game");
+        fs::create_dir_all(&parent).unwrap();
+        let original = parent.join("original.dll");
+        let created = root.path().join("new.dll");
+        fs::write(&original, b"original").unwrap();
+        let snapshot = Snapshot::capture(
+            &[original.clone(), created.clone(), original.clone()],
+            &root.path().join("rollback"),
+        )
+        .unwrap();
+        assert_eq!(snapshot.entries.len(), 2);
+        fs::remove_dir_all(&parent).unwrap();
+        fs::write(&created, b"new").unwrap();
+        snapshot.restore().unwrap();
+        assert_eq!(fs::read(&original).unwrap(), b"original");
+        assert!(!created.exists());
     }
 
     #[test]

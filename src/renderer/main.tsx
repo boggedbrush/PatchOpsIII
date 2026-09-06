@@ -66,35 +66,6 @@ type EnhancedValidationState = {
   checkedAt: string | null;
 };
 
-const defaultExeSwap: PatchOpsState["exeSwap"] = {
-  profile: "",
-  modeLabel: "Unknown",
-  patchLabel: "",
-  displayLabel: "EXE Swapper is unavailable while PatchOpsIII is starting.",
-  state: "unavailable",
-  activeBuildId: "Unknown",
-  activeBuildDate: "",
-  currentBuildId: "21201493",
-  currentBuildDate: "Feb 19, 2026",
-  compatibleBuildId: "10650222",
-  compatibleBuildDate: "Mar 3, 2023",
-  enhancedBuildId: "Enhanced",
-  enhancedBuildDate: "",
-  executable: "",
-  executableName: "",
-  executableHash: "",
-  trustedExecutable: false,
-  integrityStatus: "unavailable",
-  integrityMessage: "EXE Swapper is unavailable while PatchOpsIII is starting.",
-  backupAvailable: false,
-  latestAvailable: false,
-  compatibleAvailable: false,
-  enhancedAvailable: false,
-  compatibleActive: false,
-  enhancedExeActive: false,
-  enhancedActive: false
-};
-
 const configMap = {
   maxFps: { key: "MaxFPS", comment: "Maximum FPS cap" },
   fov: { key: "FOV", comment: "Field of view" },
@@ -277,18 +248,6 @@ function runtimeUnavailableMessage(status: AppStatus) {
   return status === "failed" ? "PatchOpsIII took longer than expected. Restart PatchOpsIII and try again." : "PatchOpsIII is still getting ready.";
 }
 
-function normalizeState(next: PatchOpsState) {
-  return {
-    ...next,
-    enhanced: {
-      ...next.enhanced,
-      filesInstalled: next.enhanced.filesInstalled ?? 0,
-      backupStatus: next.enhanced.backupStatus ?? "Not created"
-    },
-    exeSwap: next.exeSwap ?? defaultExeSwap
-  };
-}
-
 function formatTimestamp(value: string | null | undefined) {
   if (!value) {
     return "Never";
@@ -334,6 +293,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [depotPrompt, setDepotPrompt] = useState<DepotPromptState | null>(null);
   const depotWatchTimer = useRef<number | null>(null);
+  const depotPollInFlight = useRef(false);
   const [t7Gamertag, setT7Gamertag] = useState("");
   const [t7ColorCode, setT7ColorCode] = useState("");
   const [t7Password, setT7Password] = useState("");
@@ -347,7 +307,7 @@ function App() {
 
   async function refresh() {
     const next = await desktop.getState();
-    setState(normalizeState(next));
+    setState(next);
     setLogs(uniqueLogs(next.logs));
   }
 
@@ -368,7 +328,7 @@ function App() {
     setError(null);
     try {
       const result = await desktop.activateCompatibleExe();
-      setState(normalizeState(result.state));
+      setState(result.state);
       setLogs(uniqueLogs(result.state.logs));
       if (result.depotCommand) {
         setDepotPrompt({ command: result.depotCommand, copied: false, watching: false });
@@ -397,16 +357,16 @@ function App() {
   }
 
   async function pollCompatibleDepot() {
+    if (depotPollInFlight.current) return;
+    depotPollInFlight.current = true;
     try {
       const depotResult = await desktop.getCompatibleDepotStatus();
-      setState(normalizeState(depotResult.state));
-      setLogs(uniqueLogs(depotResult.state.logs));
       if (!depotResult.available) {
         return;
       }
 
       const swapResult = await desktop.activateCompatibleExe();
-      setState(normalizeState(swapResult.state));
+      setState(swapResult.state);
       setLogs(uniqueLogs(swapResult.state.logs));
       if (swapResult.depotCommand) {
         return;
@@ -424,6 +384,8 @@ function App() {
       }
       setDepotPrompt((current) => current ? { ...current, watching: false } : current);
       setError(err instanceof Error ? err.message : "Compatible EXE swap failed.");
+    } finally {
+      depotPollInFlight.current = false;
     }
   }
 
@@ -435,7 +397,7 @@ function App() {
     await runAction("exe-enhanced", desktop.activateEnhancedExe);
   }
 
-  async function runAction(id: string, action: () => Promise<PatchOpsState>) {
+  async function runAction(id: string, action: () => Promise<Partial<PatchOpsState>>) {
     if (appStatus !== "ready") {
       setError(runtimeUnavailableMessage(appStatus));
       return;
@@ -444,8 +406,8 @@ function App() {
     setError(null);
     try {
       const result = await action();
-      setState(normalizeState(result));
-      setLogs(uniqueLogs(result.logs));
+      setState((current) => current ? { ...current, ...result } : current);
+      if (result.logs) setLogs(uniqueLogs(result.logs));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -569,7 +531,7 @@ function App() {
     setError(null);
     try {
       const result = await desktop.validateEnhancedSource(dumpSource);
-      setState(normalizeState(result.state));
+      setState(result.state);
       setLogs(uniqueLogs(result.state.logs));
       setEnhancedValidation({
         label: result.message ?? (result.valid ? "Ready" : "Not valid"),
@@ -689,7 +651,7 @@ function App() {
         if (cancelled) {
           return;
         }
-        setState(normalizeState(next));
+        setState(next);
         setLogs(uniqueLogs(next.logs));
         setAppStatus("ready");
       } catch (err) {

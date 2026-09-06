@@ -334,7 +334,7 @@ fn validated_enhanced_backup(
     })
 }
 
-pub fn status(state: &AppState, game_dir: Option<&Path>) -> ExeSwapState {
+pub fn status(settings: &Settings, game_dir: Option<&Path>) -> ExeSwapState {
     let executable = game_dir.and_then(find_executable);
     let exe_hash = executable
         .as_deref()
@@ -342,12 +342,11 @@ pub fn status(state: &AppState, game_dir: Option<&Path>) -> ExeSwapState {
         .unwrap_or_default()
         .to_ascii_lowercase();
     let enhanced_active = game_dir.is_some_and(crate::enhanced::detect_install);
-    let settings = state.load_settings();
     let integrity = integrity_for_hash(
         &exe_hash,
         executable.is_some(),
         enhanced_active,
-        known_enhanced_hashes(&settings, game_dir).contains(&exe_hash),
+        known_enhanced_hashes(settings, game_dir).contains(&exe_hash),
     );
     let mut profile = if integrity.profile.is_empty() {
         game_dir.and_then(read_variant).unwrap_or_default()
@@ -375,7 +374,7 @@ pub fn status(state: &AppState, game_dir: Option<&Path>) -> ExeSwapState {
         .is_some_and(|path| validated_preserved_compatible(path).is_some());
     let enhanced_available = executable
         .as_deref()
-        .is_some_and(|path| validated_enhanced_backup(&settings, game_dir, path).is_some());
+        .is_some_and(|path| validated_enhanced_backup(settings, game_dir, path).is_some());
     let patch_label = if profile == COMPATIBLE_EXE_ID {
         "T7 Patch 2.04"
     } else {

@@ -244,11 +244,8 @@ pub fn status(
     state: &AppState,
     game_dir: Option<&Path>,
     current_launch_options: Option<&str>,
+    dump_source: String,
 ) -> EnhancedState {
-    let dump_source = state
-        .load_settings()
-        .enhanced_dump_source
-        .unwrap_or_default();
     let (result, stale_state_error) = status_at(
         state.data_dir(),
         game_dir,

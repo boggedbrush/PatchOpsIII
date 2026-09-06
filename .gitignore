@@ -10,6 +10,9 @@ dist/
 src-tauri/target/
 src-tauri/gen/schemas/
 
+# Generated benchmark reports
+/benchmarks/*.json
+
 # Local application data
 *.log
 *.vdf

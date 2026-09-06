@@ -20,6 +20,19 @@ test("configuration writes use a named command and typed arguments", async () =>
   expect(invoke).toHaveBeenCalledWith("set_config_value", { key: "MaxFPS", value: 240 });
 });
 
+test("release channel updates return only the changed field", async () => {
+  invoke.mockResolvedValueOnce("beta");
+  expect(await api.setReleaseChannel("beta")).toEqual({ releaseChannel: "beta" });
+  expect(invoke).toHaveBeenCalledWith("set_release_channel", { channel: "beta" });
+});
+
+test("depot polling accepts availability without a state refresh", async () => {
+  invoke.mockResolvedValueOnce({ available: false });
+  expect(await api.getCompatibleDepotStatus()).toEqual({ available: false });
+  expect(invoke).toHaveBeenCalledTimes(1);
+  expect(invoke).toHaveBeenCalledWith("get_compatible_depot_status", undefined);
+});
+
 test("external actions expose an enum instead of arbitrary URLs", async () => {
   await api.openExternal("enhancedGuide");
   expect(invoke).toHaveBeenCalledWith("open_external", { target: "enhancedGuide" });

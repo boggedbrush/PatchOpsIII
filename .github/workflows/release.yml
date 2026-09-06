@@ -1,0 +1,567 @@
+name: Release
+
+on:
+  workflow_call:
+    inputs:
+      channel:
+        required: true
+        type: string
+      release_notes_file:
+        description: File under Release Notes; latest selects the package version
+        required: false
+        type: string
+        default: latest
+      source_ref:
+        description: Source branch or tag
+        required: true
+        type: string
+        default: main
+      create_tag:
+        description: Create the version tag if it does not exist
+        required: true
+        type: boolean
+        default: true
+
+    secrets:
+      VT_API_KEY:
+        required: false
+      RELEASE_PAT:
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: patchopsiii-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Validate immutable release source
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.metadata.outputs.tag }}
+      release_title: ${{ steps.metadata.outputs.release_title }}
+      notes_file: ${{ steps.metadata.outputs.notes_file }}
+      source_sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve immutable source commit
+        id: source
+        run: printf 'sha=%s\n' "$(git rev-parse --verify 'HEAD^{commit}')" >> "$GITHUB_OUTPUT"
+
+      - name: Read and validate release metadata
+        id: metadata
+        env:
+          EXPECTED_CHANNEL: ${{ inputs.channel }}
+          NOTES_INPUT: ${{ inputs.release_notes_file }}
+        run: |
+          set -euo pipefail
+          export RELEASE_VERSION_TAGS="$(git tag --list 'v*')"
+          node scripts/verify-release-metadata.mjs "$EXPECTED_CHANNEL" --check-tags
+          version="$(node -p "require('./package.json').version")"
+
+          notes="$NOTES_INPUT"
+          if [[ "$notes" =~ [[:cntrl:]] ]]; then
+            printf 'Release notes input must not contain control characters.\n' >&2
+            exit 1
+          fi
+          if [ -z "$notes" ] || [ "$notes" = latest ]; then
+            notes="Release Notes/PatchOpsIII v${version}.md"
+          elif [[ "$notes" != "Release Notes/"* ]]; then
+            notes="Release Notes/$notes"
+          fi
+          if [ ! -f "$notes" ] || [[ "$(realpath "$notes")" != "$(realpath 'Release Notes')/"* ]]; then
+            printf 'Release notes must be an existing file under Release Notes/: %s\n' "$notes" >&2
+            exit 1
+          fi
+          heading="$(head -n 1 "$notes" | tr -d '\r')"
+          if [ "$heading" != "# PatchOpsIII v${version} Release Notes" ]; then
+            printf 'Release notes heading does not match package version %s: %s\n' "$version" "$notes" >&2
+            exit 1
+          fi
+
+          tag="v$version"
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+          printf 'release_title=PatchOpsIII %s\n' "$tag" >> "$GITHUB_OUTPUT"
+          printf 'notes_file=%s\n' "$notes" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag state
+        env:
+          CREATE_TAG: ${{ inputs.create_tag }}
+          TAG: ${{ steps.metadata.outputs.tag }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          if git rev-parse "refs/tags/$TAG^{commit}" >/dev/null 2>&1; then
+            tag_sha="$(git rev-parse "refs/tags/$TAG^{commit}")"
+            if [ "$tag_sha" = "$SOURCE_SHA" ]; then
+              exit 0
+            fi
+            printf 'Refusing to move existing tag %s from %s to %s\n' "$TAG" "$tag_sha" "$SOURCE_SHA" >&2
+            exit 1
+          fi
+          if [ "$CREATE_TAG" != true ]; then
+            printf 'Tag %s does not exist and create_tag is false\n' "$TAG" >&2
+            exit 1
+          fi
+
+  build-windows:
+    needs: prepare
+    uses: ./.github/workflows/windows-build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.source_sha }}
+    secrets:
+      VT_API_KEY: ${{ secrets.VT_API_KEY }}
+
+  build-linux:
+    needs: prepare
+    uses: ./.github/workflows/linux-build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.source_sha }}
+    secrets:
+      VT_API_KEY: ${{ secrets.VT_API_KEY }}
+
+  release:
+    name: Publish ${{ inputs.channel }} release
+    runs-on: ubuntu-latest
+    environment: ${{ format('{0}-release', inputs.channel) }}
+    needs: [prepare, build-windows, build-linux]
+    env:
+      ASSET_PREFIX: ${{ inputs.channel == 'beta' && 'PatchOpsIII-Beta' || 'PatchOpsIII' }}
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout validated source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          persist-credentials: false
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ needs.build-windows.outputs.artifact_name }}
+          path: artifacts/windows
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ needs.build-linux.outputs.artifact_name }}
+          path: artifacts/linux
+
+      - name: Verify and organize assets
+        env:
+          APPIMAGE_HASH: ${{ needs.build-linux.outputs.appimage_hash }}
+          WINDOWS_HASH: ${{ needs.build-windows.outputs.hash }}
+        run: |
+          set -euo pipefail
+          : "${APPIMAGE_HASH:?Missing AppImage hash}"
+          : "${WINDOWS_HASH:?Missing Windows package hash}"
+          (cd artifacts/windows && sha256sum -c PatchOpsIII.msi.sha256)
+          (cd artifacts/linux && sha256sum -c PatchOpsIII.AppImage.sha256)
+          [ "$(sha256sum artifacts/windows/PatchOpsIII.msi | awk '{print $1}')" = "$WINDOWS_HASH" ]
+          [ "$(sha256sum artifacts/linux/PatchOpsIII.AppImage | awk '{print $1}')" = "$APPIMAGE_HASH" ]
+          mkdir release
+          cp artifacts/windows/PatchOpsIII.msi "release/${ASSET_PREFIX}.msi"
+          cp artifacts/linux/PatchOpsIII.AppImage "release/${ASSET_PREFIX}.AppImage"
+          chmod +x "release/${ASSET_PREFIX}.AppImage"
+          printf '%s  %s\n' "$WINDOWS_HASH" "${ASSET_PREFIX}.msi" > "release/${ASSET_PREFIX}.msi.sha256"
+          printf '%s  %s\n' "$APPIMAGE_HASH" "${ASSET_PREFIX}.AppImage" > "release/${ASSET_PREFIX}.AppImage.sha256"
+
+      - name: Prepare release notes
+        env:
+          LINUX_HASH: ${{ needs.build-linux.outputs.appimage_hash }}
+          LINUX_VT_URL: ${{ needs.build-linux.outputs.appimage_vt_url }}
+          NOTES_FILE: ${{ needs.prepare.outputs.notes_file }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          WINDOWS_HASH: ${{ needs.build-windows.outputs.hash }}
+          WINDOWS_VT_URL: ${{ needs.build-windows.outputs.vt_url }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          const ASSET_PREFIX = process.env.ASSET_PREFIX;
+          const base = `https://github.com/${process.env.REPOSITORY}/releases/download/${process.env.TAG}`;
+          const values = {
+            WINDOWS_DOWNLOAD_URL: `${base}/${ASSET_PREFIX}.msi`,
+            WINDOWS_SHA256: process.env.WINDOWS_HASH,
+            WINDOWS_SHA256_FILENAME: `${ASSET_PREFIX}.msi.sha256`,
+            WINDOWS_SHA256_URL: `${base}/${ASSET_PREFIX}.msi.sha256`,
+            WINDOWS_VT_URL: process.env.WINDOWS_VT_URL,
+            WINDOWS_VT_STATUS_OR_URL: `[Windows hash lookup](${process.env.WINDOWS_VT_URL})`,
+            LINUX_DOWNLOAD_URL: `${base}/${ASSET_PREFIX}.AppImage`,
+            LINUX_SHA256: process.env.LINUX_HASH,
+            LINUX_SHA256_FILENAME: `${ASSET_PREFIX}.AppImage.sha256`,
+            LINUX_SHA256_URL: `${base}/${ASSET_PREFIX}.AppImage.sha256`,
+            LINUX_VT_URL: process.env.LINUX_VT_URL,
+            LINUX_VT_STATUS_OR_URL: `[Linux hash lookup](${process.env.LINUX_VT_URL})`,
+          };
+
+          let notes = fs.readFileSync(process.env.NOTES_FILE, 'utf8');
+          for (const [key, value] of Object.entries(values)) {
+            notes = notes.replaceAll(`{{${key}}}`, value);
+          }
+          notes = notes
+            .split(/\r?\n/)
+            .filter((line) => !line.includes('Update metadata:'))
+            .join('\n');
+
+          const verification = [
+            [`Windows MSI`, values.WINDOWS_DOWNLOAD_URL, process.env.WINDOWS_HASH, values.WINDOWS_VT_STATUS_OR_URL],
+            [`Linux AppImage`, values.LINUX_DOWNLOAD_URL, process.env.LINUX_HASH, values.LINUX_VT_STATUS_OR_URL],
+          ].filter(([, , hash]) => !notes.includes(hash));
+          if (verification.length > 0) {
+            notes += `\n\n## Build verification\n\n` + verification
+              .map(([label, url, hash, vt]) => `- [${label}](${url}) — SHA-256 \`${hash}\` — ${vt}`)
+              .join('\n') + '\n';
+          }
+          fs.writeFileSync('release-notes.md', `${notes.trimEnd()}\n`);
+          NODE
+
+      - name: Create tag and publish GitHub release
+        env:
+          CREATE_TAG: ${{ inputs.create_tag }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || github.token }}
+          LOCAL_APPIMAGE_HASH: ${{ needs.build-linux.outputs.appimage_hash }}
+          LOCAL_WINDOWS_HASH: ${{ needs.build-windows.outputs.hash }}
+          RELEASE_MAKE_LATEST: ${{ inputs.channel == 'stable' && 'true' || 'false' }}
+          RELEASE_PRERELEASE: ${{ inputs.channel == 'beta' && 'true' || 'false' }}
+          RELEASE_TITLE: ${{ needs.prepare.outputs.release_title }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          get_tag_object() {
+            gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object.type + " " + .object.sha'
+          }
+
+          resolve_tag_commit() {
+            local tag_object="$1"
+            local object_type object_sha
+            local depth=0
+            read -r object_type object_sha <<< "$tag_object"
+            while [ "$object_type" = tag ]; do
+              depth=$((depth + 1))
+              if [ "$depth" -gt 8 ]; then
+                printf 'Tag %s has too many annotation layers\n' "$TAG" >&2
+                return 1
+              fi
+              tag_object="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object_sha" --jq '.object.type + " " + .object.sha')"
+              read -r object_type object_sha <<< "$tag_object"
+            done
+            if [ "$object_type" != commit ]; then
+              printf 'Tag %s ultimately targets %s, not a commit\n' "$TAG" "$object_type" >&2
+              return 1
+            fi
+            printf '%s\n' "$object_sha"
+          }
+
+          verify_tag_commit() {
+            local tag_commit
+            tag_commit="$(resolve_tag_commit "$(get_tag_object)")"
+            if [ "$tag_commit" != "$SOURCE_SHA" ]; then
+              printf 'Refusing tag %s at %s; expected %s\n' "$TAG" "$tag_commit" "$SOURCE_SHA" >&2
+              return 1
+            fi
+          }
+
+          expected_assets=(
+            "${ASSET_PREFIX}.msi"
+            "${ASSET_PREFIX}.msi.sha256"
+            "${ASSET_PREFIX}.AppImage"
+            "${ASSET_PREFIX}.AppImage.sha256"
+          )
+          expected_binaries=(
+            "${ASSET_PREFIX}.msi"
+            "${ASSET_PREFIX}.AppImage"
+          )
+
+          is_expected_asset() {
+            case "$1" in
+              "${ASSET_PREFIX}.msi"|"${ASSET_PREFIX}.msi.sha256"|"${ASSET_PREFIX}.AppImage"|"${ASSET_PREFIX}.AppImage.sha256")
+                return 0
+                ;;
+              *)
+                return 1
+                ;;
+            esac
+          }
+
+          find_release() {
+            local matches_file="$RUNNER_TEMP/patchops-release-matches"
+            local -a matches=()
+
+            release_id=""
+            release_draft=""
+            gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              --jq ".[] | select(.tag_name == \"$TAG\") | [.id, .draft] | @tsv" > "$matches_file"
+            mapfile -t matches < "$matches_file"
+            if [ "${#matches[@]}" -gt 1 ]; then
+              printf 'Refusing %s releases that share tag %s\n' "${#matches[@]}" "$TAG" >&2
+              return 1
+            fi
+            if [ "${#matches[@]}" -eq 1 ]; then
+              IFS=$'\t' read -r release_id release_draft <<< "${matches[0]}"
+            fi
+          }
+
+          load_release_assets() {
+            local id="$1"
+            local asset_id asset count
+
+            release_asset_records="$RUNNER_TEMP/patchops-release-assets-$id"
+            release_asset_state=complete
+            gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$id/assets?per_page=100" \
+              --jq '.[] | [.id, .name] | @tsv' > "$release_asset_records"
+
+            while IFS=$'\t' read -r asset_id asset; do
+              [ -n "$asset" ] || continue
+              if ! is_expected_asset "$asset"; then
+                printf 'Refusing release %s with unexpected asset: %s\n' "$TAG" "$asset" >&2
+                return 1
+              fi
+            done < "$release_asset_records"
+
+            for asset in "${expected_assets[@]}"; do
+              count="$(awk -F '\t' -v name="$asset" '$2 == name { count++ } END { print count + 0 }' "$release_asset_records")"
+              if [ "$count" -gt 1 ]; then
+                printf 'Release %s contains duplicate %s assets\n' "$TAG" "$asset" >&2
+                return 1
+              fi
+              if [ "$count" -eq 0 ]; then
+                release_asset_state=incomplete
+              fi
+            done
+          }
+
+          validate_release_assets() {
+            local id="$1"
+            local binary sidecar asset asset_id actual_hash expected_sidecar
+
+            remote_asset_dir="$(mktemp -d "$RUNNER_TEMP/patchops-release-download.XXXXXX")"
+            remote_windows_hash=""
+            remote_appimage_hash=""
+
+            for binary in "${expected_binaries[@]}"; do
+              sidecar="${binary}.sha256"
+              for asset in "$binary" "$sidecar"; do
+                asset_id="$(awk -F '\t' -v name="$asset" '$2 == name { print $1 }' "$release_asset_records")"
+                [ -n "$asset_id" ] || {
+                  printf 'Release %s is missing %s\n' "$TAG" "$asset" >&2
+                  return 1
+                }
+                gh api \
+                  -H 'Accept: application/octet-stream' \
+                  "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" > "$remote_asset_dir/$asset"
+              done
+
+              actual_hash="$(sha256sum "$remote_asset_dir/$binary" | awk '{print $1}')"
+              expected_sidecar="$remote_asset_dir/${sidecar}.expected"
+              printf '%s  %s\n' "$actual_hash" "$binary" > "$expected_sidecar"
+              if ! cmp -s "$expected_sidecar" "$remote_asset_dir/$sidecar"; then
+                printf 'Release %s has an invalid checksum sidecar for %s\n' "$TAG" "$binary" >&2
+                return 1
+              fi
+
+              case "$binary" in
+                *.msi) remote_windows_hash="$actual_hash" ;;
+                *.AppImage) remote_appimage_hash="$actual_hash" ;;
+              esac
+            done
+
+            [ -n "$remote_windows_hash" ]
+            [ -n "$remote_appimage_hash" ]
+          }
+
+          validate_release_metadata() {
+            local id="$1"
+            local expected_draft="$2"
+            local validate_body="${3:-true}"
+            local release_json="$RUNNER_TEMP/patchops-release-$id.json"
+
+            gh api "repos/$GITHUB_REPOSITORY/releases/$id" > "$release_json"
+            RELEASE_JSON_PATH="$release_json" \
+            RELEASE_ID="$id" \
+            EXPECTED_DRAFT="$expected_draft" \
+            VALIDATE_BODY="$validate_body" \
+            REMOTE_WINDOWS_HASH="${remote_windows_hash:-}" \
+            REMOTE_APPIMAGE_HASH="${remote_appimage_hash:-}" \
+              node <<'NODE'
+          const fs = require('node:fs');
+
+          const release = JSON.parse(fs.readFileSync(process.env.RELEASE_JSON_PATH, 'utf8'));
+          const expectedDraft = process.env.EXPECTED_DRAFT === 'true';
+          const expectedPrerelease = process.env.RELEASE_PRERELEASE === 'true';
+
+          function fail(message) {
+            console.error(`Release metadata error: ${message}`);
+            process.exit(1);
+          }
+
+          if (String(release.id) !== process.env.RELEASE_ID) fail('release ID changed during validation');
+          if (release.tag_name !== process.env.TAG) fail(`tag is ${release.tag_name}`);
+          if (release.name !== process.env.RELEASE_TITLE) fail(`title is ${release.name}`);
+          if (release.draft !== expectedDraft) fail(`draft is ${release.draft}`);
+          if (release.prerelease !== expectedPrerelease) fail(`prerelease is ${release.prerelease}`);
+          if (process.env.VALIDATE_BODY !== 'true') process.exit(0);
+
+          const hashPairs = [
+            ['WINDOWS', process.env.LOCAL_WINDOWS_HASH, process.env.REMOTE_WINDOWS_HASH],
+            ['APPIMAGE', process.env.LOCAL_APPIMAGE_HASH, process.env.REMOTE_APPIMAGE_HASH],
+          ];
+          const normalize = (value, index) => {
+            let result = String(value ?? '').replace(/\r\n/g, '\n').trimEnd();
+            for (const [label, localHash, remoteHash] of hashPairs) {
+              const hash = index === 1 ? localHash : remoteHash;
+              if (!/^[0-9a-f]{64}$/.test(hash ?? '')) fail(`${label} hash is invalid`);
+              if (!result.includes(hash)) fail(`${label} hash is missing from release notes`);
+              result = result.replaceAll(hash, `{{${label}_HASH}}`);
+            }
+            return result;
+          };
+
+          const actualBody = normalize(release.body, 0);
+          const expectedBody = normalize(fs.readFileSync('release-notes.md', 'utf8'), 1);
+          if (actualBody !== expectedBody) fail('release notes do not match the validated source metadata');
+          NODE
+          }
+
+          validate_latest_semantics() {
+            local id="$1"
+            local latest_id latest_error latest_status
+
+            latest_error="$RUNNER_TEMP/patchops-latest-error"
+            if latest_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.id' 2>"$latest_error")"; then
+              if [ "$RELEASE_MAKE_LATEST" = true ] && [ "$latest_id" != "$id" ]; then
+                printf 'Stable release %s is not marked latest\n' "$TAG" >&2
+                return 1
+              fi
+              if [ "$RELEASE_MAKE_LATEST" = false ] && [ "$latest_id" = "$id" ]; then
+                printf 'Prerelease %s must not be marked latest\n' "$TAG" >&2
+                return 1
+              fi
+            else
+              latest_status=$?
+              if [ "$RELEASE_MAKE_LATEST" = true ] || ! grep -Fq 'HTTP 404' "$latest_error"; then
+                cat "$latest_error" >&2
+                return "$latest_status"
+              fi
+            fi
+          }
+
+          validate_complete_release() {
+            local id="$1"
+            local expected_draft="$2"
+
+            load_release_assets "$id"
+            if [ "$release_asset_state" != complete ]; then
+              printf 'Release %s has an incomplete asset set\n' "$TAG" >&2
+              return 1
+            fi
+            validate_release_assets "$id"
+            validate_release_metadata "$id" "$expected_draft"
+          }
+
+          asset_paths=()
+          for asset in "${expected_assets[@]}"; do
+            asset_paths+=("release/$asset")
+          done
+
+          tag_error="$RUNNER_TEMP/patchops-tag-error"
+          if tag_object="$(get_tag_object 2>"$tag_error")"; then
+            tag_commit="$(resolve_tag_commit "$tag_object")"
+            if [ "$tag_commit" != "$SOURCE_SHA" ]; then
+              printf 'Refusing to move existing tag %s from %s to %s\n' "$TAG" "$tag_commit" "$SOURCE_SHA" >&2
+              exit 1
+            fi
+          else
+            tag_status=$?
+            if ! grep -Fq 'HTTP 404' "$tag_error"; then
+              cat "$tag_error" >&2
+              exit "$tag_status"
+            fi
+            if [ "$CREATE_TAG" != true ]; then
+              printf 'Tag %s does not exist and create_tag is false\n' "$TAG" >&2
+              exit 1
+            fi
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              --raw-field ref="refs/tags/$TAG" \
+              --raw-field sha="$SOURCE_SHA" >/dev/null
+          fi
+          verify_tag_commit
+
+          find_release
+          if [ -n "$release_id" ]; then
+            load_release_assets "$release_id"
+            if [ "$release_draft" = false ]; then
+              if [ "$release_asset_state" != complete ]; then
+                printf 'Refusing published release %s with an incomplete asset set\n' "$TAG" >&2
+                exit 1
+              fi
+              validate_release_assets "$release_id"
+              validate_release_metadata "$release_id" false
+              validate_latest_semantics "$release_id"
+              verify_tag_commit
+              printf 'Release %s is already published and complete; leaving it unchanged.\n' "$TAG"
+              exit 0
+            fi
+            if [ "$release_draft" != true ]; then
+              printf 'Release %s has an invalid draft state: %s\n' "$TAG" "$release_draft" >&2
+              exit 1
+            fi
+            if [ "$release_asset_state" = incomplete ]; then
+              validate_release_metadata "$release_id" true false
+              printf 'Replacing incomplete draft release %s (%s).\n' "$TAG" "$release_id"
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$release_id" >/dev/null
+              verify_tag_commit
+              find_release
+              if [ -n "$release_id" ]; then
+                printf 'Release %s still exists after deleting its incomplete draft\n' "$TAG" >&2
+                exit 1
+              fi
+            else
+              validate_release_assets "$release_id"
+              validate_release_metadata "$release_id" true
+            fi
+          fi
+
+          if [ -z "$release_id" ]; then
+            gh release create "$TAG" "${asset_paths[@]}" \
+              --verify-tag \
+              --target "$SOURCE_SHA" \
+              --title "$RELEASE_TITLE" \
+              --notes-file release-notes.md \
+              --draft \
+              --prerelease="$RELEASE_PRERELEASE"
+            find_release
+            if [ -z "$release_id" ] || [ "$release_draft" != true ]; then
+              printf 'Draft release %s was not created as expected\n' "$TAG" >&2
+              exit 1
+            fi
+            validate_complete_release "$release_id" true
+          fi
+
+          verify_tag_commit
+          publishing_release_id="$release_id"
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+            -F draft=false \
+            -F prerelease="$RELEASE_PRERELEASE" \
+            --raw-field make_latest="$RELEASE_MAKE_LATEST" >/dev/null
+
+          find_release
+          if [ -z "$release_id" ] || [ "$release_id" != "$publishing_release_id" ] || [ "$release_draft" != false ]; then
+            printf 'Release %s was not published as expected\n' "$TAG" >&2
+            exit 1
+          fi
+          validate_complete_release "$release_id" false
+          validate_latest_semantics "$release_id"
+          verify_tag_commit

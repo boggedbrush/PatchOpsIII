@@ -1,7 +1,10 @@
 # PatchOpsIII architecture benchmark
 
-`origin-main.json` records the Electron + Python baseline at revision
-`f74c87bbf885e3692f77478b2ff32e89f82f0c73`. `final-tauri.json` records the
+Raw reports are archived at the linked migration commit. Keep new generated
+JSON reports as review artifacts; the harness and summary remain in source.
+
+[`origin-main.json`](https://github.com/boggedbrush/PatchOpsIII/blob/f8b1d9cbf9d579af309f09f9ad4b9a6ee9a562e1/benchmarks/origin-main.json) records the Electron + Python baseline at revision
+`f74c87bbf885e3692f77478b2ff32e89f82f0c73`. [`final-tauri.json`](https://github.com/boggedbrush/PatchOpsIII/blob/f8b1d9cbf9d579af309f09f9ad4b9a6ee9a562e1/benchmarks/final-tauri.json) records the
 React + Tauri + in-process Rust result on the same host and workload.
 
 ## Fixed fixture
@@ -53,7 +56,7 @@ The baseline harness defines backend readiness as a successful `/api/health`
 response and interactivity as the first successful renderer `/api/status`
 request. It otherwise uses the same isolated HOME/XDG/Steam fixture, procfs
 process-tree sampling, two-second idle point, three 30-second CPU samples, and
-payload-cache advice as the final harness. `origin-main.json` retains every
+payload-cache advice as the final harness. [`origin-main.json`](https://github.com/boggedbrush/PatchOpsIII/blob/f8b1d9cbf9d579af309f09f9ad4b9a6ee9a562e1/benchmarks/origin-main.json) retains every
 runtime sample because the Electron launch times varied substantially.
 
 ## Final runtime and operation runs
@@ -156,10 +159,10 @@ choose Candidate A. Runtime acceptance used a baseline primed next to that run
 because long-running host state shifted WebKit timing and proportional-set
 accounting. Negative deltas are improvements. Exact arrays, the earlier drifted
 baseline, candidate data, section sizes, dependency decisions, and limitations are in
-[`optimization-measurements.json`](optimization-measurements.json). The largest
+[`optimization-measurements.json`](https://github.com/boggedbrush/PatchOpsIII/blob/f8b1d9cbf9d579af309f09f9ad4b9a6ee9a562e1/benchmarks/optimization-measurements.json). The largest
 30 baseline files and complete static ELF mapping are retained in
-[`optimization-baseline-package.json`](optimization-baseline-package.json);
-[`optimization-final-package.json`](optimization-final-package.json) is the
+[`optimization-baseline-package.json`](https://github.com/boggedbrush/PatchOpsIII/blob/f8b1d9cbf9d579af309f09f9ad4b9a6ee9a562e1/benchmarks/optimization-baseline-package.json);
+[`optimization-final-package.json`](https://github.com/boggedbrush/PatchOpsIII/blob/f8b1d9cbf9d579af309f09f9ad4b9a6ee9a562e1/benchmarks/optimization-final-package.json) is the
 post-parity final package refresh.
 
 | Metric | Fresh baseline | Selection snapshot | Final - baseline | Change |
@@ -221,7 +224,7 @@ Candidate C again failed: payload-cold/warm SHA-256 regressed by `259.6%` and
 `348.3%`, tar.gz extraction regressed by `4.94%`, and its hash-heavy T7,
 DXVK, and Enhanced transactions materially slowed. Raw arrays, exact deltas,
 profiles, and gate results are retained under `exactCurrentOperationRefresh`
-in `optimization-measurements.json`.
+in [`optimization-measurements.json`](https://github.com/boggedbrush/PatchOpsIII/blob/f8b1d9cbf9d579af309f09f9ad4b9a6ee9a562e1/benchmarks/optimization-measurements.json).
 
 The snapshot raw `.deb` is 94.7% smaller than its AppImage because WebKitGTK
 and GTK come from Debian/Ubuntu packages rather than the download. It is not a
@@ -257,7 +260,7 @@ files. Its extracted duplicate aliases are already deduplicated by SquashFS, so
 converting them would not materially reduce the download. The snapshot's
 `usr/lib` was unchanged, so its measured AppDir savings came from `usr/bin`;
 the exact-current Ubuntu-native closure is recorded in
-`optimization-final-package.json`.
+[`optimization-final-package.json`](https://github.com/boggedbrush/PatchOpsIII/blob/f8b1d9cbf9d579af309f09f9ad4b9a6ee9a562e1/benchmarks/optimization-final-package.json).
 
 ### Exact-current Ubuntu 22.04-native packages
 
@@ -292,7 +295,7 @@ distributions supply different WebKitGTK, ICU, codec, and supporting library
 builds. The controlled same-host table above is the evidence for profile
 savings. The exact Ubuntu closure, duplicate-file audit, dependency mapping,
 Debian metadata, and validation results are in
-`optimization-final-package.json`.
+[`optimization-final-package.json`](https://github.com/boggedbrush/PatchOpsIII/blob/f8b1d9cbf9d579af309f09f9ad4b9a6ee9a562e1/benchmarks/optimization-final-package.json).
 
 The exact-current AppImage passed the clean Ubuntu UID 1000 smoke with system
 GTK, WebKitGTK, and Ayatana AppIndicator packages absent. The final official
@@ -393,5 +396,5 @@ compressed package size, incremental work, and architectural simplicity. Its
 measured tradeoffs are higher aggregate PSS and unpacked size, a slower
 shutdown, and much slower clean Rust/full builds. Exact arrays, historical host
 data, the exact-current transaction refresh, Ubuntu-native package evidence,
-and limitations are retained in `origin-main.json`, `final-tauri.json`,
-`optimization-measurements.json`, and `optimization-final-package.json`.
+and limitations are retained in [`origin-main.json`](https://github.com/boggedbrush/PatchOpsIII/blob/f8b1d9cbf9d579af309f09f9ad4b9a6ee9a562e1/benchmarks/origin-main.json), [`final-tauri.json`](https://github.com/boggedbrush/PatchOpsIII/blob/f8b1d9cbf9d579af309f09f9ad4b9a6ee9a562e1/benchmarks/final-tauri.json),
+[`optimization-measurements.json`](https://github.com/boggedbrush/PatchOpsIII/blob/f8b1d9cbf9d579af309f09f9ad4b9a6ee9a562e1/benchmarks/optimization-measurements.json), and [`optimization-final-package.json`](https://github.com/boggedbrush/PatchOpsIII/blob/f8b1d9cbf9d579af309f09f9ad4b9a6ee9a562e1/benchmarks/optimization-final-package.json).

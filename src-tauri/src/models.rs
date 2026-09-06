@@ -148,7 +148,6 @@ pub struct AdvancedState {
 #[serde(rename_all = "camelCase")]
 pub struct MaintenanceState {
     pub mod_files_dir: String,
-    pub log_payload: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -197,7 +196,6 @@ pub struct CompatibleExeResult {
 #[serde(rename_all = "camelCase")]
 pub struct DepotStatus {
     pub available: bool,
-    pub state: PatchOpsState,
 }
 
 #[derive(Clone, Debug, Serialize)]

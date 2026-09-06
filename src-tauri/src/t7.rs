@@ -9,7 +9,11 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{app::AppState, fs_ops, models::T7State};
+use crate::{
+    app::AppState,
+    fs_ops::{self, remove_file_if_present, Snapshot},
+    models::T7State,
+};
 
 const CURRENT_RELEASE_API: &str = "https://api.github.com/repos/Scroptss/T7Patch/releases/latest";
 const CURRENT_ARCHIVE_URL: &str = "https://github.com/Scroptss/T7Patch/releases/latest/download/Linux.Steamdeck.and.Manual.Windows.Install.zip";
@@ -237,10 +241,6 @@ struct GitHubAsset {
     name: String,
     #[serde(default)]
     digest: String,
-}
-
-struct Snapshot {
-    entries: Vec<(PathBuf, Option<PathBuf>)>,
 }
 
 #[derive(Clone, Debug)]
@@ -2024,18 +2024,6 @@ fn write_config_with_ownership(
     }
 }
 
-fn remove_file_if_present(path: &Path) -> Result<(), String> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => Err(format!(
-            "refusing to remove non-file path {}",
-            path.display()
-        )),
-        Ok(_) => fs::remove_file(path).map_err(|error| error.to_string()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(error.to_string()),
-    }
-}
-
 #[cfg(test)]
 pub(crate) fn benchmark_install_transaction(
     game_dir: &Path,
@@ -2100,57 +2088,6 @@ fn clear_legacy_cache(state: &AppState) {
     let archive = root.join("T7Patch.zip");
     if regular_file(&archive) {
         let _ = fs::remove_file(archive);
-    }
-}
-
-impl Snapshot {
-    fn capture(targets: &[PathBuf], directory: &Path) -> Result<Self, String> {
-        fs::create_dir_all(directory).map_err(|error| error.to_string())?;
-        let mut seen = HashSet::new();
-        let mut entries = Vec::new();
-        for target in targets {
-            if !seen.insert(target.clone()) {
-                continue;
-            }
-            let backup = match fs::symlink_metadata(target) {
-                Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
-                    let backup = directory.join(entries.len().to_string());
-                    fs::copy(target, &backup).map_err(|error| error.to_string())?;
-                    Some(backup)
-                }
-                Ok(_) => return Err(format!("refusing to replace {}", target.display())),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-                Err(error) => return Err(error.to_string()),
-            };
-            entries.push((target.clone(), backup));
-        }
-        Ok(Self { entries })
-    }
-
-    fn restore(&self) -> Result<(), String> {
-        let mut errors = Vec::new();
-        for (target, backup) in self.entries.iter().rev() {
-            if let Err(error) = remove_file_if_present(target) {
-                errors.push(error);
-                continue;
-            }
-            if let Some(backup) = backup {
-                if let Some(parent) = target.parent() {
-                    if let Err(error) = fs::create_dir_all(parent) {
-                        errors.push(format!("failed to recreate {}: {error}", parent.display()));
-                        continue;
-                    }
-                }
-                if let Err(error) = fs::copy(backup, target) {
-                    errors.push(format!("failed to restore {}: {error}", target.display()));
-                }
-            }
-        }
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(errors.join("; "))
-        }
     }
 }
 

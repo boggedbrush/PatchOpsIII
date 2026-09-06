@@ -48,19 +48,26 @@ pub fn current_state(state: &AppState) -> Result<PatchOpsState, String> {
         .find(|profile| profile.active)
         .map(|profile| profile.id.clone())
         .unwrap_or_else(|| "custom".into());
-    let exe_swap = exe::status(state, game_dir.as_deref());
+    let exe_swap = exe::status(&settings, game_dir.as_deref());
     let t7_state = t7::status(game_dir.as_deref(), Some(&exe_swap.profile));
     let dxvk_state = dxvk::status(game_dir.as_deref());
     let enhanced_state = enhanced::status(
         state,
         game_dir.as_deref(),
         current_launch_options.as_deref(),
+        settings.enhanced_dump_source.clone().unwrap_or_default(),
     );
     let config = game_dir
         .as_deref()
         .map(app::read_config)
         .unwrap_or_default();
     let qol = app::qol_state(game_dir.as_deref());
+
+    let mods = ModsState {
+        t7_patch: t7_state.installed,
+        dxvk: dxvk_state.installed,
+        enhanced: enhanced_state.installed,
+    };
 
     Ok(PatchOpsState {
         app_version: app::APP_VERSION.into(),
@@ -79,22 +86,17 @@ pub fn current_state(state: &AppState) -> Result<PatchOpsState, String> {
         active_launch_profile,
         release_channel: app::release_channel(&settings).into(),
         launch_profiles,
-        enhanced: enhanced_state.clone(),
+        enhanced: enhanced_state,
         exe_swap,
-        t7: t7_state.clone(),
-        dxvk: dxvk_state.clone(),
+        t7: t7_state,
+        dxvk: dxvk_state,
         qol,
         graphics: app::graphics_state(&config),
         advanced: app::advanced_state(game_dir.as_deref(), &config),
         maintenance: MaintenanceState {
             mod_files_dir: state.mod_files_dir().to_string_lossy().into_owned(),
-            log_payload: app::log_payload(state),
         },
-        mods: ModsState {
-            t7_patch: t7_state.installed,
-            dxvk: dxvk_state.installed,
-            enhanced: enhanced_state.installed,
-        },
+        mods,
         logs: state.recent_logs(),
     })
 }
@@ -240,9 +242,9 @@ pub async fn check_for_updates(state: State<'_, AppState>) -> Result<PatchOpsSta
 }
 
 macro_rules! state_command {
-    ($name:ident, |$app:ident| $body:block) => {
+    ($name:ident $(, $arg:ident: $ty:ty)*, |$app:ident| $body:block) => {
         #[tauri::command]
-        pub async fn $name(state: State<'_, AppState>) -> Result<PatchOpsState, String> {
+        pub async fn $name(state: State<'_, AppState>, $($arg: $ty),*) -> Result<PatchOpsState, String> {
             let $app = state.inner().clone();
             blocking(move || {
                 let _operation = $app.lock_operation()?;
@@ -258,29 +260,19 @@ macro_rules! state_command {
 pub async fn set_release_channel(
     state: State<'_, AppState>,
     channel: String,
-) -> Result<PatchOpsState, String> {
+) -> Result<String, String> {
     let state = state.inner().clone();
     blocking(move || {
         let _operation = state.lock_operation()?;
         app::set_release_channel(&state, &channel)?;
-        current_state(&state)
+        Ok(channel)
     })
     .await
 }
 
-#[tauri::command]
-pub async fn set_game_directory(
-    state: State<'_, AppState>,
-    path: String,
-) -> Result<PatchOpsState, String> {
-    let state = state.inner().clone();
-    blocking(move || {
-        let _operation = state.lock_operation()?;
-        app::set_game_directory(&state, &path)?;
-        current_state(&state)
-    })
-    .await
-}
+state_command!(set_game_directory, path: String, |state| {
+    app::set_game_directory(&state, &path)?;
+});
 
 #[tauri::command]
 pub async fn activate_compatible_exe(
@@ -306,14 +298,10 @@ pub async fn activate_compatible_exe(
 }
 
 #[tauri::command]
-pub async fn get_compatible_depot_status(
-    state: State<'_, AppState>,
-) -> Result<DepotStatus, String> {
-    let state = state.inner().clone();
+pub async fn get_compatible_depot_status() -> Result<DepotStatus, String> {
     blocking(move || {
         Ok(DepotStatus {
             available: exe::compatible_depot_available(),
-            state: current_state(&state)?,
         })
     })
     .await
@@ -326,182 +314,81 @@ state_command!(activate_enhanced_exe, |app| {
     exe::activate_enhanced(&app, &required_game_dir(&app)?)?;
 });
 
-#[tauri::command]
-pub async fn set_config_value(
-    state: State<'_, AppState>,
-    key: String,
-    value: Value,
-) -> Result<PatchOpsState, String> {
-    let state = state.inner().clone();
-    blocking(move || {
-        let _operation = state.lock_operation()?;
-        app::set_config_value(&state, &required_game_dir(&state)?, &key, value)?;
-        current_state(&state)
-    })
-    .await
-}
+state_command!(set_config_value, key: String, value: Value, |state| {
+    app::set_config_value(&state, &required_game_dir(&state)?, &key, value)?;
+});
 
-#[tauri::command]
-pub async fn apply_launch_profile(
-    state: State<'_, AppState>,
-    profile_id: String,
-) -> Result<PatchOpsState, String> {
-    let state = state.inner().clone();
-    blocking(move || {
-        let _operation = state.lock_operation()?;
-        steam::apply_launch_profile(&state, &profile_id)?;
-        current_state(&state)
-    })
-    .await
-}
+state_command!(apply_launch_profile, profile_id: String, |state| {
+    steam::apply_launch_profile(&state, &profile_id)?;
+});
 
-#[tauri::command]
-pub async fn install_workshop_profile(
-    state: State<'_, AppState>,
-    profile_id: String,
-) -> Result<PatchOpsState, String> {
-    let state = state.inner().clone();
-    blocking(move || {
-        let _operation = state.lock_operation()?;
-        steam::install_workshop_profile(&state, &profile_id)?;
-        current_state(&state)
-    })
-    .await
-}
+state_command!(install_workshop_profile, profile_id: String, |state| {
+    steam::install_workshop_profile(&state, &profile_id)?;
+});
 
-#[tauri::command]
-pub async fn set_intro_skip(
-    state: State<'_, AppState>,
-    enabled: bool,
-) -> Result<PatchOpsState, String> {
-    let state = state.inner().clone();
-    blocking(move || {
-        let _operation = state.lock_operation()?;
-        app::set_intro_skip(&state, &required_game_dir(&state)?, enabled)?;
-        current_state(&state)
-    })
-    .await
-}
+state_command!(set_intro_skip, enabled: bool, |state| {
+    app::set_intro_skip(&state, &required_game_dir(&state)?, enabled)?;
+});
 
-#[tauri::command]
-pub async fn set_d3dcompiler_workaround(
-    state: State<'_, AppState>,
-    enabled: bool,
-) -> Result<PatchOpsState, String> {
-    let state = state.inner().clone();
-    blocking(move || {
-        let _operation = state.lock_operation()?;
-        app::set_d3dcompiler(&state, &required_game_dir(&state)?, enabled)?;
-        current_state(&state)
-    })
-    .await
-}
+state_command!(set_d3dcompiler_workaround, enabled: bool, |state| {
+    app::set_d3dcompiler(&state, &required_game_dir(&state)?, enabled)?;
+});
 
-#[tauri::command]
-pub async fn set_all_intro_skip(
-    state: State<'_, AppState>,
-    enabled: bool,
-) -> Result<PatchOpsState, String> {
-    let state = state.inner().clone();
-    blocking(move || {
-        let _operation = state.lock_operation()?;
-        app::set_all_intro_skip(&state, &required_game_dir(&state)?, enabled)?;
-        current_state(&state)
-    })
-    .await
-}
+state_command!(set_all_intro_skip, enabled: bool, |state| {
+    app::set_all_intro_skip(&state, &required_game_dir(&state)?, enabled)?;
+});
 
-#[tauri::command]
-pub async fn set_all_qol(
-    state: State<'_, AppState>,
-    enabled: bool,
-) -> Result<PatchOpsState, String> {
-    let state = state.inner().clone();
-    blocking(move || {
-        let _operation = state.lock_operation()?;
-        let game_dir = required_game_dir(&state)?;
-        let previous = app::qol_state(Some(&game_dir));
-        let mut applied = Vec::new();
-        let result = (|| {
-            if previous.d3dcompiler != enabled {
-                app::set_d3dcompiler(&state, &game_dir, enabled)?;
-                applied.push("d3d");
-            }
-            if previous.intro != enabled {
-                app::set_intro_skip(&state, &game_dir, enabled)?;
-                applied.push("intro");
-            }
-            if previous.all_intros != enabled {
-                app::set_all_intro_skip(&state, &game_dir, enabled)?;
-                applied.push("all");
-            }
-            Ok(())
-        })();
-        if let Err(error) = result {
-            for action in applied.into_iter().rev() {
-                let _ = match action {
-                    "d3d" => app::set_d3dcompiler(&state, &game_dir, previous.d3dcompiler),
-                    "intro" => app::set_intro_skip(&state, &game_dir, previous.intro),
-                    _ => app::set_all_intro_skip(&state, &game_dir, previous.all_intros),
-                };
-            }
-            return Err(error);
+state_command!(set_all_qol, enabled: bool, |state| {
+    let game_dir = required_game_dir(&state)?;
+    let previous = app::qol_state(Some(&game_dir));
+    let mut applied = Vec::new();
+    let result = (|| {
+        if previous.d3dcompiler != enabled {
+            app::set_d3dcompiler(&state, &game_dir, enabled)?;
+            applied.push("d3d");
         }
-        current_state(&state)
-    })
-    .await
-}
+        if previous.intro != enabled {
+            app::set_intro_skip(&state, &game_dir, enabled)?;
+            applied.push("intro");
+        }
+        if previous.all_intros != enabled {
+            app::set_all_intro_skip(&state, &game_dir, enabled)?;
+            applied.push("all");
+        }
+        Ok(())
+    })();
+    if let Err(error) = result {
+        for action in applied.into_iter().rev() {
+            let _ = match action {
+                "d3d" => app::set_d3dcompiler(&state, &game_dir, previous.d3dcompiler),
+                "intro" => app::set_intro_skip(&state, &game_dir, previous.intro),
+                _ => app::set_all_intro_skip(&state, &game_dir, previous.all_intros),
+            };
+        }
+        return Err(error);
+    }
+});
 
-#[tauri::command]
-pub async fn configure_t7(
-    state: State<'_, AppState>,
-    gamertag: Option<String>,
-    color_code: Option<String>,
-    network_password: Option<String>,
-    friends_only: Option<bool>,
-) -> Result<PatchOpsState, String> {
-    let state = state.inner().clone();
-    blocking(move || {
-        let _operation = state.lock_operation()?;
-        t7::configure(
-            &state,
-            &required_game_dir(&state)?,
-            gamertag.as_deref(),
-            color_code.as_deref().unwrap_or(""),
-            network_password.as_deref(),
-            friends_only,
-        )?;
-        current_state(&state)
-    })
-    .await
-}
+state_command!(configure_t7, gamertag: Option<String>, color_code: Option<String>, network_password: Option<String>, friends_only: Option<bool>, |state| {
+    t7::configure(
+        &state,
+        &required_game_dir(&state)?,
+        gamertag.as_deref(),
+        color_code.as_deref().unwrap_or(""),
+        network_password.as_deref(),
+        friends_only,
+    )?;
+});
 
-#[tauri::command]
-pub async fn apply_preset(
-    state: State<'_, AppState>,
-    name: String,
-) -> Result<PatchOpsState, String> {
-    let state = state.inner().clone();
-    blocking(move || {
-        let _operation = state.lock_operation()?;
-        app::apply_preset(&state, &required_game_dir(&state)?, &name)?;
-        current_state(&state)
-    })
-    .await
-}
+state_command!(apply_preset, name: String, |state| {
+    app::apply_preset(&state, &required_game_dir(&state)?, &name)?;
+});
 
-#[tauri::command]
-pub async fn install_t7(state: State<'_, AppState>) -> Result<PatchOpsState, String> {
-    let state = state.inner().clone();
-    blocking(move || {
-        let _operation = state.lock_operation()?;
-        let game_dir = required_game_dir(&state)?;
-        let profile = exe::status(&state, Some(&game_dir)).profile;
-        t7::install(&state, &game_dir, &profile)?;
-        current_state(&state)
-    })
-    .await
-}
+state_command!(install_t7, |state| {
+    let game_dir = required_game_dir(&state)?;
+    let profile = exe::status(&state.load_settings(), Some(&game_dir)).profile;
+    t7::install(&state, &game_dir, &profile)?;
+});
 
 state_command!(uninstall_t7, |app| {
     t7::uninstall(&app, &required_game_dir(&app)?)?;
@@ -531,84 +418,33 @@ pub async fn validate_enhanced_source(
     .await
 }
 
-#[tauri::command]
-pub async fn install_enhanced(
-    state: State<'_, AppState>,
-    dump_source: String,
-) -> Result<PatchOpsState, String> {
-    let state = state.inner().clone();
-    blocking(move || {
-        let _operation = state.lock_operation()?;
-        enhanced::install(&state, &required_game_dir(&state)?, Path::new(&dump_source))?;
-        current_state(&state)
-    })
-    .await
-}
+state_command!(install_enhanced, dump_source: String, |state| {
+    enhanced::install(&state, &required_game_dir(&state)?, Path::new(&dump_source))?;
+});
 
 state_command!(uninstall_enhanced, |app| {
     enhanced::uninstall(&app, &required_game_dir(&app)?)?;
 });
 
-#[tauri::command]
-pub async fn configure_dxvk(
-    state: State<'_, AppState>,
-    settings: DxvkSettings,
-) -> Result<PatchOpsState, String> {
-    let state = state.inner().clone();
-    blocking(move || {
-        let _operation = state.lock_operation()?;
-        dxvk::configure(&state, &required_game_dir(&state)?, &settings)?;
-        current_state(&state)
-    })
-    .await
-}
+state_command!(configure_dxvk, settings: DxvkSettings, |state| {
+    dxvk::configure(&state, &required_game_dir(&state)?, &settings)?;
+});
 
-#[tauri::command]
-pub async fn install_dxvk(
-    state: State<'_, AppState>,
-    settings: DxvkSettings,
-) -> Result<PatchOpsState, String> {
-    let state = state.inner().clone();
-    blocking(move || {
-        let _operation = state.lock_operation()?;
-        dxvk::install(&state, &required_game_dir(&state)?, &settings)?;
-        current_state(&state)
-    })
-    .await
-}
+state_command!(install_dxvk, settings: DxvkSettings, |state| {
+    dxvk::install(&state, &required_game_dir(&state)?, &settings)?;
+});
 
 state_command!(uninstall_dxvk, |app| {
     dxvk::uninstall(&app, &required_game_dir(&app)?)?;
 });
 
-#[tauri::command]
-pub async fn set_config_readonly(
-    state: State<'_, AppState>,
-    enabled: bool,
-) -> Result<PatchOpsState, String> {
-    let state = state.inner().clone();
-    blocking(move || {
-        let _operation = state.lock_operation()?;
-        app::set_config_readonly(&state, &required_game_dir(&state)?, enabled)?;
-        current_state(&state)
-    })
-    .await
-}
+state_command!(set_config_readonly, enabled: bool, |state| {
+    app::set_config_readonly(&state, &required_game_dir(&state)?, enabled)?;
+});
 
-#[tauri::command]
-pub async fn set_vram_target(
-    state: State<'_, AppState>,
-    limited: bool,
-    target: i32,
-) -> Result<PatchOpsState, String> {
-    let state = state.inner().clone();
-    blocking(move || {
-        let _operation = state.lock_operation()?;
-        app::set_vram_target(&state, &required_game_dir(&state)?, limited, target)?;
-        current_state(&state)
-    })
-    .await
-}
+state_command!(set_vram_target, limited: bool, target: i32, |state| {
+    app::set_vram_target(&state, &required_game_dir(&state)?, limited, target)?;
+});
 
 #[tauri::command]
 pub async fn get_log_payload(state: State<'_, AppState>) -> Result<String, String> {
@@ -632,7 +468,7 @@ fn reset_to_stock_inner(state: &AppState) -> Result<(), String> {
             errors.push(format!("Enhanced: {error}"));
         }
     }
-    if exe::status(state, Some(&game_dir)).profile != exe::CURRENT_EXE_ID {
+    if exe::status(&state.load_settings(), Some(&game_dir)).profile != exe::CURRENT_EXE_ID {
         if let Err(error) = exe::activate_current(state, &game_dir) {
             errors.push(format!("EXE: {error}"));
         }

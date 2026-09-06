@@ -45,13 +45,13 @@ export type PatchOpsState = {
   qol: { d3dcompiler: boolean; intro: boolean; allIntros: boolean };
   graphics: { maxFps: number; fov: number; displayMode: number; resolution: string; refreshRate: number; renderResolution: number; vsync: boolean; drawFps: boolean };
   advanced: { smoothFramerate: boolean; unlockOptions: boolean; reduceCpu: boolean; maxFrameLatency: number; vramLimited: boolean; vramTarget: number; configReadonly: boolean };
-  maintenance: { modFilesDir: string; logPayload: string };
+  maintenance: { modFilesDir: string };
   mods: { t7Patch: boolean; dxvk: boolean; enhanced: boolean };
   logs: LogEntry[];
 };
 
 export type CompatibleExeResult = { state: PatchOpsState; depotCommand: string | null };
-export type DepotStatus = { available: boolean; state: PatchOpsState };
+export type DepotStatus = { available: boolean };
 export type EnhancedValidation = { valid: boolean; message: string; state: PatchOpsState };
 export type WindowState = { maximized: boolean };
 export type ExternalTarget = "steamConsole" | "enhancedGuide";
@@ -67,7 +67,9 @@ async function command<T>(name: string, args?: Record<string, unknown>): Promise
 
 export const getState = () => command<PatchOpsState>("get_state");
 export const checkForUpdates = () => command<PatchOpsState>("check_for_updates");
-export const setReleaseChannel = (channel: PatchOpsState["releaseChannel"]) => command<PatchOpsState>("set_release_channel", { channel });
+export const setReleaseChannel = async (channel: PatchOpsState["releaseChannel"]) => ({
+  releaseChannel: await command<PatchOpsState["releaseChannel"]>("set_release_channel", { channel }),
+});
 export const activateCompatibleExe = () => command<CompatibleExeResult>("activate_compatible_exe");
 export const getCompatibleDepotStatus = () => command<DepotStatus>("get_compatible_depot_status");
 export const activateCurrentExe = () => command<PatchOpsState>("activate_current_exe");
