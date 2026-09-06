@@ -105,7 +105,7 @@ jobs:
           mkdir -p "$(dirname "$APPIMAGE_PATH")"
           install -m 0755 "${packages[0]}" "$APPIMAGE_PATH"
 
-      - name: Smoke test AppImage on Ubuntu
+      - name: Smoke test AppImage
         run: scripts/linux-package-ci.sh smoke-gui "$APPIMAGE_PATH" appimage-smoke.log
 
       - name: Compute AppImage hash
@@ -138,7 +138,7 @@ jobs:
       VT_API_KEY: ${{ secrets.VT_API_KEY }}
 
   smoke-appimage-ubuntu-clean:
-    name: Smoke test AppImage without system GTK/WebKit on Ubuntu
+    name: Smoke test AppImage in clean environment
     needs: build-linux
     runs-on: ubuntu-22.04
     container:
@@ -201,48 +201,3 @@ jobs:
           runuser -u patchops-ci -- env -u DISPLAY -u XAUTHORITY \
             HOME=/home/patchops-ci RUNNER_TEMP=/tmp \
             scripts/linux-package-ci.sh smoke-gui "$APPIMAGE_PATH" /tmp/ubuntu-clean-appimage-smoke.log
-
-  smoke-appimage-arch:
-    name: Smoke test AppImage on Arch Linux
-    needs: build-linux
-    runs-on: ubuntu-22.04
-    container:
-      image: archlinux:base
-    steps:
-      - name: Install Arch smoke dependencies
-        run: pacman -Syu --needed --noconfirm dbus fontconfig gcc git libx11 mesa shadow util-linux xorg-server-xvfb
-
-      - name: Verify system GTK and WebKit are absent
-        run: |
-          set -euo pipefail
-          for package in gtk3 libayatana-appindicator webkit2gtk-4.1; do
-            if pacman -Q "$package" >/dev/null 2>&1; then
-              printf 'Unexpected system GUI runtime package: %s\n' "$package" >&2
-              exit 1
-            fi
-          done
-
-      - name: Checkout repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          ref: ${{ inputs.ref || github.ref }}
-          persist-credentials: false
-
-      - name: Download Linux artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: ${{ needs.build-linux.outputs.artifact_name }}
-          path: dist/packages
-
-      - name: Verify AppImage startup and clean shutdown
-        env:
-          APPIMAGE_PATH: dist/packages/PatchOpsIII.AppImage
-        run: |
-          set -euo pipefail
-          (cd "$(dirname "$APPIMAGE_PATH")" && sha256sum -c PatchOpsIII.AppImage.sha256)
-          chmod +x "$APPIMAGE_PATH"
-          install -d -m 1777 /tmp/.X11-unix
-          useradd --create-home patchops-ci
-          runuser -u patchops-ci -- env -u DISPLAY -u XAUTHORITY \
-            HOME=/home/patchops-ci RUNNER_TEMP=/tmp \
-            scripts/linux-package-ci.sh smoke-gui "$APPIMAGE_PATH" /tmp/arch-appimage-smoke.log

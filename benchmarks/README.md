@@ -126,10 +126,11 @@ for AppImage size: some runtime storage moves from the artifact to packages
 managed by the host. Attribute measured savings separately to the Rust binary,
 the AppImage dependency set, and the Debian system-package boundary.
 
-Linux package acceptance uses fresh Ubuntu 22.04 runners to smoke-test AppImage
+The historical Linux package acceptance plan used fresh Ubuntu 22.04 runners to smoke-test AppImage
 startup/shutdown and the `.deb` install-upgrade-launch-purge lifecycle, including
-preservation of user data. It also launches and closes the AppImage as a non-root
-user in a fresh `archlinux:base` container. These headless X11 gates verify the
+preservation of user data. It also included launching and closing the AppImage as a non-root
+user in a fresh `archlinux:base` container. Current CI targets Ubuntu 22.04 only;
+the historical results below are retained. These headless X11 gates verify the
 packaged application path; they do not cover every distribution, display server,
 GPU driver, desktop integration, or physical Steam Deck configuration.
 
