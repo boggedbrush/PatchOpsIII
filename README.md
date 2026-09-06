@@ -59,8 +59,8 @@ PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popul
 
 ## Installation
 1. **Download:** Grab the latest release from the [Releases page](https://github.com/boggedbrush/PatchOpsIII/releases).
-2. **Extract:** Unzip the package to a preferred folder outside of your game directory.
-3. **Run:** Launch `PatchOpsIII.exe` on Windows (or the corresponding binary for other platforms as they become available).
+2. **Windows:** Run `PatchOpsIII.msi`, follow the installer, then launch PatchOpsIII. The `PatchOpsIII.exe` installer remains available for compatibility with older updaters.
+3. **Linux & Steam Deck:** Download `PatchOpsIII.AppImage`, make it executable, then run it.
 4. **Dependencies:** The packaged build bundles all required Python dependencies; no additional setup is needed.
 
 ### Developer Setup
