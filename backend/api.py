@@ -73,12 +73,12 @@ from t7_patch import (
 )
 from dxvk_manager import (
     DXVK_ASYNC_FILES,
+    DXVK_DOWNLOAD_URL,
+    DXVK_VERSION,
     _build_dxvk_conf,
     _preset_settings,
     _supports_gpl_async_cache,
     extract_archive,
-    get_download_url,
-    get_latest_release,
     is_dxvk_async_installed,
 )
 
@@ -830,8 +830,6 @@ def _dxvk_status(game_dir: str | None) -> dict[str, Any]:
 
 def _install_dxvk(game_dir: str, payload: DxvkConfigPayload) -> None:
     MOD_FILES_DIR.mkdir(parents=True, exist_ok=True)
-    release = get_latest_release()
-    dxvk_url = get_download_url(release)
     archive_path = MOD_FILES_DIR / "dxvk-gplasync"
     extract_dir = MOD_FILES_DIR / "dxvk_extracted"
 
@@ -842,7 +840,7 @@ def _install_dxvk(game_dir: str, payload: DxvkConfigPayload) -> None:
     downloaded_archive: str | None = None
     try:
         write_log("Downloading DXVK-GPLAsync...", "Info", log_target)
-        downloaded_archive = str(_download_file(dxvk_url, str(archive_path)))
+        downloaded_archive = str(_download_file(DXVK_DOWNLOAD_URL, str(archive_path)))
         write_log("Downloaded DXVK-GPLAsync successfully.", "Success", log_target)
         extract_archive(downloaded_archive, str(extract_dir))
         write_log("Extracted DXVK-GPLAsync successfully.", "Success", log_target)
@@ -860,7 +858,7 @@ def _install_dxvk(game_dir: str, payload: DxvkConfigPayload) -> None:
             write_log(f"Installed {filename}.", "Success", log_target)
 
         settings = _dxvk_payload_to_settings(payload)
-        _write_dxvk_conf(game_dir, settings, include_gpl_async_cache=_supports_gpl_async_cache(release))
+        _write_dxvk_conf(game_dir, settings, include_gpl_async_cache=_supports_gpl_async_cache({"tag_name": DXVK_VERSION}))
         write_log("DXVK-GPLAsync installed successfully.", "Success", log_target)
     finally:
         if downloaded_archive and os.path.exists(downloaded_archive):
