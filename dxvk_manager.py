@@ -13,6 +13,12 @@ from urllib.parse import urlsplit
 # ---------- DXVK Helper Functions (unchanged) ----------
 
 DXVK_ASYNC_FILES = ["dxgi.dll", "d3d11.dll"]
+# Pin the binary tarball: latest release links can use extensionless CI downloads.
+DXVK_VERSION = "v3.0-1"
+DXVK_DOWNLOAD_URL = (
+    "https://gitlab.com/Ph42oN/dxvk-gplasync/-/raw/main/releases/"
+    f"dxvk-gplasync-{DXVK_VERSION}.tar.gz"
+)
 
 
 def _supports_gpl_async_cache(release):
@@ -60,36 +66,6 @@ def _build_dxvk_conf(settings, include_gpl_async_cache=True):
     if settings.get("hud_enabled", False):
         lines.append("dxvk.hud=fps,frametimes,gpuload")
     return "\n".join(lines) + "\n"
-
-
-def get_latest_release():
-    api_url = "https://gitlab.com/api/v4/projects/Ph42oN%2Fdxvk-gplasync/releases"
-    r = requests.get(api_url)
-    r.raise_for_status()
-    releases = r.json()
-    if not releases:
-        raise RuntimeError("No releases returned from DXVK-GPLAsync API")
-    return releases[0]  # Assumes releases are sorted latest first
-
-def get_download_url(release):
-    assets = release.get("assets", {})
-    links = assets.get("links", [])
-    if links:
-        # Prefer archives we can extract natively before falling back to anything else
-        preferred_order = (".zip", ".tar.xz", ".tar.gz", ".tar.bz2", ".tar.zst", ".tzst")
-        for suffix in preferred_order:
-            for link in links:
-                url = link.get("url", "")
-                if url.lower().endswith(suffix):
-                    return url
-        return links[0]["url"]
-    sources = assets.get("sources", [])
-    if sources:
-        for source in sources:
-            if source.get("format") == "zip":
-                return source.get("url")
-        return sources[0].get("url")
-    raise RuntimeError("No downloadable asset found in DXVK-GPLAsync release metadata")
 
 
 def _load_zstandard():
@@ -158,4 +134,3 @@ def download_file(url, filename):
 
 def is_dxvk_async_installed(game_dir):
     return all(os.path.exists(os.path.join(game_dir, f)) for f in DXVK_ASYNC_FILES)
-
