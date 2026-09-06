@@ -15,7 +15,7 @@
     "dist:linux": "tauri build --bundles appimage",
     "dist:win": "tauri build --bundles msi",
     "test": "bun run test:renderer && bun run test:rust",
-    "test:renderer": "bun test src/renderer",
+    "test:renderer": "bun test frontend",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
     "typecheck": "tsc --noEmit",
     "verify": "bun run typecheck && bun run test && bun run verify:release",

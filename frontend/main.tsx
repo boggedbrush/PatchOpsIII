@@ -27,10 +27,10 @@ import type { LucideIcon } from "lucide-react";
 import { Toggle } from "./components/Toggle";
 import * as desktop from "./lib/api";
 import type { LogEntry, PatchOpsState } from "./lib/api";
-import packageInfo from "../../package.json";
+import packageInfo from "../package.json";
 import "./styles/app.css";
 
-const logoUrl = new URL("../../website/assets/img/patchopsiii.png", import.meta.url).href;
+const logoUrl = new URL("../website/assets/img/patchopsiii.png", import.meta.url).href;
 const packageVersion = packageInfo.version;
 const captionIconUrls = {
   close: new URL("./assets/caption-buttons/close.svg", import.meta.url).href,
