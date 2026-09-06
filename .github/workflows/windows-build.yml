@@ -131,8 +131,11 @@ jobs:
       - name: Determine VirusTotal CLI release
         id: vt_release
         if: ${{ env.VT_API_KEY != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          $release = Invoke-RestMethod -Uri https://api.github.com/repos/VirusTotal/vt-cli/releases/latest
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN" }
+          $release = Invoke-RestMethod -Uri https://api.github.com/repos/VirusTotal/vt-cli/releases/latest -Headers $headers
           $tag = $release.tag_name
           if (-not $tag) {
             throw 'Release tag missing from VirusTotal CLI metadata'
