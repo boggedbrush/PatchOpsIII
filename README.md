@@ -1,143 +1,46 @@
-# PatchOpsIII
+<p align="center">
+  <img src="website/assets/img/icon-512.png" width="72" height="72" alt="PatchOpsIII logo" />
+</p>
 
-[![Latest Release](https://img.shields.io/github/v/release/boggedbrush/PatchOpsIII?style=for-the-badge&color=0a84ff)](https://github.com/boggedbrush/PatchOpsIII/releases)
-[![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/boggedbrush/patchopsiii/total.svg?style=for-the-badge&color=34c759&cacheSeconds=300)](https://github.com/boggedbrush/PatchOpsIII/releases)
-[![GitHub Stars](https://img.shields.io/github/stars/boggedbrush/PatchOpsIII?style=for-the-badge&color=ff9f0a)](https://github.com/boggedbrush/PatchOpsIII/stargazers)
-[![GitHub Issues](https://img.shields.io/github/issues/boggedbrush/PatchOpsIII?style=for-the-badge&color=ff453a)](https://github.com/boggedbrush/PatchOpsIII/issues)
-[![License](https://img.shields.io/github/license/boggedbrush/PatchOpsIII?style=for-the-badge&color=5e5ce6)](LICENSE)
+<h1 align="center">PatchOpsIII</h1>
 
-> **PatchOpsIII** is a modern, full-featured control center for Call of Duty: Black Ops III modding, maintenance, and performance tuning.
+<p align="center">
+  <a href="https://github.com/boggedbrush/PatchOpsIII/releases"><img src="https://img.shields.io/github/v/release/boggedbrush/PatchOpsIII?style=flat-square&amp;color=0a84ff" alt="Latest release" /></a>
+  <a href="https://github.com/boggedbrush/PatchOpsIII/releases"><img src="https://img.shields.io/github/downloads/boggedbrush/PatchOpsIII/total.svg?style=flat-square&amp;color=34c759&amp;cacheSeconds=300" alt="Total downloads" /></a>
+  <a href="https://github.com/boggedbrush/PatchOpsIII/stargazers"><img src="https://img.shields.io/github/stars/boggedbrush/PatchOpsIII?style=flat-square&amp;color=ff9f0a" alt="GitHub stars" /></a>
+  <a href="https://github.com/boggedbrush/PatchOpsIII/issues"><img src="https://img.shields.io/github/issues/boggedbrush/PatchOpsIII?style=flat-square&amp;color=ff453a" alt="Open issues" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/boggedbrush/PatchOpsIII?style=flat-square&amp;color=5e5ce6" alt="License" /></a>
+</p>
+
+<p align="center">
+  <strong>Pack-a-Punch your Black Ops III setup.</strong><br />
+  Your patches, mods, and settings. One app. More time slaying zombies.
+</p>
+
+<p align="center">
+  <a href="https://github.com/boggedbrush/PatchOpsIII/releases/latest/download/PatchOpsIII.msi"><img src="https://img.shields.io/badge/Download_latest-Windows-cb2424?style=for-the-badge&amp;labelColor=202020" alt="Download latest Windows" /></a>
+  <a href="https://github.com/boggedbrush/PatchOpsIII/releases/latest/download/PatchOpsIII.AppImage"><img src="https://img.shields.io/badge/Download_latest-Linux-cb2424?style=for-the-badge&amp;labelColor=202020" alt="Download latest Linux" /></a>
+</p>
+
+<p align="center">
+  <a href="docs/README.md#installation">Install guide · Linux &amp; Steam Deck with Gear Lever</a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/boggedbrush/PatchOpsIII/releases">Browse releases</a>
+</p>
+
+![PatchOpsIII Dashboard](website/assets/img/screenshots/dashboard.png)
+
+### Gear up for the next round
+
+| Stock your arsenal | Call the shots | Skip the busywork |
+| --- | --- | --- |
+| Install and configure **T7 Patch, BO3 Enhanced, and DXVK** from one place. | Switch **game executables** and choose your **Steam launch profile**. | Tune **graphics**, set **frame limits**, and **skip intros** with controls built right in. |
+
+<p align="center">
+  <strong>The horde isn't waiting.</strong><br />
+  Download. Select your Black Ops III folder. Get back in the fight.
+</p>
 
 ---
 
-![PatchOpsIII Dashboard](https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/dashboard.png)
-
----
-
-## Table of Contents
-- [Overview](#overview)
-- [Key Features](#key-features)
-  - [Mods Tab](#mods-tab)
-  - [Graphics Tab](#graphics-tab)
-  - [Advanced Tab](#advanced-tab)
-  - [Terminal & Logging](#terminal--logging)
-- [Installation](#installation)
-- [Forked Components](#forked-components)
-- [Quick Start](#quick-start)
-- [Screenshots](#screenshots)
-- [Known Issues](#known-issues)
-- [Support](#support)
-- [Special Thanks](#special-thanks)
-- [License](#license)
-- [Star History](#star-history)
-
-## Overview
-PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popular community tools and quality-of-life tweaks in a single polished Electron interface backed by a local Python API. Whether you are securing your game with T7 Patch, smoothing shader compilation stutter with DXVK, or fine-tuning launch options, PatchOpsIII consolidates every workflow into one cohesive experience.
-
-## Key Features
-
-### Mods Tab
-- **Smart Game Directory Detection:** Automatically locates your Black Ops III installation or lets you browse manually.
-- **T7 Patch Management:** Install, update, configure gamertags and colors, apply network passwords, toggle Friends Only mode, deploy LPC fixes, and cleanly uninstall.
-- **DXVK-GPLAsync Integration:** Deploy and remove Vulkan-based shader compilation to smooth frametimes by reducing shader cache stutter.
-- **Workshop Helper:** One-click access to curated Steam Workshop mods and documentation.
-- **Launch Profiles:** Preset command-line configurations for Default, Play Offline, [All-around Enhancement Lite](https://steamcommunity.com/sharedfiles/filedetails/?id=2994481309), and [Ultimate Experience Mod](https://steamcommunity.com/sharedfiles/filedetails/?id=2942053577).
-
-### Graphics Tab
-- **Preset Loader:** Apply curated JSON presets to instantly switch between visual configurations.
-- **Convenience Sliders:** Tweak FOV, display mode, resolution, refresh rate, render resolution %, V-Sync, and FPS counters.
-- **Intro Skip & FPS Limiter:** Automate `.mkv` renames and adjust FPS limits from 0–1000 for faster load times and smoother gameplay.
-
-### Advanced Tab
-- **Power Tweaks:** Toggle SmoothFramerate, unlock full VRAM usage, reduce CPU pressure, manage frame latency, and expose hidden graphics options by editing `config.ini` safely.
-- **Stutter Fixes:** Automate DirectX DLL renaming to keep shader compilation modern and responsive.
-- **Config Safeguards:** Set configuration files read-only to preserve your optimized setup.
-
-### Terminal & Logging
-- Embedded console view provides live feedback on every action.
-- Automatic `PatchOpsIII.log` generation captures a detailed audit trail for troubleshooting and support.
-
-## Installation
-1. **Download:** Grab the latest release from the [Releases page](https://github.com/boggedbrush/PatchOpsIII/releases).
-2. **Windows:** Run `PatchOpsIII.msi`, follow the installer, then launch PatchOpsIII. The `PatchOpsIII.exe` installer remains available for compatibility with older updaters.
-3. **Linux & Steam Deck:** Download `PatchOpsIII.AppImage`, make it executable, then run it.
-4. **Dependencies:** The packaged build bundles all required Python dependencies; no additional setup is needed.
-
-### Developer Setup
-PatchOpsIII uses a React + TypeScript renderer wrapped by Electron. Bun is the JavaScript runtime/package manager, while Python runs the local backend API.
-
-```bash
-# install Python service dependencies
-python -m venv .venv
-source .venv/bin/activate  # On Windows use: .venv\Scripts\activate
-pip install -r requirements.txt
-
-# install desktop frontend dependencies
-bun install
-
-# run Vite and the Python local API
-bun run dev
-
-# run the Electron desktop app
-bun run dev:desktop
-```
-
-The browser development server uses Vite on `127.0.0.1:5173` and the Python API on `127.0.0.1:8765`. The Electron desktop command uses Vite on `127.0.0.1:5174` and its Python API on `127.0.0.1:8766`, so both commands can run at the same time. The renderer communicates with Python through HTTP APIs and `/ws` WebSockets; Electron IPC is reserved for desktop-specific bridge actions such as selecting a local game directory.
-
-## Forked Components
-- **BO3 Enhanced Proton fork metadata:** [bo3-enhanced-proton/README.md](bo3-enhanced-proton/README.md)
-  - Upstream source: https://github.com/Weather-OS/GDK-Proton
-  - Current base release: `release10-32`
-  - Local `bo3-enhanced-proton/BO3 Enhanced` content is optional for development/offline workflow and is intentionally gitignored.
-  - Normal Linux installs do not require this local bundle; PatchOpsIII downloads and caches the upstream release on demand.
-
-## Quick Start
-1. Launch PatchOpsIII and verify your Black Ops III directory.
-2. Apply the **T7 Patch** to secure multiplayer connectivity and remove RCE vulnerabilities.
-3. Enable **DXVK-GPLAsync** for async shader compilation and smoother frametimes.
-4. Choose a graphics preset or dial in custom display options.
-5. Visit the **Advanced** tab to unlock VRAM, tweak frame latency, and set your config to read-only once satisfied.
-
-## Screenshots
-<table>
-  <tr>
-    <td align="center"><img src="https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/dashboard.png" alt="Dashboard" /><br/><sub>Dashboard</sub></td>
-    <td align="center"><img src="https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/t7patch.png" alt="T7 Patch" /><br/><sub>T7 Patch</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/enhanced.png" alt="BO3 Enhanced" /><br/><sub>Enhanced</sub></td>
-    <td align="center"><img src="https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/graphics.png" alt="Graphics" /><br/><sub>Graphics</sub></td>
-  </tr>
-  <tr>
-    <td align="center" colspan="2"><img src="https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/dxvk.png" alt="DXVK" /><br/><sub>DXVK</sub></td>
-  </tr>
-  <tr>
-    <td align="center" colspan="2"><img src="https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/advanced.png" alt="Advanced" /><br/><sub>Advanced</sub></td>
-  </tr>
-</table>
-
-## Known Issues
-- Full version of the [All-around Enhancement Mod](https://steamcommunity.com/sharedfiles/filedetails/?id=2631943123) currently crashes before the game finishes launching, so it is not exposed as a launch option in PatchOpsIII.
-- Launch option stability can vary between systems; experiment to find a stable configuration.
-- A few advanced toggles remain in beta testing—report issues via GitHub.
-
-## Support
-- 📚 Explore detailed usage notes in the [project wiki](wiki/home.md).
-- 🐛 Report bugs or request features through [GitHub Issues](https://github.com/boggedbrush/PatchOpsIII/issues).
-- 💬 Join the community discussion on Discord *(coming soon)*.
-
-## Special Thanks
-This project would not be possible without the incredible work of the broader community:
-
-- **t7patch** – Security and stability backbone for Black Ops III multiplayer.  
-  Original work by `shiversoftdev`, continued by `Scroptss`: [https://github.com/Scroptss/T7Patch](https://github.com/Scroptss/T7Patch)
-- **dxvk-gplasync** – Vulkan translation layer with async shader compilation.  
-  [https://gitlab.com/Ph42oN/dxvk-gplasync](https://gitlab.com/Ph42oN/dxvk-gplasync)
-- **ValvePython/vdf** – Reliable Steam VDF parsing utilities used throughout PatchOpsIII.  
-  [https://github.com/ValvePython/vdf](https://github.com/ValvePython/vdf)
-
-## License
-PatchOpsIII is released under the [MIT License](LICENSE).
-
-## Star History
-[![Star History Chart](https://api.star-history.com/svg?repos=boggedbrush/PatchOpsIII&type=Date)](https://star-history.com/#boggedbrush/PatchOpsIII&Date)
+[Documentation](docs/README.md) · [Report a bug](https://github.com/boggedbrush/PatchOpsIII/issues/new?template=bug-report.yml) · [MIT License](LICENSE)

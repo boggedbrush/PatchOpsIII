@@ -2,36 +2,42 @@ name: Linux Build
 
 on:
   push:
-    branches:
-      - Testing
-      - testing
+    branches: [main, Testing, testing]
   pull_request:
-    branches:
-      - Testing
-      - testing
+    branches: [main, Testing, testing]
   workflow_dispatch:
     inputs:
       ref:
         description: Git ref to build and scan
         required: false
         type: string
-        default: ''
+        default: ""
   workflow_call:
     inputs:
       ref:
         description: Git ref to build
         required: false
         type: string
-        default: ''
+        default: ""
+    secrets:
+      VT_API_KEY:
+        description: Optional VirusTotal API key used only by the scan job
+        required: false
     outputs:
       hash:
-        description: SHA256 hash of the AppImage
-        value: ${{ jobs.build-linux.outputs.hash }}
+        description: SHA-256 hash of the AppImage (compatibility alias)
+        value: ${{ jobs.build-linux.outputs.appimage_hash }}
       vt_url:
+        description: VirusTotal URL for the AppImage (compatibility alias)
+        value: ${{ jobs.build-linux.outputs.appimage_vt_url }}
+      appimage_hash:
+        description: SHA-256 hash of the AppImage
+        value: ${{ jobs.build-linux.outputs.appimage_hash }}
+      appimage_vt_url:
         description: VirusTotal URL for the AppImage
-        value: ${{ jobs.build-linux.outputs.vt_url }}
+        value: ${{ jobs.build-linux.outputs.appimage_vt_url }}
       artifact_name:
-        description: Name of the produced artifact
+        description: Name of the uploaded artifact
         value: ${{ jobs.build-linux.outputs.artifact_name }}
 
 permissions:
@@ -39,168 +45,159 @@ permissions:
 
 jobs:
   build-linux:
-    name: Build Linux Electron AppImage
-    runs-on: ubuntu-latest
+    name: Build AppImage
+    runs-on: ubuntu-22.04
     outputs:
-      hash: ${{ steps.compute_hash.outputs.hash }}
-      vt_url: ${{ steps.compute_hash.outputs.vt_url }}
+      appimage_hash: ${{ steps.hash.outputs.appimage_hash }}
+      appimage_vt_url: ${{ steps.hash.outputs.appimage_vt_url }}
       artifact_name: PatchOpsIII-linux
-    defaults:
-      run:
-        shell: bash
-        working-directory: .
     env:
-      BUN_VERSION: "1.3.13"
-      ELECTRON_VERSION: "31.7.7"
-      ELECTRON_BUILDER_VERSION: "26.8.1"
-      PYTHON_VERSION: "3.12"
+      APPIMAGE_HASH_PATH: dist/packages/PatchOpsIII.AppImage.sha256
       APPIMAGE_PATH: dist/packages/PatchOpsIII.AppImage
-      ZSYNC_PATH: dist/packages/PatchOpsIII.AppImage.zsync
-      CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      VT_API_KEY: ${{ secrets.VT_API_KEY }}
-      VT_CLI_ARCHIVE: vt-cli.zip
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-          cache-dependency-path: requirements.txt
-      - name: Cache Bun install cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: linux-bun-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock', 'package.json') }}
-          restore-keys: |
-            linux-bun-${{ runner.arch }}-${{ env.BUN_VERSION }}-
-      - name: Cache Electron downloads
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/electron
-          key: linux-electron-${{ runner.arch }}-${{ env.ELECTRON_VERSION }}
-          restore-keys: |
-            linux-electron-${{ runner.arch }}-
-      - name: Cache electron-builder downloads
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/electron-builder
-          key: linux-electron-builder-${{ runner.arch }}-${{ env.ELECTRON_BUILDER_VERSION }}-${{ env.ELECTRON_VERSION }}
-          restore-keys: |
-            linux-electron-builder-${{ runner.arch }}-${{ env.ELECTRON_BUILDER_VERSION }}-
-            linux-electron-builder-${{ runner.arch }}-
-      - name: Cache Python virtual environment
-        uses: actions/cache@v4
-        with:
-          path: .venv
-          key: linux-venv-${{ runner.arch }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            linux-venv-${{ runner.arch }}-${{ env.PYTHON_VERSION }}-
-      - name: Install Linux packaging prerequisites
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+
+      - name: Set reproducible source epoch
+        run: |
+          set -euo pipefail
+          epoch="$(git show -s --format=%ct HEAD)"
+          [[ "$epoch" =~ ^[0-9]+$ ]]
+          printf 'SOURCE_DATE_EPOCH=%s\n' "$epoch" >> "$GITHUB_ENV"
+
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y binutils unzip zsync
-      - name: Install Python backend dependencies
-        run: |
-          python -m venv .venv
-          .venv/bin/python -m pip install -U pip
-          .venv/bin/python -m pip install -r requirements.txt
-          .venv/bin/python -m pip install -U pyinstaller
-      - name: Install Electron dependencies
-        run: bun install --frozen-lockfile
-      - name: Build Electron AppImage
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libx11-dev \
+            libxdo-dev \
+            patchelf \
+            unzip \
+            wget \
+            xdg-utils \
+            xvfb
+
+      - name: Setup dependencies
+        uses: ./.github/actions/setup
+
+      - name: Build AppImage
         run: bun run dist:linux
-      - name: Generate AppImage zsync metadata
+
+      - name: Canonicalize AppImage
         run: |
-          if [ ! -f "$APPIMAGE_PATH" ]; then
-            find dist -maxdepth 4 -type f -print
-            echo "$APPIMAGE_PATH was not produced" >&2
+          set -euo pipefail
+          mapfile -t packages < <(find src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' -print)
+          if [ "${#packages[@]}" -ne 1 ]; then
+            printf 'Expected one AppImage, found %s\n' "${#packages[@]}" >&2
+            find src-tauri/target/release/bundle -maxdepth 3 -type f -print >&2
             exit 1
           fi
-          chmod +x "$APPIMAGE_PATH"
-          appimage_name="$(basename "$APPIMAGE_PATH")"
-          appimage_dir="$(dirname "$APPIMAGE_PATH")"
-          (
-            cd "$appimage_dir"
-            zsyncmake -u "$appimage_name" -o "$appimage_name.zsync" "$appimage_name"
-          )
+          mkdir -p "$(dirname "$APPIMAGE_PATH")"
+          install -m 0755 "${packages[0]}" "$APPIMAGE_PATH"
+
+      - name: Smoke test AppImage
+        run: scripts/linux-package-ci.sh smoke-gui "$APPIMAGE_PATH" appimage-smoke.log
+
       - name: Compute AppImage hash
-        id: compute_hash
-        run: |
-          hash=$(sha256sum "$APPIMAGE_PATH" | cut -d ' ' -f1)
-          printf "%s\n" "$hash" > "dist/packages/hash.log"
-          vt_url="https://www.virustotal.com/gui/file/$hash"
-          printf "hash=%s\n" "$hash" >> "$GITHUB_OUTPUT"
-          printf "vt_url=%s\n" "$vt_url" >> "$GITHUB_OUTPUT"
-      - name: Determine VirusTotal CLI release
-        id: vt_release
-        if: ${{ env.VT_API_KEY != '' }}
+        id: hash
         run: |
           set -euo pipefail
-          python <<'PY'
-          import json
-          import os
-          import urllib.request
+          appimage_hash="$(sha256sum "$APPIMAGE_PATH" | awk '{print $1}')"
+          printf '%s  PatchOpsIII.AppImage\n' "$appimage_hash" > "$APPIMAGE_HASH_PATH"
+          printf 'appimage_hash=%s\n' "$appimage_hash" >> "$GITHUB_OUTPUT"
+          printf 'appimage_vt_url=https://www.virustotal.com/gui/file/%s\n' "$appimage_hash" >> "$GITHUB_OUTPUT"
 
-          url = "https://api.github.com/repos/VirusTotal/vt-cli/releases/latest"
-          with urllib.request.urlopen(url) as response:
-              data = json.load(response)
-
-          tag = data.get("tag_name")
-          if not tag:
-              raise SystemExit("Release tag missing from VirusTotal CLI metadata")
-
-          try:
-              asset_url = next(
-                  asset["browser_download_url"]
-                  for asset in data["assets"]
-                  if asset["name"] == "Linux64.zip"
-              )
-          except StopIteration as exc:
-              raise SystemExit("Linux64.zip asset not found in VirusTotal CLI release metadata") from exc
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
-              handle.write(f"tag={tag}\n")
-              handle.write(f"url={asset_url}\n")
-          PY
-      - name: Cache VirusTotal CLI
-        id: cache-vt
-        if: ${{ env.VT_API_KEY != '' }}
-        uses: actions/cache@v4
-        with:
-          path: |
-            vt
-            ${{ env.VT_CLI_ARCHIVE }}
-          key: vt-${{ runner.os }}-${{ steps.vt_release.outputs.tag }}
-      - name: Download VirusTotal CLI
-        if: ${{ env.VT_API_KEY != '' && steps.cache-vt.outputs.cache-hit != 'true' }}
-        run: |
-          set -euo pipefail
-          curl -sSL "${{ steps.vt_release.outputs.url }}" -o "$VT_CLI_ARCHIVE"
-          unzip -q -o "$VT_CLI_ARCHIVE"
-      - name: Ensure VirusTotal CLI executable
-        if: ${{ env.VT_API_KEY != '' }}
-        run: |
-          if [ ! -f vt ]; then
-            echo 'VirusTotal CLI binary not found' >&2
-            exit 1
-          fi
-          chmod +x vt
-      - name: VirusTotal scan
-        if: ${{ env.VT_API_KEY != '' }}
-        run: ./vt scan file "$APPIMAGE_PATH" --apikey "$VT_API_KEY"
-      - name: Upload Linux artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: PatchOpsIII-linux
           path: |
             dist/packages/PatchOpsIII.AppImage
-            dist/packages/PatchOpsIII.AppImage.zsync
-            dist/packages/hash.log
+            dist/packages/PatchOpsIII.AppImage.sha256
           if-no-files-found: error
+
+  scan-linux:
+    name: Scan AppImage
+    needs: build-linux
+    uses: ./.github/workflows/virustotal.yml
+    with:
+      artifact_name: ${{ needs.build-linux.outputs.artifact_name }}
+      file_name: PatchOpsIII.AppImage
+      expected_hash: ${{ needs.build-linux.outputs.appimage_hash }}
+    secrets:
+      VT_API_KEY: ${{ secrets.VT_API_KEY }}
+
+  smoke-appimage-ubuntu-clean:
+    name: Smoke test AppImage in clean environment
+    needs: build-linux
+    runs-on: ubuntu-22.04
+    container:
+      image: ubuntu:22.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install minimal GUI smoke dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential \
+            ca-certificates \
+            dbus-x11 \
+            fontconfig \
+            git \
+            libegl1 \
+            libgbm1 \
+            libgl1 \
+            libgles2 \
+            libx11-dev \
+            passwd \
+            util-linux \
+            xvfb
+
+      - name: Verify system GTK and WebKit are absent
+        run: |
+          set -euo pipefail
+          for package in libayatana-appindicator3-1 libgtk-3-0 libwebkit2gtk-4.1-0; do
+            if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -Fqx 'install ok installed'; then
+              printf 'Unexpected system GUI runtime package: %s\n' "$package" >&2
+              exit 1
+            fi
+          done
+
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ needs.build-linux.outputs.artifact_name }}
+          path: dist/packages
+
+      - name: Verify AppImage startup and clean shutdown
+        env:
+          APPIMAGE_PATH: dist/packages/PatchOpsIII.AppImage
+        run: |
+          set -euo pipefail
+          (cd "$(dirname "$APPIMAGE_PATH")" && sha256sum -c PatchOpsIII.AppImage.sha256)
+          chmod +x "$APPIMAGE_PATH"
+          install -d -m 1777 /tmp/.X11-unix
+          useradd --create-home patchops-ci
+          runuser -u patchops-ci -- env -u DISPLAY -u XAUTHORITY \
+            HOME=/home/patchops-ci RUNNER_TEMP=/tmp \
+            scripts/linux-package-ci.sh smoke-gui "$APPIMAGE_PATH" /tmp/ubuntu-clean-appimage-smoke.log

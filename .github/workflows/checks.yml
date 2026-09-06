@@ -1,0 +1,61 @@
+name: Checks
+
+on:
+  push:
+    branches: [main, Testing, testing]
+  pull_request:
+    branches: [main, Testing, testing]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to check
+        required: false
+        type: string
+        default: ""
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to check
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Check ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Linux
+            runner: ubuntu-22.04
+          - platform: Windows
+            runner: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+
+      - name: Install system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev
+
+      - name: Setup dependencies
+        uses: ./.github/actions/setup
+
+      - name: Run checks and tests
+        run: bun run verify

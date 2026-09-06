@@ -1,0 +1,71 @@
+name: VirusTotal
+
+on:
+  workflow_call:
+    inputs:
+      artifact_name:
+        description: Build artifact to download
+        required: true
+        type: string
+      file_name:
+        description: Package filename inside the artifact
+        required: true
+        type: string
+      expected_hash:
+        description: SHA-256 produced by the build job
+        required: true
+        type: string
+    secrets:
+      VT_API_KEY:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Scan ${{ inputs.file_name }}
+    runs-on: ubuntu-22.04
+    env:
+      FILE_NAME: ${{ inputs.file_name }}
+      EXPECTED_HASH: ${{ inputs.expected_hash }}
+      VT_CLI_LINUX_SHA256: a340bcb2ee98aff6f19bde1de30702ddf106cbbc63b4309f60b33058e7689266
+      VT_CLI_VERSION: "1.3.1"
+      VT_ENABLED: ${{ secrets.VT_API_KEY != '' }}
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: dist/packages
+
+      - name: Verify package integrity
+        run: |
+          set -euo pipefail
+          [[ "$FILE_NAME" =~ ^[a-zA-Z0-9_.-]+$ ]]
+          [[ "$EXPECTED_HASH" =~ ^[0-9a-f]{64}$ ]]
+          cd dist/packages
+          actual_hash="$(sha256sum "$FILE_NAME" | awk '{print $1}')"
+          [ "$actual_hash" = "$EXPECTED_HASH" ]
+          [ "$(tr -d '\r' < "${FILE_NAME}.sha256")" = "$EXPECTED_HASH  $FILE_NAME" ]
+
+      - name: Download VirusTotal CLI
+        if: env.VT_ENABLED == 'true'
+        run: |
+          curl -fsSL "https://github.com/VirusTotal/vt-cli/releases/download/${VT_CLI_VERSION}/Linux64.zip" -o vt-cli.zip
+          printf '%s  vt-cli.zip\n' "$VT_CLI_LINUX_SHA256" | sha256sum -c -
+          unzip -q vt-cli.zip
+          chmod +x vt
+
+      - name: Submit package
+        if: env.VT_ENABLED == 'true'
+        env:
+          VTCLI_APIKEY: ${{ secrets.VT_API_KEY }}
+        run: |
+          ./vt scan file "dist/packages/$FILE_NAME"
+          printf 'VirusTotal report for %s: https://www.virustotal.com/gui/file/%s\n' \
+            "$FILE_NAME" "$EXPECTED_HASH" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report skipped submission
+        if: env.VT_ENABLED != 'true'
+        run: echo 'VT_API_KEY is not configured; skipping VirusTotal submission.'

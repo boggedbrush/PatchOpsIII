@@ -243,6 +243,12 @@ function setHref(selector, href) {
   });
 }
 
+function setHidden(selector, hidden) {
+  document.querySelectorAll(selector).forEach((el) => {
+    el.hidden = hidden;
+  });
+}
+
 function normalizeHeaderTitle(text) {
   return safeText(text).replace(/[^\w\s]/g, "").trim().toLowerCase();
 }
@@ -342,7 +348,7 @@ function mapRelease(repoSlug, rel) {
     highlights: extractHighlights(body),
     downloads: {
       windows: {
-        url: pickAssetUrl(assets, "PatchOpsIII.exe", [".exe"]) || `${fallbackBase}/PatchOpsIII.exe`,
+        url: pickAssetUrl(assets, "PatchOpsIII.msi", [".msi", ".exe"]) || url,
       },
       linux: {
         url: pickAssetUrl(assets, "PatchOpsIII.AppImage", [".AppImage"]) || `${fallbackBase}/PatchOpsIII.AppImage`,

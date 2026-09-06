@@ -123,7 +123,7 @@
           <p class="eyebrow">Download</p>
           <h1>Get PatchOpsIII</h1>
           <p class="lead">
-            Latest release: <strong data-latest-version>v1.2.0</strong>. Downloads are hosted on GitHub Releases for
+            Latest release: <strong data-latest-version>v1.2.2</strong>. Downloads are hosted on GitHub Releases for
             Windows and Linux/Steam Deck.
           </p>
           <div class="cta-row">
@@ -137,11 +137,11 @@
           <div class="grid cards two">
             <article class="card">
               <h2>Windows</h2>
-              <p class="muted">Download the latest release asset, extract if needed, then run <code>PatchOpsIII.exe</code>.</p>
+              <p class="muted">Download the latest MSI and run the installer. PatchOpsIII is then available from the Start menu.</p>
 	              <div class="cta-row card-cta">
 	                <a
 	                  class="btn primary"
-	                  href="https://github.com/boggedbrush/PatchOpsIII/releases/latest/download/PatchOpsIII.exe"
+		                  href="https://github.com/boggedbrush/PatchOpsIII/releases/latest"
                     data-download-windows
 	                  rel="noreferrer"
 	                >
@@ -152,9 +152,9 @@
             <article class="card">
               <h2>Linux / Steam Deck</h2>
               <p class="muted">
-                Download the Electron AppImage and install it with
-                <a href="https://flathub.org/apps/it.mijorus.gearlever" rel="noreferrer">Gear Lever</a> (recommended for
-                Linux and Steam Deck).
+                Use the portable AppImage on Linux and Steam Deck. Add it to the app menu with
+                <a href="https://flathub.org/apps/it.mijorus.gearlever" rel="noreferrer">Gear Lever</a>, or launch it
+                directly.
               </p>
 	              <div class="cta-row card-cta">
 	                <a
@@ -164,7 +164,7 @@
 	                  rel="noreferrer"
 	                >
                   Linux AppImage Download
-	                </a>
+		                </a>
 	              </div>
 	              <div class="code-block">
 	                <div class="code-head">
@@ -183,7 +183,7 @@
         <div class="container">
           <h2>Verify downloads</h2>
           <p class="muted">
-            When release notes include SHA256 hashes, you can verify integrity locally before running.
+            Each release includes SHA-256 files so you can verify integrity locally before running.
           </p>
           <div class="grid two">
             <div class="code-block">
@@ -191,14 +191,14 @@
                 <span>Windows (PowerShell)</span>
                 <button class="copy-btn" type="button" data-copy="#cmd-win-sha">Copy</button>
               </div>
-              <pre><code id="cmd-win-sha">Get-FileHash .\\PatchOpsIII.exe -Algorithm SHA256</code></pre>
+              <pre><code id="cmd-win-sha">Get-FileHash .\PatchOpsIII.msi -Algorithm SHA256</code></pre>
             </div>
             <div class="code-block">
               <div class="code-head">
                 <span>Linux</span>
                 <button class="copy-btn" type="button" data-copy="#cmd-linux-sha">Copy</button>
               </div>
-              <pre><code id="cmd-linux-sha">sha256sum PatchOpsIII.AppImage</code></pre>
+                <pre><code id="cmd-linux-sha">sha256sum -c PatchOpsIII.AppImage.sha256</code></pre>
             </div>
           </div>
         </div>
@@ -207,7 +207,7 @@
       <section class="section">
         <div class="container">
           <h2>Developer setup</h2>
-          <p class="muted">Clone the repo, create a virtual environment, install dependencies, then run the Electron app.</p>
+          <p class="muted">Install Bun, stable Rust, and the Tauri prerequisites for your platform, then run the desktop app.</p>
           <div class="code-block">
             <div class="code-head">
               <span>Local run</span>
@@ -215,11 +215,9 @@
             </div>
             <pre><code id="cmd-dev">git clone https://github.com/boggedbrush/PatchOpsIII.git
 cd PatchOpsIII
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\\Scripts\\activate
-pip install -r requirements.txt
-bun install
-bun run dev:desktop</code></pre>
+bun install --frozen-lockfile
+bun run verify
+bun run dev</code></pre>
           </div>
         </div>
       </section>
