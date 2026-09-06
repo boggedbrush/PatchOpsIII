@@ -111,4 +111,15 @@ export const pickDumpArchive = () => command<string | null>("pick_dump_archive")
 export const openExternal = (target: ExternalTarget) => command<void>("open_external", { target });
 export const onLog = (callback: (entry: LogEntry) => void): Promise<UnlistenFn> => listen<LogEntry>("patchops-log", (event) => callback(event.payload));
 export const onWindowState = (callback: (state: WindowState) => void): Promise<UnlistenFn> => listen<WindowState>("patchops-window-state", (event) => callback(event.payload));
-export const onFileDrop = (callback: (paths: string[]) => void): Promise<UnlistenFn> => listen<string[]>("patchops-file-drop", (event) => callback(event.payload));
+export const onFileDrop = (target: HTMLElement, callback: (paths: string[]) => void): Promise<UnlistenFn> =>
+  listen<{ paths: string[]; position: { x: number; y: number } }>("patchops-file-drop", ({ payload }) => {
+    if (!target.isConnected) return;
+    const bounds = target.getBoundingClientRect();
+    // Native drop positions use physical pixels; DOM bounds use CSS pixels.
+    const scale = target.ownerDocument.defaultView?.devicePixelRatio ?? 1;
+    const x = payload.position.x / scale;
+    const y = payload.position.y / scale;
+    if (x >= bounds.left && x < bounds.right && y >= bounds.top && y < bounds.bottom) {
+      callback(payload.paths);
+    }
+  });

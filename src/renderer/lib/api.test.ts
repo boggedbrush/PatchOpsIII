@@ -52,6 +52,31 @@ test("native events are subscribed to by their fixed names", async () => {
   expect(listen.mock.calls[0]?.[0]).toBe("patchops-log");
 });
 
+test("file drops only reach the mounted source zone, including scaled displays", async () => {
+  const target = {
+    isConnected: true,
+    ownerDocument: { defaultView: { devicePixelRatio: 2 } },
+    getBoundingClientRect: () => ({ left: 100, top: 50, right: 300, bottom: 150 }),
+  };
+  const callback = mock(() => undefined);
+  await api.onFileDrop(target as unknown as HTMLElement, callback);
+  expect(listen.mock.calls[0]?.[0]).toBe("patchops-file-drop");
+  const handler = listen.mock.calls[0]![1];
+  const drop = (x: number, y: number) => handler({ payload: { paths: ["/dump.zip"], position: { x, y } } });
+
+  drop(199, 200); // Left of the zone after physical-to-CSS conversion.
+  drop(600, 200); // Right boundary belongs to the adjacent control.
+  drop(400, 99);
+  drop(400, 300);
+  expect(callback).not.toHaveBeenCalled();
+
+  drop(400, 200);
+  expect(callback).toHaveBeenCalledWith(["/dump.zip"]);
+  target.isConnected = false; // Navigating to another view unmounts the zone.
+  drop(400, 200);
+  expect(callback).toHaveBeenCalledTimes(1);
+});
+
 test("string command errors become Error instances", async () => {
   invoke.mockRejectedValueOnce("Game directory is not set.");
   await expect(api.launchGame()).rejects.toThrow("Game directory is not set.");

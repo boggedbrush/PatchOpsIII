@@ -29,12 +29,15 @@ pub fn run() {
             let event_window = window.clone();
             window.on_window_event(move |event| match event {
                 tauri::WindowEvent::Resized(_) => desktop::emit_window_state(&event_window),
-                tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) => {
+                tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, position }) => {
                     let paths = paths
                         .iter()
                         .map(|path| path.to_string_lossy().into_owned())
                         .collect::<Vec<_>>();
-                    let _ = event_window.emit("patchops-file-drop", paths);
+                    let _ = event_window.emit(
+                        "patchops-file-drop",
+                        serde_json::json!({ "paths": paths, "position": position }),
+                    );
                 }
                 _ => {}
             });

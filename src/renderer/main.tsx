@@ -302,6 +302,7 @@ function App() {
   const [showT7Password, setShowT7Password] = useState(false);
   const [showT7PasswordEdit, setShowT7PasswordEdit] = useState(false);
   const [enhancedDumpSource, setEnhancedDumpSource] = useState("");
+  const enhancedDropZone = useRef<HTMLDivElement | null>(null);
   const [enhancedValidation, setEnhancedValidation] = useState<EnhancedValidationState>({ label: "Not run", ok: null, checkedAt: null });
   const [dxvkSettings, setDxvkSettings] = useState<DxvkSettings>(dxvkPresets.Recommended);
 
@@ -693,18 +694,26 @@ function App() {
   }, [state?.enhanced.dumpSource]);
 
   useEffect(() => {
+    const target = enhancedDropZone.current;
+    if (!target) return;
+    let cancelled = false;
     let removeFileDropListener: (() => void) | undefined;
-    void desktop.onFileDrop((paths) => {
+    void desktop.onFileDrop(target, (paths) => {
+      if (cancelled) return;
       const nextSource = paths[0];
       if (nextSource) {
         setEnhancedDumpSource(nextSource);
         setEnhancedValidation({ label: "Not run", ok: null, checkedAt: null });
       }
     }).then((remove) => {
-      removeFileDropListener = remove;
+      if (cancelled) remove();
+      else removeFileDropListener = remove;
     });
-    return () => removeFileDropListener?.();
-  }, []);
+    return () => {
+      cancelled = true;
+      removeFileDropListener?.();
+    };
+  }, [activeView, appStatus]);
 
   useEffect(() => {
     if (state?.dxvk.settings) {
@@ -1189,7 +1198,7 @@ function App() {
                           Install Source
                         </h3>
                         <div className="enhanced-source-body">
-                          <div className="enhanced-drop-zone">
+                          <div className="enhanced-drop-zone" ref={enhancedDropZone}>
                             <strong>Drop DUMP.zip or extracted folder here</strong>
                             <span>or browse to the dump source manually</span>
                           </div>
