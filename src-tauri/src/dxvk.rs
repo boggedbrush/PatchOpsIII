@@ -15,8 +15,8 @@ use crate::{
     models::{DxvkSettings, DxvkState},
 };
 
-const RELEASES_API: &str =
-    "https://gitlab.com/api/v4/projects/Ph42oN%2Fdxvk-gplasync/releases?per_page=1";
+const RELEASE_API: &str =
+    "https://gitlab.com/api/v4/projects/Ph42oN%2Fdxvk-gplasync/releases/v3.0-1";
 const DXVK_FILES: [&str; 2] = ["dxgi.dll", "d3d11.dll"];
 const MANAGED_FILES: [&str; 3] = ["dxgi.dll", "d3d11.dll", "dxvk.conf"];
 const MANAGED_STATE_DIRECTORY: &str = "DXVK Managed";
@@ -217,7 +217,7 @@ fn configure_managed(
     Ok(())
 }
 
-/// Download the latest DXVK-GPLAsync release, validate it in an isolated
+/// Download the pinned DXVK-GPLAsync release, validate it in an isolated
 /// staging directory, and commit the two required DLLs plus `dxvk.conf` with
 /// rollback on failure.
 pub fn install(state: &AppState, game_dir: &Path, settings: &DxvkSettings) -> Result<(), String> {
@@ -227,7 +227,7 @@ pub fn install(state: &AppState, game_dir: &Path, settings: &DxvkSettings) -> Re
 
     let result = (|| {
         state.log("Info", "Downloading DXVK-GPLAsync...");
-        let release = fetch_latest_release()?;
+        let release = fetch_pinned_release()?;
         let asset = select_release_asset(&release)?;
         let archive = stage.join(&asset.filename);
         fs_ops::download(&asset.url, &archive, Some(&asset.sha256), MAX_ARCHIVE_BYTES)?;
@@ -295,13 +295,13 @@ pub fn uninstall(state: &AppState, game_dir: &Path) -> Result<(), String> {
     }
 }
 
-fn fetch_latest_release() -> Result<Release, String> {
+fn fetch_pinned_release() -> Result<Release, String> {
     let response = reqwest::blocking::Client::builder()
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|error| error.to_string())?
-        .get(RELEASES_API)
+        .get(RELEASE_API)
         .header(reqwest::header::USER_AGENT, "PatchOpsIII")
         .send()
         .and_then(reqwest::blocking::Response::error_for_status)
@@ -320,11 +320,8 @@ fn fetch_latest_release() -> Result<Release, String> {
     if body.len() as u64 > MAX_RELEASE_JSON_BYTES {
         return Err("DXVK release metadata is unexpectedly large".into());
     }
-    serde_json::from_slice::<Vec<Release>>(&body)
-        .map_err(|error| format!("invalid DXVK release metadata: {error}"))?
-        .into_iter()
-        .next()
-        .ok_or_else(|| "No releases returned from DXVK-GPLAsync API".into())
+    serde_json::from_slice::<Release>(&body)
+        .map_err(|error| format!("invalid DXVK release metadata: {error}"))
 }
 
 fn select_release_asset(release: &Release) -> Result<ReleaseAsset, String> {
