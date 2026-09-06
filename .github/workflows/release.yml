@@ -112,6 +112,12 @@ jobs:
             exit 1
           fi
 
+  checks:
+    needs: prepare
+    uses: ./.github/workflows/checks.yml
+    with:
+      ref: ${{ needs.prepare.outputs.source_sha }}
+
   build-windows:
     needs: prepare
     uses: ./.github/workflows/windows-build.yml
@@ -132,7 +138,7 @@ jobs:
     name: Publish ${{ inputs.channel }} release
     runs-on: ubuntu-latest
     environment: ${{ format('{0}-release', inputs.channel) }}
-    needs: [prepare, build-windows, build-linux]
+    needs: [prepare, checks, build-windows, build-linux]
     env:
       ASSET_PREFIX: ${{ inputs.channel == 'beta' && 'PatchOpsIII-Beta' || 'PatchOpsIII' }}
     permissions:
