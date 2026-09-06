@@ -13,10 +13,11 @@ from urllib.parse import urlsplit
 # ---------- DXVK Helper Functions (unchanged) ----------
 
 DXVK_ASYNC_FILES = ["dxgi.dll", "d3d11.dll"]
-# Pin the binary tarball: latest release links can use extensionless CI downloads.
+# Pin the binary tarball to a commit so upstream changes cannot replace its contents.
 DXVK_VERSION = "v3.0-1"
 DXVK_DOWNLOAD_URL = (
-    "https://gitlab.com/Ph42oN/dxvk-gplasync/-/raw/main/releases/"
+    "https://gitlab.com/Ph42oN/dxvk-gplasync/-/raw/"
+    "40b31c3cee687e9bc01124e26032a31e9d9bb7c9/releases/"
     f"dxvk-gplasync-{DXVK_VERSION}.tar.gz"
 )
 
