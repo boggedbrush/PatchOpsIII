@@ -8,7 +8,7 @@ from utils import (
     LEGACY_BACKUP_SUFFIX,
 )
 
-DEFAULT_STEAM_EXE_SHA256 = "9ba98dba41e18ef47de6c63937340f8eae7cb251f8fbc2e78d70047b64aa15b5"
+DEFAULT_STEAM_EXE_SHA256 = "51ca63bbc660e0826943c60da67606f6bcb4b3b519528b5e0548c68c9423a323"
 T7_INSTALL_MARKERS = (
     "t7patchloader.dll",
     "t7patch.dll",
@@ -33,7 +33,7 @@ def _github_release_asset_url(repo_name: str, tag_name: str, asset_name: str) ->
     return f"https://github.com/{repo_name}/releases/download/{tag_name}/{asset_name}"
 
 
-# The maintained Feb 2026-compatible patch now lives in Scroptss/T7Patch. LPC is
+# The maintained current-build patch lives in Scroptss/T7Patch. LPC is
 # still sourced from the legacy release because the new fork does not publish it.
 T7PATCH_ASSETS = {
     "current_archive": {

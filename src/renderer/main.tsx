@@ -93,8 +93,8 @@ const defaultExeSwap: PatchOpsState["exeSwap"] = {
   state: "unavailable",
   activeBuildId: "Unknown",
   activeBuildDate: "",
-  currentBuildId: "21201493",
-  currentBuildDate: "Feb 19, 2026",
+  currentBuildId: "24784313",
+  currentBuildDate: "Sep 10, 2026",
   compatibleBuildId: "10650222",
   compatibleBuildDate: "Mar 3, 2023",
   enhancedBuildId: "Enhanced",
@@ -1442,7 +1442,7 @@ function App() {
                       <header>
                         <div>
                           <h3>Latest Build</h3>
-                          <p>February 19, 2026 Steam build</p>
+                          <p>{state.exeSwap.currentBuildDate} Steam build</p>
                         </div>
                         <span className={cx("option-badge", activeExeProfile === "current" && activeExeTrusted && "active")}>{activeExeProfile === "current" && activeExeTrusted ? "Active" : "Steam default"}</span>
                       </header>
