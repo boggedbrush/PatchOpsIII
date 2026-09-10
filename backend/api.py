@@ -121,8 +121,8 @@ COMPATIBLE_DEPOT_APP_ID = "311210"
 COMPATIBLE_DEPOT_ID = "311211"
 COMPATIBLE_DEPOT_MANIFEST_ID = "9084453472036406216"
 COMPATIBLE_DEPOT_COMMAND = f"download_depot {COMPATIBLE_DEPOT_APP_ID} {COMPATIBLE_DEPOT_ID} {COMPATIBLE_DEPOT_MANIFEST_ID}"
-CURRENT_STEAM_BUILD_ID = "21201493"
-CURRENT_STEAM_BUILD_DATE = "Feb 19, 2026"
+CURRENT_STEAM_BUILD_ID = "24784313"
+CURRENT_STEAM_BUILD_DATE = "Sep 10, 2026"
 COMPATIBLE_STEAM_BUILD_ID = "10650222"
 COMPATIBLE_STEAM_BUILD_DATE = "Mar 3, 2023"
 SUPPORTED_LAUNCH_OPTIONS = {"", "+set fs_game offlinemp"} | {
@@ -553,7 +553,7 @@ def _t7_mode(game_dir: str | None) -> str:
     executable = _find_bo3_executable(game_dir)
     exe_hash = file_sha256(str(executable)) if executable else None
     variant = read_exe_variant(game_dir)
-    if exe_hash == "9ba98dba41e18ef47de6c63937340f8eae7cb251f8fbc2e78d70047b64aa15b5" or variant == "default":
+    if exe_hash == DEFAULT_STEAM_EXE_SHA256 or variant == "default":
         return "Default"
     return "Custom" if executable else "Unknown"
 
