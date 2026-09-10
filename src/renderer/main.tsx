@@ -1442,7 +1442,7 @@ function App() {
                       <header>
                         <div>
                           <h3>Latest Build</h3>
-                          <p>February 19, 2026 Steam build</p>
+                          <p>{state.exeSwap.currentBuildDate} Steam build</p>
                         </div>
                         <span className={cx("option-badge", activeExeProfile === "current" && activeExeTrusted && "active")}>{activeExeProfile === "current" && activeExeTrusted ? "Active" : "Steam default"}</span>
                       </header>
