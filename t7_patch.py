@@ -292,7 +292,7 @@ def _resolve_t7patch_asset(asset_key, log_widget):
         versioned_names = [
             name
             for name in release_assets
-            if re.fullmatch(re.escape(archive_stem) + r"\\.[^/]+\\.zip", name, re.IGNORECASE)
+            if re.fullmatch(re.escape(archive_stem) + r"\.[^/]+\.zip", name, re.IGNORECASE)
         ]
         if len(versioned_names) == 1:
             asset_name = versioned_names[0]
