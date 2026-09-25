@@ -306,13 +306,23 @@ def _resolve_t7patch_asset(asset_key, log_widget):
             if name.lower().endswith(".zip") and asset.get("sha256")
         }
         if sys.platform.startswith("win"):
-            platform_names = [name for name in zip_assets if "windows" in name.lower()]
+            platform_names = [
+                name for name in zip_assets
+                if "windows" in name.lower() or "manual" in name.lower()
+            ]
         else:
             platform_names = [
                 name for name in zip_assets
-                if "linux" in name.lower() or "steamdeck" in name.lower()
+                if "linux" in name.lower()
+                or "steamdeck" in name.lower()
+                or "manual" in name.lower()
             ]
-        candidates = platform_names or list(zip_assets)
+        candidates = platform_names
+        if not candidates:
+            candidates = [
+                name for name in zip_assets
+                if not any(token in name.lower() for token in ("windows", "linux", "steamdeck"))
+            ]
         universal_names = [
             name for name in candidates
             if ("linux" in name.lower() and "windows" in name.lower())
