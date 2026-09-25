@@ -282,7 +282,23 @@ def _resolve_t7patch_asset(asset_key, log_widget):
         return "", set()
 
     asset_name = asset_meta["asset_name"]
-    release_asset = _fetch_t7patch_release_assets(asset_meta["release_api"]).get(asset_name) or {}
+    release_assets = _fetch_t7patch_release_assets(asset_meta["release_api"])
+    release_asset = release_assets.get(asset_name) or {}
+
+    # Upstream T7Patch versions its release archive names, while this project
+    # keeps the stable asset name for older releases and legacy repositories.
+    if not release_asset and asset_name.lower().endswith(".zip"):
+        archive_stem = asset_name[:-4]
+        versioned_names = [
+            name
+            for name in release_assets
+            if re.fullmatch(re.escape(archive_stem) + r"\\.[^/]+\\.zip", name, re.IGNORECASE)
+        ]
+        if len(versioned_names) == 1:
+            asset_name = versioned_names[0]
+            release_asset = release_assets[asset_name]
+            write_log(f"Using versioned release asset {asset_name}.", "Info", log_widget)
+
     download_url = release_asset.get("download_url") or asset_meta["download_url"]
     api_digest = release_asset.get("sha256")
     if api_digest:
