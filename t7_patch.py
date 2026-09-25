@@ -285,8 +285,7 @@ def _resolve_t7patch_asset(asset_key, log_widget):
     release_assets = _fetch_t7patch_release_assets(asset_meta["release_api"])
     release_asset = release_assets.get(asset_name) or {}
 
-    # Upstream T7Patch versions its release archive names, while this project
-    # keeps the stable asset name for older releases and legacy repositories.
+    # Prefer the usual package name, including versions appended by upstream.
     if not release_asset and asset_name.lower().endswith(".zip"):
         archive_stem = asset_name[:-4]
         versioned_names = [
@@ -297,7 +296,38 @@ def _resolve_t7patch_asset(asset_key, log_widget):
         if len(versioned_names) == 1:
             asset_name = versioned_names[0]
             release_asset = release_assets[asset_name]
-            write_log(f"Using versioned release asset {asset_name}.", "Info", log_widget)
+
+    # Discover renamed packages in the latest Scroptss release. Keep the
+    # platform check and require a GitHub digest before choosing an asset.
+    if not release_asset and asset_key == "current_archive":
+        zip_assets = {
+            name: asset
+            for name, asset in release_assets.items()
+            if name.lower().endswith(".zip") and asset.get("sha256")
+        }
+        if sys.platform.startswith("win"):
+            platform_names = [name for name in zip_assets if "windows" in name.lower()]
+        else:
+            platform_names = [
+                name for name in zip_assets
+                if "linux" in name.lower() or "steamdeck" in name.lower()
+            ]
+        candidates = platform_names
+        if not candidates:
+            candidates = [
+                name for name in zip_assets
+                if not any(token in name.lower() for token in ("windows", "linux", "steamdeck"))
+            ]
+        universal_names = [
+            name for name in candidates
+            if "linux" in name.lower() and "windows" in name.lower()
+        ]
+        if universal_names:
+            candidates = universal_names
+        if len(candidates) == 1:
+            asset_name = candidates[0]
+            release_asset = zip_assets[asset_name]
+            write_log(f"Using latest T7 Patch release asset {asset_name}.", "Info", log_widget)
 
     download_url = release_asset.get("download_url") or asset_meta["download_url"]
     api_digest = release_asset.get("sha256")
