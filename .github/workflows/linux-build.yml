@@ -116,7 +116,7 @@ jobs:
       - name: Install Linux packaging prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y binutils squashfs-tools unzip zsync
+          sudo apt-get install -y binutils squashfs-tools unzip x11-utils xvfb zsync
       - name: Download appimagetool
         run: |
           set -euo pipefail
@@ -194,6 +194,27 @@ jobs:
           (cd "$extraction_dir" && "$GITHUB_WORKSPACE/$APPIMAGE_PATH" --appimage-extract >/dev/null)
           test -x "$extraction_dir/squashfs-root/AppRun"
           rm -rf "$extraction_dir"
+      - name: Smoke test AppImage at 800x600
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          set -euo pipefail
+          xvfb-run --auto-servernum --server-args="-screen 0 800x600x24" bash -euo pipefail -c '
+            screen_info="$(xwininfo -root)"
+            grep -Eq "Width: +800" <<< "$screen_info"
+            grep -Eq "Height: +600" <<< "$screen_info"
+
+            set +e
+            timeout --signal=TERM --kill-after=5s 30s \
+              "$GITHUB_WORKSPACE/$APPIMAGE_PATH" --no-sandbox --disable-gpu
+            status=$?
+            set -e
+
+            if [ "$status" -ne 124 ]; then
+              echo "AppImage exited before the 30-second smoke-test timeout (status $status)" >&2
+              exit 1
+            fi
+          '
       - name: Compute AppImage hash
         id: compute_hash
         run: |
