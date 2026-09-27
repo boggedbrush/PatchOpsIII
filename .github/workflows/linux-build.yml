@@ -116,7 +116,7 @@ jobs:
       - name: Install Linux packaging prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y binutils squashfs-tools unzip x11-utils xvfb zsync
+          sudo apt-get install -y binutils imagemagick squashfs-tools unzip x11-utils xdotool xvfb zsync
       - name: Download appimagetool
         run: |
           set -euo pipefail
@@ -197,24 +197,54 @@ jobs:
       - name: Smoke test AppImage at 800x600
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
+          SCREENSHOT_PATH: ${{ runner.temp }}/PatchOpsIII-800x600.png
         run: |
           set -euo pipefail
-          xvfb-run --auto-servernum --server-args="-screen 0 800x600x24" bash -euo pipefail -c '
-            screen_info="$(xwininfo -root)"
-            grep -Eq "Width: +800" <<< "$screen_info"
-            grep -Eq "Height: +600" <<< "$screen_info"
+          xvfb-run --auto-servernum --server-args="-screen 0 800x600x24" bash -euo pipefail <<'SMOKE_TEST'
+          screen_info="$(xwininfo -root)"
+          grep -Eq "Width: +800" <<< "$screen_info"
+          grep -Eq "Height: +600" <<< "$screen_info"
 
-            set +e
-            timeout --signal=TERM --kill-after=5s 30s \
-              "$GITHUB_WORKSPACE/$APPIMAGE_PATH" --no-sandbox --disable-gpu
-            status=$?
-            set -e
+          "$GITHUB_WORKSPACE/$APPIMAGE_PATH" --no-sandbox --disable-gpu &
+          app_pid=$!
+          cleanup() {
+            if kill -0 "$app_pid" 2>/dev/null; then
+              kill "$app_pid" 2>/dev/null || true
+              wait "$app_pid" 2>/dev/null || true
+            fi
+          }
+          trap cleanup EXIT
 
-            if [ "$status" -ne 124 ]; then
-              echo "AppImage exited before the 30-second smoke-test timeout (status $status)" >&2
+          window_id=""
+          for _ in {1..30}; do
+            if ! kill -0 "$app_pid" 2>/dev/null; then
+              if wait "$app_pid"; then status=0; else status=$?; fi
+              echo "AppImage exited before opening its window (status $status)" >&2
               exit 1
             fi
-          '
+            if window_id="$(xdotool search --onlyvisible --name "PatchOpsIII" 2>/dev/null | head -n 1)" && [ -n "$window_id" ]; then
+              break
+            fi
+            sleep 1
+          done
+
+          if [ -z "$window_id" ]; then
+            echo "PatchOpsIII window did not appear within 30 seconds" >&2
+            exit 1
+          fi
+
+          sleep 2
+          import -window root "$SCREENSHOT_PATH"
+          test -s "$SCREENSHOT_PATH"
+          sleep 20
+          kill -0 "$app_pid"
+          SMOKE_TEST
+      - name: Upload AppImage visual review screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: PatchOpsIII-AppImage-800x600
+          path: ${{ runner.temp }}/PatchOpsIII-800x600.png
+          if-no-files-found: error
       - name: Compute AppImage hash
         id: compute_hash
         run: |
