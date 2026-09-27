@@ -243,7 +243,7 @@ jobs:
             ${{ env.VT_CLI_ARCHIVE }}
           key: vt-${{ runner.os }}-${{ steps.vt_release.outputs.tag }}
       - name: Download VirusTotal CLI
-        if: ${{ env.VT_API_KEY != '' && steps.cache-vt.outputs.cache-hit != 'true' }}
+        if: ${{ env.VT_ENABLED == 'true' && steps.cache-vt.outputs.cache-hit != 'true' }}
         run: |
           set -euo pipefail
           curl -sSL "${{ steps.vt_release.outputs.url }}" -o "$VT_CLI_ARCHIVE"
