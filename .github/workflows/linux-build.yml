@@ -138,7 +138,7 @@ jobs:
         run: bun run dist:linux
       - name: Repack AppImage with update support
         env:
-          UPDATE_INFORMATION: ${{ inputs.update_information }}
+          UPDATE_INFORMATION: ${{ inputs.update_information || (github.event_name == 'pull_request' && 'gh-releases-zsync|boggedbrush|PatchOpsIII|latest|PatchOpsIII.AppImage.zsync') }}
         run: |
           set -euo pipefail
           if [ ! -f "$APPIMAGE_PATH" ]; then
@@ -168,7 +168,7 @@ jobs:
           )
       - name: Verify AppImage artifact
         env:
-          UPDATE_INFORMATION: ${{ inputs.update_information }}
+          UPDATE_INFORMATION: ${{ inputs.update_information || (github.event_name == 'pull_request' && 'gh-releases-zsync|boggedbrush|PatchOpsIII|latest|PatchOpsIII.AppImage.zsync') }}
         run: |
           set -euo pipefail
           test -s "$APPIMAGE_PATH"
