@@ -68,7 +68,7 @@ jobs:
       APPIMAGE_PATH: dist/packages/PatchOpsIII.AppImage
       ZSYNC_PATH: dist/packages/PatchOpsIII.AppImage.zsync
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      VT_API_KEY: ${{ secrets.VT_API_KEY }}
+      VT_ENABLED: ${{ secrets.VT_API_KEY != '' }}
       VT_CLI_ARCHIVE: vt-cli.zip
     steps:
       - uses: actions/checkout@v4
@@ -121,11 +121,18 @@ jobs:
         run: |
           set -euo pipefail
           appimagetool_path="$RUNNER_TEMP/appimagetool-x86_64.AppImage"
+          runtime_path="$RUNNER_TEMP/runtime-x86_64"
           curl --fail --location --retry 3 \
-            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage \
+            https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage \
             --output "$appimagetool_path"
+          echo "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  $appimagetool_path" | sha256sum --check
+          curl --fail --location --retry 3 \
+            https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64 \
+            --output "$runtime_path"
+          echo "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d  $runtime_path" | sha256sum --check
           chmod +x "$appimagetool_path"
           echo "APPIMAGETOOL_PATH=$appimagetool_path" >> "$GITHUB_ENV"
+          echo "APPIMAGE_RUNTIME_PATH=$runtime_path" >> "$GITHUB_ENV"
       - name: Install Python backend dependencies
         run: |
           python -m venv .venv
@@ -155,9 +162,11 @@ jobs:
             mv "$appimage_name" "$appimage_name.electron-builder"
             if [ -n "$UPDATE_INFORMATION" ]; then
               ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL_PATH" \
+                --runtime-file "$APPIMAGE_RUNTIME_PATH" \
                 --updateinformation "$UPDATE_INFORMATION" squashfs-root "$appimage_name"
             else
               ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL_PATH" \
+                --runtime-file "$APPIMAGE_RUNTIME_PATH" \
                 squashfs-root "$appimage_name"
             fi
             rm -rf squashfs-root "$appimage_name.electron-builder"
@@ -195,7 +204,7 @@ jobs:
           printf "vt_url=%s\n" "$vt_url" >> "$GITHUB_OUTPUT"
       - name: Determine VirusTotal CLI release
         id: vt_release
-        if: ${{ env.VT_API_KEY != '' }}
+        if: ${{ env.VT_ENABLED == 'true' }}
         run: |
           set -euo pipefail
           python <<'PY'
@@ -226,7 +235,7 @@ jobs:
           PY
       - name: Cache VirusTotal CLI
         id: cache-vt
-        if: ${{ env.VT_API_KEY != '' }}
+        if: ${{ env.VT_ENABLED == 'true' }}
         uses: actions/cache@v4
         with:
           path: |
@@ -240,7 +249,7 @@ jobs:
           curl -sSL "${{ steps.vt_release.outputs.url }}" -o "$VT_CLI_ARCHIVE"
           unzip -q -o "$VT_CLI_ARCHIVE"
       - name: Ensure VirusTotal CLI executable
-        if: ${{ env.VT_API_KEY != '' }}
+        if: ${{ env.VT_ENABLED == 'true' }}
         run: |
           if [ ! -f vt ]; then
             echo 'VirusTotal CLI binary not found' >&2
@@ -248,7 +257,9 @@ jobs:
           fi
           chmod +x vt
       - name: VirusTotal scan
-        if: ${{ env.VT_API_KEY != '' }}
+        if: ${{ env.VT_ENABLED == 'true' }}
+        env:
+          VT_API_KEY: ${{ secrets.VT_API_KEY }}
         run: ./vt scan file "$APPIMAGE_PATH" --apikey "$VT_API_KEY"
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
