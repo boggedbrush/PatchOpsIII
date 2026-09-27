@@ -9,6 +9,7 @@ on:
     branches:
       - Testing
       - testing
+      - main
   workflow_dispatch:
     inputs:
       ref:
