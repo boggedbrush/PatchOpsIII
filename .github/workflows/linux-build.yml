@@ -16,10 +16,20 @@ on:
         required: false
         type: string
         default: ''
+      update_information:
+        description: AppImageUpdate metadata to embed in the AppImage
+        required: false
+        type: string
+        default: ''
   workflow_call:
     inputs:
       ref:
         description: Git ref to build
+        required: false
+        type: string
+        default: ''
+      update_information:
+        description: AppImageUpdate metadata to embed in the AppImage
         required: false
         type: string
         default: ''
@@ -40,7 +50,7 @@ permissions:
 jobs:
   build-linux:
     name: Build Linux Electron AppImage
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     outputs:
       hash: ${{ steps.compute_hash.outputs.hash }}
       vt_url: ${{ steps.compute_hash.outputs.vt_url }}
@@ -105,7 +115,16 @@ jobs:
       - name: Install Linux packaging prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y binutils unzip zsync
+          sudo apt-get install -y binutils squashfs-tools unzip zsync
+      - name: Download appimagetool
+        run: |
+          set -euo pipefail
+          appimagetool_path="$RUNNER_TEMP/appimagetool-x86_64.AppImage"
+          curl --fail --location --retry 3 \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage \
+            --output "$appimagetool_path"
+          chmod +x "$appimagetool_path"
+          echo "APPIMAGETOOL_PATH=$appimagetool_path" >> "$GITHUB_ENV"
       - name: Install Python backend dependencies
         run: |
           python -m venv .venv
@@ -116,8 +135,11 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Build Electron AppImage
         run: bun run dist:linux
-      - name: Generate AppImage zsync metadata
+      - name: Repack AppImage with update support
+        env:
+          UPDATE_INFORMATION: ${{ inputs.update_information }}
         run: |
+          set -euo pipefail
           if [ ! -f "$APPIMAGE_PATH" ]; then
             find dist -maxdepth 4 -type f -print
             echo "$APPIMAGE_PATH was not produced" >&2
@@ -128,8 +150,40 @@ jobs:
           appimage_dir="$(dirname "$APPIMAGE_PATH")"
           (
             cd "$appimage_dir"
-            zsyncmake -u "$appimage_name" -o "$appimage_name.zsync" "$appimage_name"
+            "./$appimage_name" --appimage-extract
+            mv "$appimage_name" "$appimage_name.electron-builder"
+            if [ -n "$UPDATE_INFORMATION" ]; then
+              ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL_PATH" \
+                --updateinformation "$UPDATE_INFORMATION" squashfs-root "$appimage_name"
+            else
+              ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL_PATH" \
+                squashfs-root "$appimage_name"
+            fi
+            rm -rf squashfs-root "$appimage_name.electron-builder"
+            chmod +x "$appimage_name"
+            if [ -z "$UPDATE_INFORMATION" ]; then
+              zsyncmake -u "$appimage_name" -o "$appimage_name.zsync" "$appimage_name"
+            fi
           )
+      - name: Verify AppImage artifact
+        env:
+          UPDATE_INFORMATION: ${{ inputs.update_information }}
+        run: |
+          set -euo pipefail
+          test -s "$APPIMAGE_PATH"
+          test -s "$ZSYNC_PATH"
+          if [ -n "$UPDATE_INFORMATION" ]; then
+            actual_update_information="$("$APPIMAGE_PATH" --appimage-updateinformation)"
+            if [ "$actual_update_information" != "$UPDATE_INFORMATION" ]; then
+              printf 'Expected update information: %s\nFound: %s\n' \
+                "$UPDATE_INFORMATION" "$actual_update_information" >&2
+              exit 1
+            fi
+          fi
+          extraction_dir="$(mktemp -d)"
+          (cd "$extraction_dir" && "$GITHUB_WORKSPACE/$APPIMAGE_PATH" --appimage-extract >/dev/null)
+          test -x "$extraction_dir/squashfs-root/AppRun"
+          rm -rf "$extraction_dir"
       - name: Compute AppImage hash
         id: compute_hash
         run: |
