@@ -40,7 +40,7 @@ permissions:
 jobs:
   build-linux:
     name: Build Linux Electron AppImage
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     outputs:
       hash: ${{ steps.compute_hash.outputs.hash }}
       vt_url: ${{ steps.compute_hash.outputs.vt_url }}
@@ -56,6 +56,7 @@ jobs:
       PYTHON_VERSION: "3.12"
       APPIMAGE_PATH: dist/packages/PatchOpsIII.AppImage
       ZSYNC_PATH: dist/packages/PatchOpsIII.AppImage.zsync
+      APPIMAGE_UPDATE_INFO: gh-releases-zsync|boggedbrush|PatchOpsIII|latest|PatchOpsIII.AppImage.zsync
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
       VT_API_KEY: ${{ secrets.VT_API_KEY }}
       VT_CLI_ARCHIVE: vt-cli.zip
@@ -105,7 +106,7 @@ jobs:
       - name: Install Linux packaging prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y binutils unzip zsync
+          sudo apt-get install -y binutils libfuse2 unzip zsync
       - name: Install Python backend dependencies
         run: |
           python -m venv .venv
@@ -116,20 +117,38 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Build Electron AppImage
         run: bun run dist:linux
-      - name: Generate AppImage zsync metadata
+      - name: Embed AppImage update information
         run: |
+          set -euo pipefail
           if [ ! -f "$APPIMAGE_PATH" ]; then
             find dist -maxdepth 4 -type f -print
             echo "$APPIMAGE_PATH was not produced" >&2
             exit 1
           fi
+
           chmod +x "$APPIMAGE_PATH"
-          appimage_name="$(basename "$APPIMAGE_PATH")"
-          appimage_dir="$(dirname "$APPIMAGE_PATH")"
+          appimage_path="$GITHUB_WORKSPACE/$APPIMAGE_PATH"
+          appimage_tool="$RUNNER_TEMP/appimagetool-x86_64.AppImage"
+          extract_dir="$(mktemp -d "$RUNNER_TEMP/patchopsiii-appimage.XXXXXX")"
+
+          curl -fsSL \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage \
+            -o "$appimage_tool"
+          chmod +x "$appimage_tool"
+
           (
-            cd "$appimage_dir"
-            zsyncmake -u "$appimage_name" -o "$appimage_name.zsync" "$appimage_name"
+            cd "$extract_dir"
+            "$appimage_path" --appimage-extract
           )
+
+          APPIMAGE_EXTRACT_AND_RUN=1 "$appimage_tool" \
+            "$extract_dir/squashfs-root" \
+            "$appimage_path" \
+            -u "$APPIMAGE_UPDATE_INFO"
+
+          test -s "$APPIMAGE_PATH"
+          test -s "$ZSYNC_PATH"
+          readelf --string-dump=.upd_info "$APPIMAGE_PATH" | grep -Fq "$APPIMAGE_UPDATE_INFO"
       - name: Compute AppImage hash
         id: compute_hash
         run: |
