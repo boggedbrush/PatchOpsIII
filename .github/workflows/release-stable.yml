@@ -300,6 +300,7 @@ jobs:
     uses: ./.github/workflows/linux-build.yml
     with:
       ref: ${{ needs.prepare.outputs.tag }}
+      update_information: gh-releases-zsync|boggedbrush|PatchOpsIII|latest|PatchOpsIII.AppImage.zsync
     secrets: inherit
 
   release:
