@@ -2890,6 +2890,7 @@ img {
 
   .content-panel > .dashboard-split {
     margin-top: 0;
+    align-items: start;
   }
 
   .nav-panel {
@@ -3004,6 +3005,36 @@ img {
 
   .browse-shortcuts h3 {
     grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 840px) {
+  .tool-button.browse {
+    min-width: 140px;
+  }
+
+  .dashboard-split .profile-state {
+    flex: 0 0 92px;
+    line-height: 1.15;
+    white-space: normal;
+    text-overflow: clip;
+  }
+
+  .nav-button {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 4px;
+    min-height: 52px;
+    padding: 5px 4px;
+    text-align: center;
+  }
+
+  .nav-button span {
+    font-size: 12px;
+    line-height: 1.1;
+    white-space: normal;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
   }
 }
 

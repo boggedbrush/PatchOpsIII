@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, screen, shell } from "electron";
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -114,12 +114,13 @@ async function createWindow() {
 
   const isWindows = process.platform === "win32";
   const isMac = process.platform === "darwin";
+  const { width: displayWidth, height: displayHeight } = screen.getPrimaryDisplay().workAreaSize;
 
   mainWindow = new BrowserWindow({
-    width: 1320,
-    height: 860,
-    minWidth: 1100,
-    minHeight: 720,
+    width: Math.min(1320, displayWidth),
+    height: Math.min(860, displayHeight),
+    minWidth: Math.min(800, displayWidth),
+    minHeight: Math.min(600, displayHeight),
     title: "PatchOpsIII",
     backgroundColor: isWindows ? "#00000000" : "#080806",
     backgroundMaterial: isWindows ? "mica" : undefined,

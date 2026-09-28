@@ -9,6 +9,7 @@ on:
     branches:
       - Testing
       - testing
+      - main
   workflow_dispatch:
     inputs:
       ref:
@@ -16,10 +17,20 @@ on:
         required: false
         type: string
         default: ''
+      update_information:
+        description: AppImageUpdate metadata to embed in the AppImage
+        required: false
+        type: string
+        default: ''
   workflow_call:
     inputs:
       ref:
         description: Git ref to build
+        required: false
+        type: string
+        default: ''
+      update_information:
+        description: AppImageUpdate metadata to embed in the AppImage
         required: false
         type: string
         default: ''
@@ -40,7 +51,7 @@ permissions:
 jobs:
   build-linux:
     name: Build Linux Electron AppImage
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     outputs:
       hash: ${{ steps.compute_hash.outputs.hash }}
       vt_url: ${{ steps.compute_hash.outputs.vt_url }}
@@ -57,7 +68,7 @@ jobs:
       APPIMAGE_PATH: dist/packages/PatchOpsIII.AppImage
       ZSYNC_PATH: dist/packages/PatchOpsIII.AppImage.zsync
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      VT_API_KEY: ${{ secrets.VT_API_KEY }}
+      VT_ENABLED: ${{ secrets.VT_API_KEY != '' }}
       VT_CLI_ARCHIVE: vt-cli.zip
     steps:
       - uses: actions/checkout@v4
@@ -105,7 +116,23 @@ jobs:
       - name: Install Linux packaging prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y binutils unzip zsync
+          sudo apt-get install -y binutils imagemagick squashfs-tools unzip x11-utils xdotool xvfb zsync
+      - name: Download appimagetool
+        run: |
+          set -euo pipefail
+          appimagetool_path="$RUNNER_TEMP/appimagetool-x86_64.AppImage"
+          runtime_path="$RUNNER_TEMP/runtime-x86_64"
+          curl --fail --location --retry 3 \
+            https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage \
+            --output "$appimagetool_path"
+          echo "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  $appimagetool_path" | sha256sum --check
+          curl --fail --location --retry 3 \
+            https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64 \
+            --output "$runtime_path"
+          echo "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d  $runtime_path" | sha256sum --check
+          chmod +x "$appimagetool_path"
+          echo "APPIMAGETOOL_PATH=$appimagetool_path" >> "$GITHUB_ENV"
+          echo "APPIMAGE_RUNTIME_PATH=$runtime_path" >> "$GITHUB_ENV"
       - name: Install Python backend dependencies
         run: |
           python -m venv .venv
@@ -116,8 +143,11 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Build Electron AppImage
         run: bun run dist:linux
-      - name: Generate AppImage zsync metadata
+      - name: Repack AppImage with update support
+        env:
+          UPDATE_INFORMATION: ${{ inputs.update_information || (github.event_name == 'pull_request' && 'gh-releases-zsync|boggedbrush|PatchOpsIII|latest|PatchOpsIII.AppImage.zsync') || '' }}
         run: |
+          set -euo pipefail
           if [ ! -f "$APPIMAGE_PATH" ]; then
             find dist -maxdepth 4 -type f -print
             echo "$APPIMAGE_PATH was not produced" >&2
@@ -128,8 +158,103 @@ jobs:
           appimage_dir="$(dirname "$APPIMAGE_PATH")"
           (
             cd "$appimage_dir"
-            zsyncmake -u "$appimage_name" -o "$appimage_name.zsync" "$appimage_name"
+            "./$appimage_name" --appimage-extract
+            mv "$appimage_name" "$appimage_name.electron-builder"
+            if [ -n "$UPDATE_INFORMATION" ]; then
+              ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL_PATH" \
+                --runtime-file "$APPIMAGE_RUNTIME_PATH" \
+                --updateinformation "$UPDATE_INFORMATION" squashfs-root "$appimage_name"
+            else
+              ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL_PATH" \
+                --runtime-file "$APPIMAGE_RUNTIME_PATH" \
+                squashfs-root "$appimage_name"
+            fi
+            rm -rf squashfs-root "$appimage_name.electron-builder"
+            chmod +x "$appimage_name"
+            if [ -z "$UPDATE_INFORMATION" ]; then
+              zsyncmake -u "$appimage_name" -o "$appimage_name.zsync" "$appimage_name"
+            fi
           )
+      - name: Verify AppImage artifact
+        env:
+          UPDATE_INFORMATION: ${{ inputs.update_information || (github.event_name == 'pull_request' && 'gh-releases-zsync|boggedbrush|PatchOpsIII|latest|PatchOpsIII.AppImage.zsync') || '' }}
+        run: |
+          set -euo pipefail
+          test -s "$APPIMAGE_PATH"
+          test -s "$ZSYNC_PATH"
+          if [ -n "$UPDATE_INFORMATION" ]; then
+            actual_update_information="$("$APPIMAGE_PATH" --appimage-updateinformation)"
+            if [ "$actual_update_information" != "$UPDATE_INFORMATION" ]; then
+              printf 'Expected update information: %s\nFound: %s\n' \
+                "$UPDATE_INFORMATION" "$actual_update_information" >&2
+              exit 1
+            fi
+          fi
+          extraction_dir="$(mktemp -d)"
+          (cd "$extraction_dir" && "$GITHUB_WORKSPACE/$APPIMAGE_PATH" --appimage-extract >/dev/null)
+          test -x "$extraction_dir/squashfs-root/AppRun"
+          rm -rf "$extraction_dir"
+      - name: Smoke test AppImage at 800x600
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+          SCREENSHOT_PATH: ${{ runner.temp }}/PatchOpsIII-800x600.png
+        run: |
+          set -euo pipefail
+          xvfb-run --auto-servernum --server-args="-screen 0 800x600x24" bash -euo pipefail <<'SMOKE_TEST'
+          screen_info="$(xwininfo -root)"
+          grep -Eq "Width: +800" <<< "$screen_info"
+          grep -Eq "Height: +600" <<< "$screen_info"
+
+          "$GITHUB_WORKSPACE/$APPIMAGE_PATH" --no-sandbox --disable-gpu &
+          app_pid=$!
+          cleanup() {
+            if kill -0 "$app_pid" 2>/dev/null; then
+              kill "$app_pid" 2>/dev/null || true
+              wait "$app_pid" 2>/dev/null || true
+            fi
+          }
+          trap cleanup EXIT
+
+          window_id=""
+          for _ in {1..30}; do
+            if ! kill -0 "$app_pid" 2>/dev/null; then
+              if wait "$app_pid"; then status=0; else status=$?; fi
+              echo "AppImage exited before opening its window (status $status)" >&2
+              exit 1
+            fi
+            if window_id="$(xdotool search --onlyvisible --name "PatchOpsIII" 2>/dev/null | head -n 1)" && [ -n "$window_id" ]; then
+              break
+            fi
+            sleep 1
+          done
+
+          if [ -z "$window_id" ]; then
+            echo "PatchOpsIII window did not appear within 30 seconds" >&2
+            exit 1
+          fi
+
+          window_info="$(xwininfo -id "$window_id")"
+          window_x="$(awk '/Absolute upper-left X:/ { print $4; exit }' <<< "$window_info")"
+          window_y="$(awk '/Absolute upper-left Y:/ { print $4; exit }' <<< "$window_info")"
+          window_width="$(awk '/Width:/ { print $2; exit }' <<< "$window_info")"
+          window_height="$(awk '/Height:/ { print $2; exit }' <<< "$window_info")"
+          if (( window_x < 0 || window_y < 0 || window_x + window_width > 800 || window_y + window_height > 600 )); then
+            echo "AppImage window exceeds the 800x600 display: ${window_width}x${window_height} at ${window_x},${window_y}" >&2
+            exit 1
+          fi
+
+          sleep 2
+          import -window root "$SCREENSHOT_PATH"
+          test -s "$SCREENSHOT_PATH"
+          sleep 20
+          kill -0 "$app_pid"
+          SMOKE_TEST
+      - name: Upload AppImage visual review screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: PatchOpsIII-AppImage-800x600
+          path: ${{ runner.temp }}/PatchOpsIII-800x600.png
+          if-no-files-found: error
       - name: Compute AppImage hash
         id: compute_hash
         run: |
@@ -140,7 +265,7 @@ jobs:
           printf "vt_url=%s\n" "$vt_url" >> "$GITHUB_OUTPUT"
       - name: Determine VirusTotal CLI release
         id: vt_release
-        if: ${{ env.VT_API_KEY != '' }}
+        if: ${{ env.VT_ENABLED == 'true' }}
         run: |
           set -euo pipefail
           python <<'PY'
@@ -171,7 +296,7 @@ jobs:
           PY
       - name: Cache VirusTotal CLI
         id: cache-vt
-        if: ${{ env.VT_API_KEY != '' }}
+        if: ${{ env.VT_ENABLED == 'true' }}
         uses: actions/cache@v4
         with:
           path: |
@@ -179,13 +304,13 @@ jobs:
             ${{ env.VT_CLI_ARCHIVE }}
           key: vt-${{ runner.os }}-${{ steps.vt_release.outputs.tag }}
       - name: Download VirusTotal CLI
-        if: ${{ env.VT_API_KEY != '' && steps.cache-vt.outputs.cache-hit != 'true' }}
+        if: ${{ env.VT_ENABLED == 'true' && steps.cache-vt.outputs.cache-hit != 'true' }}
         run: |
           set -euo pipefail
           curl -sSL "${{ steps.vt_release.outputs.url }}" -o "$VT_CLI_ARCHIVE"
           unzip -q -o "$VT_CLI_ARCHIVE"
       - name: Ensure VirusTotal CLI executable
-        if: ${{ env.VT_API_KEY != '' }}
+        if: ${{ env.VT_ENABLED == 'true' }}
         run: |
           if [ ! -f vt ]; then
             echo 'VirusTotal CLI binary not found' >&2
@@ -193,7 +318,9 @@ jobs:
           fi
           chmod +x vt
       - name: VirusTotal scan
-        if: ${{ env.VT_API_KEY != '' }}
+        if: ${{ env.VT_ENABLED == 'true' }}
+        env:
+          VT_API_KEY: ${{ secrets.VT_API_KEY }}
         run: ./vt scan file "$APPIMAGE_PATH" --apikey "$VT_API_KEY"
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
