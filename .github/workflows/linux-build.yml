@@ -116,7 +116,7 @@ jobs:
       - name: Install Linux packaging prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y binutils firejail imagemagick squashfs-tools unzip x11-utils xdotool xvfb zsync
+          sudo apt-get install -y binutils imagemagick squashfs-tools unzip x11-utils xdotool xvfb zsync
       - name: Download appimagetool
         run: |
           set -euo pipefail
@@ -198,6 +198,26 @@ jobs:
           (cd "$extraction_dir" && "$GITHUB_WORKSPACE/$APPIMAGE_PATH" --appimage-extract >/dev/null)
           test -x "$extraction_dir/squashfs-root/AppRun"
           rm -rf "$extraction_dir"
+      - name: Install catalog Firejail test runtime
+        run: |
+          set -euo pipefail
+          catalog_firejail="$RUNNER_TEMP/catalog-firejail"
+          mkdir -p "$catalog_firejail"
+          curl --fail --location --retry 3 \
+            https://github.com/AppImage/appimage.github.io/releases/download/deps/alpine-firejail-git20230825.tar.gz \
+            --output "$catalog_firejail/firejail.tar.gz"
+          echo "e346e52ac7dbff3a3f1e8aad3cbb2f06584afcb51c840de07cb8d50e134492d9  $catalog_firejail/firejail.tar.gz" | sha256sum --check
+          curl --fail --location --retry 3 \
+            https://dl-cdn.alpinelinux.org/alpine/v3.13/main/x86_64/musl-1.2.2-r2.apk \
+            --output "$catalog_firejail/musl.apk"
+          echo "3d459f4f3a83e60c6c260c6aee26745e7aa22697f53e3a01445227d2cfeeae8a  $catalog_firejail/musl.apk" | sha256sum --check
+          tar -xzf "$catalog_firejail/firejail.tar.gz" -C "$catalog_firejail"
+          tar --warning=no-unknown-keyword -xzf "$catalog_firejail/firejail-0_git20230825-r0.apk" -C "$catalog_firejail" etc/firejail usr/bin/firejail usr/lib/firejail
+          tar --warning=no-unknown-keyword -xzf "$catalog_firejail/musl.apk" -C "$catalog_firejail" lib
+          sudo cp -a "$catalog_firejail/lib/." /lib/
+          sudo cp -a "$catalog_firejail/etc/firejail" /etc/
+          sudo cp -a "$catalog_firejail/usr/lib/firejail" /usr/lib/
+          sudo install -o root -g root -m 4755 "$catalog_firejail/usr/bin/firejail" /usr/bin/firejail
       - name: Smoke test AppImage at 800x600 with extraction and Firejail
         env:
           SCREENSHOT_PATH: ${{ runner.temp }}/PatchOpsIII-800x600.png
@@ -215,7 +235,7 @@ jobs:
           grep -Eq "Height: +600" <<< "$screen_info"
 
           if [ "$LAUNCH_MODE" = firejail ]; then
-            setsid firejail --debug --trace --env=ELECTRON_ENABLE_LOGGING=1 --noprofile --net=none --appimage "$GITHUB_WORKSPACE/$APPIMAGE_PATH" &
+            setsid firejail --debug --noprofile --net=none --appimage "$GITHUB_WORKSPACE/$APPIMAGE_PATH" &
           else
             APPIMAGE_EXTRACT_AND_RUN=1 setsid "$GITHUB_WORKSPACE/$APPIMAGE_PATH" --no-sandbox --disable-gpu &
           fi
