@@ -214,9 +214,9 @@ jobs:
           tar -xzf "$catalog_firejail/firejail.tar.gz" -C "$catalog_firejail"
           tar --warning=no-unknown-keyword -xzf "$catalog_firejail/firejail-0_git20230825-r0.apk" -C "$catalog_firejail" etc/firejail usr/bin/firejail usr/lib/firejail
           tar --warning=no-unknown-keyword -xzf "$catalog_firejail/musl.apk" -C "$catalog_firejail" lib
-          sudo cp -a "$catalog_firejail/lib/." /lib/
-          sudo cp -a "$catalog_firejail/etc/firejail" /etc/
-          sudo cp -a "$catalog_firejail/usr/lib/firejail" /usr/lib/
+          sudo cp -R "$catalog_firejail/lib/." /lib/
+          sudo cp -R "$catalog_firejail/etc/firejail" /etc/
+          sudo cp -R "$catalog_firejail/usr/lib/firejail" /usr/lib/
           sudo install -o root -g root -m 4755 "$catalog_firejail/usr/bin/firejail" /usr/bin/firejail
       - name: Smoke test AppImage at 800x600 with extraction and Firejail
         env:
