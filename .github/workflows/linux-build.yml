@@ -116,7 +116,7 @@ jobs:
       - name: Install Linux packaging prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y binutils imagemagick squashfs-tools unzip x11-utils xdotool xvfb zsync
+          sudo apt-get install -y binutils firejail imagemagick squashfs-tools unzip x11-utils xdotool xvfb zsync
       - name: Download appimagetool
         run: |
           set -euo pipefail
@@ -159,6 +159,7 @@ jobs:
           (
             cd "$appimage_dir"
             "./$appimage_name" --appimage-extract
+            chmod 755 squashfs-root
             mv "$appimage_name" "$appimage_name.electron-builder"
             if [ -n "$UPDATE_INFORMATION" ]; then
               ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL_PATH" \
@@ -190,22 +191,30 @@ jobs:
               exit 1
             fi
           fi
+          squashfs_listing="$RUNNER_TEMP/appimage-filesystem.txt"
+          unsquashfs -lln -o "$("$APPIMAGE_PATH" --appimage-offset)" "$APPIMAGE_PATH" > "$squashfs_listing"
+          awk '$NF == "squashfs-root" { found = 1; if ($1 != "drwxr-xr-x") { print "AppImage root must have mode 0755: " $0 > "/dev/stderr"; exit 1 } } END { if (!found) exit 1 }' "$squashfs_listing"
           extraction_dir="$(mktemp -d)"
           (cd "$extraction_dir" && "$GITHUB_WORKSPACE/$APPIMAGE_PATH" --appimage-extract >/dev/null)
           test -x "$extraction_dir/squashfs-root/AppRun"
           rm -rf "$extraction_dir"
-      - name: Smoke test AppImage at 800x600
+      - name: Smoke test AppImage at 800x600 with extraction and Firejail
         env:
-          APPIMAGE_EXTRACT_AND_RUN: "1"
           SCREENSHOT_PATH: ${{ runner.temp }}/PatchOpsIII-800x600.png
         run: |
           set -euo pipefail
+          for launch_mode in extract firejail; do
+          export LAUNCH_MODE="$launch_mode"
           xvfb-run --auto-servernum --server-args="-screen 0 800x600x24" bash -euo pipefail <<'SMOKE_TEST'
           screen_info="$(xwininfo -root)"
           grep -Eq "Width: +800" <<< "$screen_info"
           grep -Eq "Height: +600" <<< "$screen_info"
 
-          "$GITHUB_WORKSPACE/$APPIMAGE_PATH" --no-sandbox --disable-gpu &
+          if [ "$LAUNCH_MODE" = firejail ]; then
+            firejail --quiet --noprofile --net=none --appimage "$GITHUB_WORKSPACE/$APPIMAGE_PATH" &
+          else
+            APPIMAGE_EXTRACT_AND_RUN=1 "$GITHUB_WORKSPACE/$APPIMAGE_PATH" --no-sandbox --disable-gpu &
+          fi
           app_pid=$!
           cleanup() {
             if kill -0 "$app_pid" 2>/dev/null; then
@@ -249,6 +258,7 @@ jobs:
           sleep 20
           kill -0 "$app_pid"
           SMOKE_TEST
+          done
       - name: Upload AppImage visual review screenshot
         uses: actions/upload-artifact@v4
         with:
