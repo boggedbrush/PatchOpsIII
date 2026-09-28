@@ -159,7 +159,7 @@ jobs:
           (
             cd "$appimage_dir"
             "./$appimage_name" --appimage-extract
-            chmod 755 squashfs-root
+            find squashfs-root -type d -exec chmod 755 {} +
             mv "$appimage_name" "$appimage_name.electron-builder"
             if [ -n "$UPDATE_INFORMATION" ]; then
               ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL_PATH" \
@@ -193,7 +193,7 @@ jobs:
           fi
           squashfs_listing="$RUNNER_TEMP/appimage-filesystem.txt"
           unsquashfs -lln -o "$("$APPIMAGE_PATH" --appimage-offset)" "$APPIMAGE_PATH" > "$squashfs_listing"
-          awk '$NF == "squashfs-root" { found = 1; if ($1 != "drwxr-xr-x") { print "AppImage root must have mode 0755: " $0 > "/dev/stderr"; exit 1 } } END { if (!found) exit 1 }' "$squashfs_listing"
+          awk '$1 ~ /^d/ { found = 1; if ($1 != "drwxr-xr-x") { print "AppImage directory must have mode 0755: " $0 > "/dev/stderr"; exit 1 } } END { if (!found) exit 1 }' "$squashfs_listing"
           extraction_dir="$(mktemp -d)"
           (cd "$extraction_dir" && "$GITHUB_WORKSPACE/$APPIMAGE_PATH" --appimage-extract >/dev/null)
           test -x "$extraction_dir/squashfs-root/AppRun"
@@ -235,7 +235,7 @@ jobs:
           grep -Eq "Height: +600" <<< "$screen_info"
 
           if [ "$LAUNCH_MODE" = firejail ]; then
-            setsid firejail --debug --env=SHELLOPTS=xtrace --env=DEBUG= --noprofile --net=none --appimage "$GITHUB_WORKSPACE/$APPIMAGE_PATH" &
+            setsid firejail --quiet --noprofile --net=none --appimage "$GITHUB_WORKSPACE/$APPIMAGE_PATH" &
           else
             APPIMAGE_EXTRACT_AND_RUN=1 setsid "$GITHUB_WORKSPACE/$APPIMAGE_PATH" --no-sandbox --disable-gpu &
           fi
