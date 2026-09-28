@@ -205,13 +205,14 @@ jobs:
           set -euo pipefail
           for launch_mode in extract firejail; do
           export LAUNCH_MODE="$launch_mode"
+          echo "Testing AppImage launch mode: $LAUNCH_MODE"
           xvfb-run --auto-servernum --server-args="-screen 0 800x600x24" bash -euo pipefail <<'SMOKE_TEST'
           screen_info="$(xwininfo -root)"
           grep -Eq "Width: +800" <<< "$screen_info"
           grep -Eq "Height: +600" <<< "$screen_info"
 
           if [ "$LAUNCH_MODE" = firejail ]; then
-            firejail --quiet --noprofile --net=none --appimage "$GITHUB_WORKSPACE/$APPIMAGE_PATH" &
+            firejail --debug --noprofile --net=none --appimage "$GITHUB_WORKSPACE/$APPIMAGE_PATH" &
           else
             APPIMAGE_EXTRACT_AND_RUN=1 "$GITHUB_WORKSPACE/$APPIMAGE_PATH" --no-sandbox --disable-gpu &
           fi
