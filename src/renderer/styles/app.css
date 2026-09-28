@@ -3009,6 +3009,17 @@ img {
 }
 
 @media (max-width: 840px) {
+  .tool-button.browse {
+    min-width: 140px;
+  }
+
+  .dashboard-split .profile-state {
+    flex: 0 0 92px;
+    line-height: 1.15;
+    white-space: normal;
+    text-overflow: clip;
+  }
+
   .nav-button {
     grid-template-columns: 1fr;
     justify-items: center;
