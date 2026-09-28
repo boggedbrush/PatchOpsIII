@@ -2890,6 +2890,7 @@ img {
 
   .content-panel > .dashboard-split {
     margin-top: 0;
+    align-items: start;
   }
 
   .nav-panel {
@@ -3004,6 +3005,25 @@ img {
 
   .browse-shortcuts h3 {
     grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 840px) {
+  .nav-button {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 4px;
+    min-height: 52px;
+    padding: 5px 4px;
+    text-align: center;
+  }
+
+  .nav-button span {
+    font-size: 12px;
+    line-height: 1.1;
+    white-space: normal;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
   }
 }
 
