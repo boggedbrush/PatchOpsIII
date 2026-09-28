@@ -233,6 +233,16 @@ jobs:
             exit 1
           fi
 
+          window_info="$(xwininfo -id "$window_id")"
+          window_x="$(awk '/Absolute upper-left X:/ { print $4; exit }' <<< "$window_info")"
+          window_y="$(awk '/Absolute upper-left Y:/ { print $4; exit }' <<< "$window_info")"
+          window_width="$(awk '/Width:/ { print $2; exit }' <<< "$window_info")"
+          window_height="$(awk '/Height:/ { print $2; exit }' <<< "$window_info")"
+          if (( window_x < 0 || window_y < 0 || window_x + window_width > 800 || window_y + window_height > 600 )); then
+            echo "AppImage window exceeds the 800x600 display: ${window_width}x${window_height} at ${window_x},${window_y}" >&2
+            exit 1
+          fi
+
           sleep 2
           import -window root "$SCREENSHOT_PATH"
           test -s "$SCREENSHOT_PATH"
