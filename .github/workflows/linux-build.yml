@@ -215,7 +215,7 @@ jobs:
           grep -Eq "Height: +600" <<< "$screen_info"
 
           if [ "$LAUNCH_MODE" = firejail ]; then
-            setsid firejail --debug --noprofile --net=none --appimage "$GITHUB_WORKSPACE/$APPIMAGE_PATH" &
+            setsid firejail --debug --trace --env=ELECTRON_ENABLE_LOGGING=1 --noprofile --net=none --appimage "$GITHUB_WORKSPACE/$APPIMAGE_PATH" &
           else
             APPIMAGE_EXTRACT_AND_RUN=1 setsid "$GITHUB_WORKSPACE/$APPIMAGE_PATH" --no-sandbox --disable-gpu &
           fi
