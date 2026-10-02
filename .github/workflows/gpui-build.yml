@@ -1,0 +1,64 @@
+name: GPUI Alternative
+
+on:
+  pull_request:
+    paths:
+      - 'native/gpui/**'
+      - 'scripts/*gpui*.py'
+      - 'scripts/measure_desktop.py'
+      - 'backend/**'
+      - '*.py'
+      - 'requirements.txt'
+      - 'presets.json'
+      - 'docs/gpui-evaluation.md'
+      - '.github/workflows/gpui-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.99.0'
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/gpui
+      - name: Linux native dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libfreetype6-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libx11-xcb-dev libxcb1-dev libasound2-dev libclang-dev mesa-vulkan-drivers xvfb xauth openbox xcompmgr xdotool
+      - name: Python lifecycle tests
+        run: python -m unittest scripts/test_gpui.py
+      - name: Format
+        run: cargo fmt --manifest-path native/gpui/Cargo.toml --check
+      - name: Lint
+        run: cargo clippy --locked --manifest-path native/gpui/Cargo.toml --all-targets -- -D warnings
+      - name: Rust tests
+        run: python scripts/gpui.py test
+      - name: Build release
+        run: python scripts/gpui.py build --release
+      - name: Linux native window lifecycle regression check
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python scripts/smoke_gpui_linux.py --start-session --executable native/gpui/target/release/patchopsiii-gpui
+      - name: Archive Linux evaluation build
+        if: runner.os == 'Linux'
+        run: python scripts/package_gpui.py --executable native/gpui/target/release/patchopsiii-gpui --output dist/gpui/PatchOpsIII-gpui-linux.zip
+      - name: Archive Windows evaluation build
+        if: runner.os == 'Windows'
+        run: python scripts/package_gpui.py --executable native/gpui/target/release/patchopsiii-gpui.exe --output dist/gpui/PatchOpsIII-gpui-windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PatchOpsIII-gpui-${{ runner.os }}
+          path: dist/gpui/*.zip
