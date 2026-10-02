@@ -22,6 +22,7 @@
   - [Advanced Tab](#advanced-tab)
   - [Terminal & Logging](#terminal--logging)
 - [Installation](#installation)
+- [Native GPUI evaluation](#native-gpui-evaluation)
 - [Forked Components](#forked-components)
 - [Quick Start](#quick-start)
 - [Screenshots](#screenshots)
@@ -84,7 +85,15 @@ bun run dev:desktop
 
 The browser development server uses Vite on `127.0.0.1:5173` and the Python API on `127.0.0.1:8765`. The Electron desktop command uses Vite on `127.0.0.1:5174` and its Python API on `127.0.0.1:8766`, so both commands can run at the same time. The renderer communicates with Python through HTTP APIs and `/ws` WebSockets; Electron IPC is reserved for desktop-specific bridge actions such as selecting a local game directory.
 
+## Native GPUI evaluation
+
+An independent Rust/GPUI desktop alternative lives in [native/gpui](native/gpui/README.md).
+It uses native controls and the current Python operations alongside Electron.
+See [the research and evaluation plan](docs/gpui-evaluation.md) for comparisons
+with the Tauri alternatives, supported workflows, build instructions, and parity gaps.
+
 ## Forked Components
+
 - **BO3 Enhanced Proton fork metadata:** [bo3-enhanced-proton/README.md](bo3-enhanced-proton/README.md)
   - Upstream source: https://github.com/Weather-OS/GDK-Proton
   - Current base release: `release10-32`
