@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Render a native window and close it through X11 against a read-only fake API.
+"""Render a native window and close it through X11 against a safe local API.
 
 Requires an X11 DISPLAY, xdotool, and a compositor/window manager. CI uses
-xvfb-run with --start-session. No real game service or game mutations are used.
+xvfb-run with --start-session. By default a read-only fake API is injected;
+--use-owned-backend exercises the packaged backend. No mutations are requested.
 """
 import argparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -47,6 +48,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--executable", type=Path, required=True)
     parser.add_argument("--start-session", action="store_true")
+    parser.add_argument("--use-owned-backend", action="store_true")
     args = parser.parse_args()
     owned = []
     with ThreadingHTTPServer(("127.0.0.1", 0), ReadOnlyStatus) as server:
@@ -57,7 +59,9 @@ def main():
                 owned.append(subprocess.Popen(["openbox", "--sm-disable"]))
                 owned.append(subprocess.Popen(["xcompmgr"]))
                 time.sleep(1)
-            env = {**os.environ, "PATCHOPSIII_GPUI_BACKEND_URL": f"http://127.0.0.1:{server.server_port}"}
+            env = dict(os.environ)
+            if not args.use_owned_backend:
+                env["PATCHOPSIII_GPUI_BACKEND_URL"] = f"http://127.0.0.1:{server.server_port}"
             app = subprocess.Popen([str(args.executable.resolve())], env=env)
             owned.append(app)
             deadline = time.monotonic() + 30

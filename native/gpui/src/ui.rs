@@ -1,56 +1,202 @@
-use crate::backend::{Backend, Request};
+//! The PatchOpsIII desktop UI. The layout mirrors the Electron renderer
+//! (`src/renderer/main.tsx` + `styles/app.css`); each page lives in its own module.
+mod assets;
+mod components;
+mod dashboard;
+mod enhanced;
+mod exe;
+mod graphics;
+mod modals;
+mod t7;
+mod theme;
+mod tools;
+
+pub use assets::Assets;
+
+use crate::backend::{Backend, Reply, Request};
+use components::{Btn, Glyph, icon};
 use gpui::{prelude::*, *};
 use gpui_component::{
-    Disableable,
-    button::{Button, ButtonVariants},
-    input::{Input, InputState},
+    ActiveTheme,
+    input::{Input, InputEvent, InputState},
+    scroll::ScrollableElement,
+    slider::{SliderEvent, SliderState},
 };
 use serde_json::{Value, json};
 use std::{
-    collections::BTreeMap,
-    time::{Duration, Instant},
+    collections::{BTreeMap, VecDeque},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-const PAGES: [&str; 7] = [
-    "Dashboard",
-    "T7 Patch",
-    "EXE Swapper",
-    "Enhanced",
-    "Graphics",
-    "DXVK",
-    "Tools",
-];
+const POLL_INTERVAL: Duration = Duration::from_secs(5);
+const DEPOT_COMMAND_MARKER: &str = "Steam console command: ";
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Page {
+    Dashboard,
+    T7,
+    Exe,
+    Enhanced,
+    Graphics,
+    Tools,
+}
+
+impl Page {
+    const ALL: [Page; 6] = [
+        Page::Dashboard,
+        Page::T7,
+        Page::Exe,
+        Page::Enhanced,
+        Page::Graphics,
+        Page::Tools,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Page::Dashboard => "Dashboard",
+            Page::T7 => "T7 Patch",
+            Page::Exe => "EXE Swapper",
+            Page::Enhanced => "Enhanced",
+            Page::Graphics => "Graphics",
+            Page::Tools => "Tools",
+        }
+    }
+
+    fn glyph(self) -> Glyph {
+        match self {
+            Page::Dashboard => Glyph::Dashboard,
+            Page::T7 => Glyph::Shield,
+            Page::Exe => Glyph::Refresh,
+            Page::Enhanced => Glyph::Gem,
+            Page::Graphics => Glyph::Image,
+            Page::Tools => Glyph::Wrench,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GraphicsTab {
+    Settings,
+    Dxvk,
+}
+
+/// Result of the last "Validate Source" run (Enhanced page).
+struct Validation {
+    label: String,
+    ok: Option<bool>,
+    checked_at: Option<String>,
+    source: String,
+}
+
+impl Validation {
+    fn not_run() -> Self {
+        Self {
+            label: "Not run".into(),
+            ok: None,
+            checked_at: None,
+            source: String::new(),
+        }
+    }
+}
+
+/// The Steam console prompt shown when the compatible depot is missing.
+struct Depot {
+    command: String,
+    copied: bool,
+    watching: bool,
+    last_poll: Instant,
+}
+
+type Staged = (String, Vec<Request>);
 
 pub struct ControlCenter {
     backend: Backend,
     state: Value,
-    page: usize,
+    page: Page,
+    graphics_tab: GraphicsTab,
     busy: bool,
     connected: bool,
     message: String,
     failed: bool,
     last_refresh: Instant,
+    /// Path of the request currently owned by the backend worker.
+    inflight: String,
     inputs: BTreeMap<&'static str, Entity<InputState>>,
-    pending: Option<(String, Request)>,
+    sliders: BTreeMap<&'static str, Entity<SliderState>>,
+    /// An action waiting for the user's confirmation. Multi-step actions
+    /// (such as "Apply All") stage several requests that run in order.
+    pending: Option<Staged>,
+    queue: VecDeque<Request>,
+    selected_profile: String,
+    seen_profile: String,
+    t7_color: String,
+    t7_password_enabled: bool,
+    t7_password_touched: bool,
+    show_current_password: bool,
+    show_new_password: bool,
+    validation: Validation,
+    depot: Option<Depot>,
+    dxvk_draft: Value,
+    dxvk_synced: Value,
+    advanced_open: bool,
+    danger_open: bool,
+    content_scroll: ScrollHandle,
+    log_scroll: ScrollHandle,
+    log_count: usize,
+}
+
+fn dxvk_recommended() -> Value {
+    json!({
+        "enableAsync": true,
+        "gplAsyncCache": true,
+        "numCompilerThreads": 0,
+        "maxFrameRate": 0,
+        "maxFrameLatency": 1,
+        "tearFree": "True",
+        "hudEnabled": false,
+    })
+}
+
+/// `formatTimestamp` from the Electron renderer, without a locale database.
+fn format_timestamp(value: &str) -> String {
+    if value.is_empty() {
+        return "Never".into();
+    }
+    value
+        .split(['.', '+', 'Z'])
+        .next()
+        .unwrap_or(value)
+        .replace('T', " ")
+}
+
+fn clock_now() -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or_default();
+    let day = secs % 86_400;
+    format!(
+        "{:02}:{:02}:{:02} UTC",
+        day / 3600,
+        day % 3600 / 60,
+        day % 60
+    )
 }
 
 impl ControlCenter {
     pub fn new(backend: Backend, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let inputs = [
-            ("directory", "Game directory"),
+        theme::apply(cx);
+        let inputs: BTreeMap<_, _> = [
+            ("directory", "Black Ops III directory"),
             ("gamertag", "Gamertag (up to 20 characters)"),
-            ("password", "Network password"),
-            ("color", "Color code, e.g. ^1"),
-            ("dump", "BO3 Enhanced source directory"),
+            ("password", "Enter network password"),
+            ("dump", "Path to DUMP.zip or an extracted folder"),
             ("fps", "0–1000"),
-            ("fov", "65–120"),
             ("resolution", "1920x1080"),
-            ("refresh", "Refresh rate"),
-            ("render", "Render resolution %"),
+            ("refresh", "1–1000"),
             ("latency", "0–4"),
             ("vram", "75–100"),
             ("dxvk-threads", "0–64"),
-            ("dxvk-fps", "0–360"),
             ("dxvk-latency", "0–16"),
         ]
         .into_iter()
@@ -63,17 +209,81 @@ impl ControlCenter {
             (key, input)
         })
         .collect();
+        for input in inputs.values() {
+            // Drafts feed buttons and badges, so repaint while the user types.
+            cx.subscribe_in(
+                input,
+                window,
+                |_, _, event: &InputEvent, _, cx| match event {
+                    InputEvent::Change => cx.notify(),
+                    InputEvent::PressEnter { .. } => {}
+                    InputEvent::Focus | InputEvent::Blur => {}
+                },
+            )
+            .detach();
+        }
+        cx.subscribe_in(
+            &inputs["directory"],
+            window,
+            |view, _, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::PressEnter { .. }) {
+                    view.stage_directory(cx);
+                }
+            },
+        )
+        .detach();
+        let sliders: BTreeMap<_, _> = [
+            ("render", 50., 200., 100.),
+            ("fov", 65., 120., 80.),
+            ("dxvk-fps", 0., 360., 0.),
+        ]
+        .into_iter()
+        .map(|(key, min, max, value)| {
+            let slider = cx.new(|_| {
+                SliderState::new()
+                    .min(min)
+                    .max(max)
+                    .step(1.)
+                    .default_value(value)
+            });
+            (key, slider)
+        })
+        .collect();
+        for slider in sliders.values() {
+            cx.subscribe_in(slider, window, |_, _, _: &SliderEvent, _, cx| cx.notify())
+                .detach();
+        }
         let mut view = Self {
             backend,
             state: Value::Null,
-            page: 0,
+            page: Page::Dashboard,
+            graphics_tab: GraphicsTab::Settings,
             busy: false,
             connected: false,
             message: "Connecting to the local service…".into(),
             failed: false,
             last_refresh: Instant::now(),
+            inflight: String::new(),
             inputs,
+            sliders,
             pending: None,
+            queue: VecDeque::new(),
+            selected_profile: "default".into(),
+            seen_profile: String::new(),
+            t7_color: String::new(),
+            t7_password_enabled: false,
+            t7_password_touched: false,
+            show_current_password: false,
+            show_new_password: false,
+            validation: Validation::not_run(),
+            depot: None,
+            dxvk_draft: dxvk_recommended(),
+            dxvk_synced: Value::Null,
+            advanced_open: false,
+            danger_open: false,
+            content_scroll: ScrollHandle::new(),
+            log_scroll: ScrollHandle::new(),
+            log_count: 0,
         };
         view.send("/api/status", None, cx);
         // Drain replies and periodically refresh on GPUI's foreground executor.
@@ -86,40 +296,9 @@ impl ControlCenter {
                 if entity
                     .update_in(cx, |view, window, cx| {
                         while let Ok(reply) = view.backend.replies.try_recv() {
-                            view.busy = false;
-                            if reply.failed {
-                                view.failed = true;
-                                if reply.is_status {
-                                    view.connected = false;
-                                }
-                                view.message = reply.message;
-                            } else {
-                                let initial = view.state.is_null();
-                                let reconnected = !view.connected;
-                                if let Some(state) = reply.state {
-                                    view.state = state;
-                                    view.connected = true;
-                                }
-                                if initial {
-                                    view.load_inputs(window, cx);
-                                }
-                                if !reply.is_status
-                                    || reconnected
-                                    || view.message.starts_with("Connecting")
-                                {
-                                    view.failed = false;
-                                    view.message = reply.message;
-                                }
-                            }
-                            view.last_refresh = Instant::now();
-                            cx.notify();
+                            view.handle_reply(reply, window, cx);
                         }
-                        if !view.busy
-                            && view.pending.is_none()
-                            && view.last_refresh.elapsed() >= Duration::from_secs(5)
-                        {
-                            view.send("/api/status", None, cx);
-                        }
+                        view.poll(cx);
                     })
                     .is_err()
                 {
@@ -129,6 +308,123 @@ impl ControlCenter {
         })
         .detach();
         view
+    }
+
+    fn handle_reply(&mut self, reply: Reply, window: &mut Window, cx: &mut Context<Self>) {
+        self.busy = false;
+        let path = std::mem::take(&mut self.inflight);
+        if reply.failed {
+            self.queue.clear();
+            self.failed = true;
+            if reply.is_status {
+                self.connected = false;
+            }
+            self.on_failure(&path, &reply.message);
+            self.message = reply.message;
+        } else {
+            let initial = self.state.is_null();
+            let reconnected = !self.connected;
+            if let Some(state) = reply.state {
+                self.state = state;
+                self.connected = true;
+                if initial {
+                    self.load_inputs(window, cx);
+                } else {
+                    self.sync_drafts(window, cx);
+                }
+            }
+            self.on_success(&path, &reply.message, window, cx);
+            if !reply.is_status || reconnected || self.message.starts_with("Connecting") {
+                self.failed = false;
+                self.message = reply.message;
+            }
+        }
+        self.last_refresh = Instant::now();
+        let entries = self.visible_logs().len();
+        if entries != self.log_count {
+            self.log_count = entries;
+            self.log_scroll.scroll_to_bottom();
+        }
+        if let Some(next) = self.queue.pop_front() {
+            self.send(&next.path, next.body, cx);
+        }
+        cx.notify();
+    }
+
+    /// Per-endpoint bookkeeping for a failed request.
+    fn on_failure(&mut self, path: &str, message: &str) {
+        match path {
+            "/api/enhanced-validate" => {
+                self.validation = Validation {
+                    label: message.to_owned(),
+                    ok: Some(false),
+                    checked_at: Some(clock_now()),
+                    source: self.validation.source.clone(),
+                };
+            }
+            "/api/exe-swap/compatible" => {
+                if let Some((_, command)) = message.split_once(DEPOT_COMMAND_MARKER) {
+                    // The depot is not downloaded yet: this is a prompt, not an error.
+                    let watching = self.depot.as_ref().is_some_and(|depot| depot.watching);
+                    let copied = self.depot.as_ref().is_some_and(|depot| depot.copied);
+                    self.depot = Some(Depot {
+                        command: command.trim().to_owned(),
+                        copied,
+                        watching,
+                        last_poll: Instant::now(),
+                    });
+                    self.failed = false;
+                } else if let Some(depot) = self.depot.as_mut() {
+                    depot.watching = false;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Per-endpoint bookkeeping for a successful request.
+    fn on_success(
+        &mut self,
+        path: &str,
+        message: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match path {
+            "/api/enhanced-validate" => {
+                self.validation = Validation {
+                    label: message.to_owned(),
+                    ok: Some(true),
+                    checked_at: Some(clock_now()),
+                    source: self.text("dump", cx).trim().to_owned(),
+                };
+            }
+            "/api/exe-swap/compatible" => self.depot = None,
+            "/api/t7-config" => {
+                self.t7_password_touched = false;
+                self.load_t7(window, cx);
+            }
+            _ => {}
+        }
+    }
+
+    /// Background work: status refresh and depot watching.
+    fn poll(&mut self, cx: &mut Context<Self>) {
+        if self.busy || self.pending.is_some() {
+            return;
+        }
+        let watching = self
+            .depot
+            .as_ref()
+            .is_some_and(|depot| depot.watching && depot.last_poll.elapsed() >= POLL_INTERVAL);
+        if watching {
+            if let Some(depot) = self.depot.as_mut() {
+                depot.last_poll = Instant::now();
+            }
+            self.send("/api/exe-swap/compatible", Some(json!({})), cx);
+        } else if self.last_refresh.elapsed() >= POLL_INTERVAL {
+            self.send("/api/status", None, cx);
+        }
     }
 
     fn send(&mut self, path: &str, body: Option<Value>, cx: &mut Context<Self>) {
@@ -141,174 +437,263 @@ impl ControlCenter {
         }) {
             Ok(()) => {
                 self.busy = true;
+                self.inflight = path.to_owned();
                 self.last_refresh = Instant::now();
             }
             Err(_) => {
                 self.failed = true;
                 self.connected = false;
-                self.message = "Local service worker stopped. Restart GPUI.".into();
+                self.message = "Local service worker stopped. Restart PatchOpsIII.".into();
             }
         }
         cx.notify();
     }
 
     fn stage(&mut self, label: String, path: String, body: Value, cx: &mut Context<Self>) {
-        self.pending = Some((
+        self.stage_all(
             label,
-            Request {
+            vec![Request {
                 path,
                 body: Some(body),
-            },
-        ));
+            }],
+            cx,
+        );
+    }
+
+    fn stage_all(&mut self, label: String, requests: Vec<Request>, cx: &mut Context<Self>) {
+        self.pending = Some((label, requests));
+        cx.notify();
+    }
+
+    fn confirm(&mut self, cx: &mut Context<Self>) {
+        if self.busy {
+            return;
+        }
+        if let Some((label, mut requests)) = self.pending.take() {
+            self.message = format!("Running: {label}…");
+            self.failed = false;
+            if requests.is_empty() {
+                cx.notify();
+                return;
+            }
+            let first = requests.remove(0);
+            self.queue = requests.into();
+            self.send(&first.path, first.body, cx);
+        }
+    }
+
+    fn reject(&mut self, message: impl Into<String>, cx: &mut Context<Self>) {
+        self.message = message.into();
+        self.failed = true;
         cx.notify();
     }
 
     fn text(&self, key: &str, cx: &App) -> String {
         self.inputs[key].read(cx).value().to_string()
     }
+
+    fn set_text(&self, key: &str, value: String, window: &mut Window, cx: &mut Context<Self>) {
+        self.inputs[key].update(cx, |state, cx| state.set_value(value, window, cx));
+    }
+
+    fn set_slider(&self, key: &str, value: i64, window: &mut Window, cx: &mut Context<Self>) {
+        self.sliders[key].update(cx, |state, cx| state.set_value(value as f32, window, cx));
+    }
+
+    fn slider_value(&self, key: &str, cx: &App) -> i64 {
+        self.sliders[key].read(cx).value().start().round() as i64
+    }
+
+    /// Copy every draft control from the backend state (initial load and
+    /// "Reload Values").
     fn load_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         for (key, pointer) in [
             ("directory", "/gameDir"),
-            ("gamertag", "/t7/plainName"),
-            ("color", "/t7/colorCode"),
             ("dump", "/enhanced/dumpSource"),
             ("fps", "/graphics/maxFps"),
-            ("fov", "/graphics/fov"),
             ("resolution", "/graphics/resolution"),
             ("refresh", "/graphics/refreshRate"),
-            ("render", "/graphics/renderResolution"),
             ("latency", "/advanced/maxFrameLatency"),
             ("vram", "/advanced/vramTarget"),
-            ("dxvk-threads", "/dxvk/settings/numCompilerThreads"),
-            ("dxvk-fps", "/dxvk/settings/maxFrameRate"),
-            ("dxvk-latency", "/dxvk/settings/maxFrameLatency"),
         ] {
-            let value = self.value(pointer);
-            self.inputs[key].update(cx, |state, cx| {
-                state.set_value(if value == "—" { String::new() } else { value }, window, cx)
-            });
+            let value = self.string(pointer);
+            self.set_text(key, value, window, cx);
+        }
+        for (key, pointer) in [
+            ("render", "/graphics/renderResolution"),
+            ("fov", "/graphics/fov"),
+        ] {
+            let value = self.int(pointer, 0);
+            self.set_slider(key, value, window, cx);
+        }
+        self.load_t7(window, cx);
+        self.t7_password_touched = false;
+        self.seen_profile.clear();
+        self.dxvk_synced = Value::Null;
+        self.sync_drafts(window, cx);
+    }
+
+    fn load_t7(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let name = self.string("/t7/plainName");
+        self.set_text("gamertag", name, window, cx);
+        self.t7_color = self.string("/t7/colorCode");
+    }
+
+    /// Drafts that follow the backend unless the user is editing them.
+    fn sync_drafts(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let active = self.string("/activeLaunchProfile");
+        if active != self.seen_profile {
+            self.selected_profile = if active.is_empty() || active == "custom" {
+                "default".into()
+            } else {
+                active.clone()
+            };
+            self.seen_profile = active;
+        }
+        if !self.t7_password_touched {
+            self.t7_password_enabled = !self.string("/t7/networkPassword").is_empty();
+        }
+        let settings = self
+            .state
+            .pointer("/dxvk/settings")
+            .cloned()
+            .unwrap_or(Value::Null);
+        if settings != self.dxvk_synced && settings.is_object() {
+            self.dxvk_draft = settings.clone();
+            self.dxvk_synced = settings;
+            self.show_dxvk_draft(window, cx);
         }
     }
+
+    fn show_dxvk_draft(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let threads = self.dxvk_int("numCompilerThreads").to_string();
+        let latency = self.dxvk_int("maxFrameLatency").to_string();
+        let fps = self.dxvk_int("maxFrameRate");
+        self.set_text("dxvk-threads", threads, window, cx);
+        self.set_text("dxvk-latency", latency, window, cx);
+        self.set_slider("dxvk-fps", fps, window, cx);
+    }
+
     fn flag(&self, pointer: &str) -> bool {
         self.state
             .pointer(pointer)
             .and_then(Value::as_bool)
             .unwrap_or(false)
     }
-    fn value(&self, pointer: &str) -> String {
+
+    /// A state value as display text; absent and null values become "".
+    fn string(&self, pointer: &str) -> String {
         match self.state.pointer(pointer) {
             Some(Value::String(s)) => s.clone(),
             Some(Value::Number(n)) => n
                 .as_f64()
                 .map(|n| n.to_string())
                 .unwrap_or_else(|| n.to_string()),
-            Some(Value::Null) | None => "—".into(),
+            Some(Value::Null) | None => String::new(),
             Some(v) => v.to_string(),
         }
     }
 
-    fn action(
+    /// A state value as display text with a visible fallback.
+    fn value(&self, pointer: &str) -> String {
+        let value = self.string(pointer);
+        if value.is_empty() {
+            "—".into()
+        } else {
+            value
+        }
+    }
+
+    fn int(&self, pointer: &str, default: i64) -> i64 {
+        self.state
+            .pointer(pointer)
+            .and_then(Value::as_f64)
+            .map_or(default, |n| n.round() as i64)
+    }
+
+    fn dxvk_flag(&self, key: &str) -> bool {
+        self.dxvk_draft[key].as_bool().unwrap_or(false)
+    }
+
+    fn dxvk_int(&self, key: &str) -> i64 {
+        self.dxvk_draft[key].as_i64().unwrap_or(0)
+    }
+
+    fn can_act(&self) -> bool {
+        !self.busy && self.connected && self.pending.is_none()
+    }
+
+    /// A click handler that asks for confirmation before sending `path`.
+    fn stage_click(
         &self,
-        id: String,
-        label: String,
+        cx: &mut Context<Self>,
+        label: impl Into<String>,
         path: &str,
         body: Value,
-        cx: &mut Context<Self>,
-    ) -> Button {
+    ) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
+        let label = label.into();
         let path = path.to_owned();
-        Button::new(SharedString::from(id))
-            .label(label.clone())
-            .disabled(self.busy || !self.connected || self.pending.is_some())
-            .on_click(cx.listener(move |view, _, _, cx| {
-                view.stage(label.clone(), path.clone(), body.clone(), cx)
-            }))
+        cx.listener(move |view, _: &ClickEvent, _, cx| {
+            view.stage(label.clone(), path.clone(), body.clone(), cx)
+        })
     }
 
-    fn toggle(
+    /// A button that stages one request for confirmation.
+    fn action(
         &self,
+        cx: &mut Context<Self>,
+        id: impl Into<ElementId>,
         label: &str,
-        pointer: &str,
         path: &str,
-        key: &str,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let current = self.flag(pointer);
-        let body = json!({key: !current});
-        div()
-            .flex()
-            .justify_between()
-            .items_center()
-            .gap_4()
-            .child(format!("{label}: {}", if current { "On" } else { "Off" }))
-            .child(self.action(
-                format!("toggle-{pointer}"),
-                format!("{} {label}", if current { "Disable" } else { "Enable" }),
-                path,
-                body,
+        body: Value,
+    ) -> Btn {
+        Btn::new(id, label.to_owned())
+            .disabled(!self.can_act())
+            .on_click(self.stage_click(cx, label, path, body))
+    }
+
+    fn config_body(key: &str, value: Value) -> Value {
+        let comment = match key {
+            "MaxFPS" => "Maximum FPS cap",
+            "FOV" => "Field of view",
+            "FullScreenMode" => "0=Windowed,1=Fullscreen,2=Fullscreen Windowed",
+            "WindowSize" => "any text",
+            "RefreshRate" => "1 to 240",
+            "ResolutionPercent" => "50 to 200",
+            "Vsync" => "Vertical sync",
+            "DrawFPS" => "FPS counter",
+            "SmoothFramerate" => "Frame smoothing",
+            "RestrictGraphicsOptions" => "Expose all graphics options",
+            "SerializeRender" => "Reduce CPU pressure",
+            "MaxFrameLatency" => "Maximum frame latency",
+            _ => "Managed by PatchOpsIII",
+        };
+        json!({"key": key, "value": value, "comment": comment})
+    }
+
+    /// A text input styled like the Electron `input` elements.
+    fn field(&self, key: &str) -> Input {
+        Input::new(&self.inputs[key])
+            .disabled(self.busy)
+            .min_h(px(theme::CONTROL_HEIGHT - 2.))
+            .bg(theme::field())
+            .rounded(theme::radius_card())
+            .border_color(theme::border())
+    }
+
+    fn stage_directory(&mut self, cx: &mut Context<Self>) {
+        let path = self.text("directory", cx);
+        let path = path.trim().to_owned();
+        if path.is_empty() {
+            self.reject("Select or enter a directory first.", cx);
+        } else if path != self.string("/gameDir") {
+            self.stage(
+                format!("Use directory {path}"),
+                "/api/game-directory".into(),
+                json!({"path": path}),
                 cx,
-            ))
-            .into_any_element()
-    }
-
-    fn config_toggle(
-        &self,
-        label: &str,
-        pointer: &str,
-        key: &str,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let current = self.flag(pointer);
-        div().flex().justify_between().items_center().gap_4()
-            .child(format!("{label}: {}", if current { "On" } else { "Off" }))
-            .child(self.action(format!("config-{key}"), format!("{} {label}", if current { "Disable" } else { "Enable" }), "/api/config",
-                json!({"key": key, "value": if current {0} else {1}, "comment": "Managed by PatchOpsIII"}), cx)).into_any_element()
-    }
-
-    fn field(&self, label: &str, key: &str) -> AnyElement {
-        div()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .child(label.to_owned())
-            .child(Input::new(&self.inputs[key]).disabled(self.busy))
-            .into_any_element()
-    }
-
-    fn numeric_field(
-        &self,
-        label: &str,
-        input: &'static str,
-        config: &'static str,
-        min: i64,
-        max: i64,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        div()
-            .flex()
-            .items_end()
-            .gap_3()
-            .child(div().flex_1().child(self.field(label, input)))
-            .child(
-                Button::new(SharedString::from(format!("apply-{input}")))
-                    .label("Apply")
-                    .disabled(self.busy || !self.connected || self.pending.is_some())
-                    .on_click(cx.listener(move |view, _, _, cx| {
-                        match view.text(input, cx).parse::<i64>() {
-                            Ok(value) if (min..=max).contains(&value) => view.stage(
-                                format!("Set {config} to {value}"),
-                                "/api/config".into(),
-                                json!({"key": config, "value": value}),
-                                cx,
-                            ),
-                            _ => {
-                                view.message = format!("Enter a whole number from {min} to {max}.");
-                                view.failed = true;
-                                cx.notify();
-                            }
-                        }
-                    })),
-            )
-            .into_any_element()
+            );
+        }
     }
 
     fn choose_directory(&mut self, input: &'static str, window: &Window, cx: &mut Context<Self>) {
@@ -323,476 +708,543 @@ impl ControlCenter {
                 if let Some(path) = paths.first() {
                     let value = path.to_string_lossy().into_owned();
                     let _ = entity.update_in(cx, |view, window, cx| {
-                        view.inputs[input]
-                            .update(cx, |state, cx| state.set_value(value, window, cx));
+                        view.set_text(input, value, window, cx);
+                        view.after_pick(input, cx);
                     });
                 }
             }
             Ok(Ok(None)) => {}
             _ => {
                 let _ = entity.update(cx, |view, cx| {
-                    view.message = "Folder picker unavailable. Enter the path directly.".into();
-                    view.failed = true;
-                    cx.notify();
+                    view.reject("Folder picker unavailable. Enter the path directly.", cx);
                 });
             }
         })
         .detach();
     }
 
-    fn folder_field(&self, label: &str, key: &'static str, cx: &mut Context<Self>) -> AnyElement {
+    /// What picking a folder means for each input.
+    fn after_pick(&mut self, input: &str, cx: &mut Context<Self>) {
+        match input {
+            "directory" => self.stage_directory(cx),
+            "dump" => {
+                self.validation = Validation::not_run();
+                cx.notify();
+            }
+            _ => {}
+        }
+    }
+
+    /// Latest log lines, oldest first, without the service start-up notice.
+    fn visible_logs(&self) -> Vec<(String, String)> {
+        let mut seen = std::collections::HashSet::new();
+        let mut entries: Vec<(String, String)> = self.state["logs"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|entry| entry["message"] != "PatchOpsIII local API started.")
+            .filter(|entry| {
+                seen.insert(format!(
+                    "{}|{}|{}",
+                    entry["line"], entry["category"], entry["message"]
+                ))
+            })
+            .map(|entry| {
+                (
+                    entry["category"].as_str().unwrap_or("Info").to_owned(),
+                    entry["message"].as_str().unwrap_or("").to_owned(),
+                )
+            })
+            .collect();
+        if entries.len() > 120 {
+            entries.drain(..entries.len() - 120);
+        }
+        entries
+    }
+
+    fn page_view(&self, cx: &mut Context<Self>) -> AnyElement {
+        match self.page {
+            Page::Dashboard => self.dashboard_view(cx),
+            Page::T7 => self.t7_view(cx),
+            Page::Exe => self.exe_view(cx),
+            Page::Enhanced => self.enhanced_view(cx),
+            Page::Graphics => self.graphics_view(cx),
+            Page::Tools => self.tools_view(cx),
+        }
+    }
+
+    /// `.titlebar`: logo, name, version (click to check for updates) and
+    /// the connection state.
+    fn header(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let version = self.string("/appVersion");
+        let version = if version.to_lowercase().starts_with('v') || version.is_empty() {
+            version
+        } else {
+            format!("v{version}")
+        };
+        let can_act = self.can_act();
+        div()
+            .flex()
+            .items_center()
+            .flex_none()
+            .h(px(32.))
+            .px(px(10.))
+            .gap(px(8.))
+            .bg(theme::bg_deep())
+            .border_b_1()
+            .border_color(theme::white(0.08))
+            .child(
+                img("images/logo.png")
+                    .size(px(18.))
+                    .flex_none()
+                    .rounded(px(4.)),
+            )
+            .child(div().text_size(px(theme::FONT_SM)).child("PatchOpsIII"))
+            .child(
+                div()
+                    .id("check-updates")
+                    .flex()
+                    .items_center()
+                    .gap(px(5.))
+                    .h(px(20.))
+                    .px(px(8.))
+                    .rounded(px(6.))
+                    .text_size(px(11.))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(theme::muted())
+                    .when(!can_act, |this| this.opacity(0.7).cursor_not_allowed())
+                    .when(can_act, |this| {
+                        this.cursor_pointer()
+                            .hover(|style| style.bg(theme::white(0.07)).text_color(theme::text()))
+                            .on_click(self.stage_click(
+                                cx,
+                                "Check for updates",
+                                "/api/update-check",
+                                json!({}),
+                            ))
+                    })
+                    .child(version)
+                    .child(icon(Glyph::Refresh, 12., theme::muted())),
+            )
+            .child(div().flex_1())
+            .child(self.connection_badge())
+            .child(
+                Btn::new("reload-values", "Reload Values")
+                    .tiny()
+                    .disabled(self.busy || !self.connected)
+                    .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
+                        view.load_inputs(window, cx);
+                        cx.notify();
+                    })),
+            )
+            .child(
+                Btn::new("refresh", if self.busy { "Working…" } else { "Refresh" })
+                    .tiny()
+                    .icon(Glyph::Refresh)
+                    .disabled(self.busy)
+                    .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
+                        view.message = "Connecting to the local service…".into();
+                        view.send("/api/status", None, cx);
+                    })),
+            )
+    }
+
+    fn connection_badge(&self) -> impl IntoElement {
+        let (tone, label) = if self.connected {
+            (theme::ok(), "Connected")
+        } else {
+            (theme::danger(), "Offline")
+        };
+        div()
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .text_size(px(theme::FONT_XS))
+            .font_weight(FontWeight::BOLD)
+            .text_color(tone)
+            .child(div().size(px(8.)).rounded_full().bg(tone))
+            .child(label)
+    }
+
+    /// `.directory-row`.
+    fn directory_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let draft = self.text("directory", cx);
+        let draft = draft.trim();
+        let dirty = !draft.is_empty() && draft != self.string("/gameDir");
         div()
             .flex()
             .items_end()
-            .gap_3()
-            .child(div().flex_1().child(self.field(label, key)))
-            .child(
-                Button::new(SharedString::from(format!("browse-{key}")))
-                    .label("Browse…")
-                    .disabled(self.busy)
-                    .on_click(cx.listener(move |view, _, window, cx| {
-                        view.choose_directory(key, window, cx)
-                    })),
-            )
-            .into_any_element()
-    }
-
-    fn dashboard(&self, cx: &mut Context<Self>) -> AnyElement {
-        panel("Game installation")
-            .child(format!("Current directory: {}", self.value("/gameDir")))
-            .child(format!(
-                "Platform: {}   ·   Version: {}",
-                self.value("/platform"),
-                self.value("/appVersion")
-            ))
-            .child(format!(
-                "Executable: {}   ·   {}",
-                self.value("/exeSwap/displayLabel"),
-                self.value("/exeSwap/integrityMessage")
-            ))
-            .child(self.folder_field("Black Ops III directory", "directory", cx))
-            .child(
-                Button::new("save-directory")
-                    .label("Use this directory")
-                    .primary()
-                    .disabled(self.busy || !self.connected || self.pending.is_some())
-                    .on_click(cx.listener(|view, _, _, cx| {
-                        let path = view.text("directory", cx);
-                        if path.trim().is_empty() {
-                            view.message = "Select or enter a directory first.".into();
-                            view.failed = true;
-                            cx.notify();
-                            return;
-                        }
-                        view.stage(
-                            format!("Use directory {path}"),
-                            "/api/game-directory".into(),
-                            json!({"path": path}),
-                            cx,
-                        );
-                    })),
-            )
-            .child(div().mt_4().child("Launch profiles"))
-            .children(
-                self.state["launchProfiles"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .map(|profile| {
-                        let label = profile["label"].as_str().unwrap_or("Profile").to_owned();
-                        let option = profile["option"].as_str().unwrap_or("").to_owned();
-                        let id = profile["id"].as_str().unwrap_or("profile").to_owned();
-                        div()
-                            .flex()
-                            .gap_3()
-                            .items_center()
-                            .child(self.action(
-                                format!("profile-{id}"),
-                                format!(
-                                    "{label}{}",
-                                    if profile["active"] == true {
-                                        " · Active"
-                                    } else {
-                                        ""
-                                    }
-                                ),
-                                "/api/launch-options",
-                                json!({"options": option}),
-                                cx,
-                            ))
-                            .when(
-                                profile["subscribed"].is_boolean()
-                                    && id != "default"
-                                    && id != "offline",
-                                |row| {
-                                    row.child(self.action(
-                                        format!("workshop-{id}"),
-                                        "Open Workshop".into(),
-                                        "/api/workshop-install",
-                                        json!({"profileId": id}),
-                                        cx,
-                                    ))
-                                },
-                            )
-                    }),
-            )
-            .into_any_element()
-    }
-
-    fn t7(&self, cx: &mut Context<Self>) -> AnyElement {
-        panel("T7 Patch")
-            .child(format!("Installed: {}   ·   Current gamertag: {}", self.flag("/t7/installed"), self.value("/t7/plainName")))
-            .child(div().flex().gap_3()
-                .child(self.action("t7-install".into(), "Install / update T7 Patch".into(), "/api/t7-install", json!({}), cx))
-                .child(self.action("t7-uninstall".into(), "Uninstall T7 Patch".into(), "/api/t7-uninstall", json!({}), cx)))
-            .child(self.field("Gamertag", "gamertag"))
-            .child(self.field("Gamertag color", "color"))
-            .child(Button::new("save-gamertag").label("Save gamertag").disabled(self.busy || !self.connected || self.pending.is_some())
-                .on_click(cx.listener(|view, _, _, cx| view.stage("Update T7 gamertag".into(), "/api/t7-config".into(), json!({"gamertag": view.text("gamertag", cx), "colorCode": view.text("color", cx)}), cx))))
-            .child(self.field("Network password (blank clears it)", "password"))
-            .child(Button::new("save-password").label("Save network password").disabled(self.busy || !self.connected || self.pending.is_some())
-                .on_click(cx.listener(|view, _, _, cx| view.stage("Update T7 network password".into(), "/api/t7-config".into(), json!({"networkPassword": view.text("password", cx)}), cx))))
-            .child(self.toggle("Friends only", "/t7/friendsOnly", "/api/t7-config", "friendsOnly", cx)).into_any_element()
-    }
-
-    fn exe(&self, cx: &mut Context<Self>) -> AnyElement {
-        panel("Executable profiles")
-            .child(self.value("/exeSwap/displayLabel"))
-            .child(self.value("/exeSwap/integrityMessage"))
-            .child(format!("SHA-256: {}", self.value("/exeSwap/executableHash")))
-            .child("Compatible installs may require a Steam depot download. Instructions appear in the operation result below.")
-            .children([("compatible", "Install compatible build"), ("current", "Restore current Steam build"), ("enhanced", "Restore Enhanced build")].into_iter().map(|(id, label)|
-                self.action(format!("exe-{id}"), label.into(), &format!("/api/exe-swap/{id}"), json!({}), cx))).into_any_element()
-    }
-
-    fn enhanced(&self, cx: &mut Context<Self>) -> AnyElement {
-        panel("BO3 Enhanced")
-            .child(format!(
-                "Installed: {}   ·   Backup status: {}",
-                self.flag("/enhanced/installed"),
-                self.value("/enhanced/backupStatus")
-            ))
-            .child(self.folder_field("Enhanced source directory", "dump", cx))
-            .children(
-                [
-                    ("validate", "Validate source"),
-                    ("install", "Install Enhanced"),
-                ]
-                .into_iter()
-                .map(|(id, label)| {
-                    Button::new(SharedString::from(format!("enhanced-{id}")))
-                        .label(label)
-                        .disabled(self.busy || !self.connected || self.pending.is_some())
-                        .on_click(cx.listener(move |view, _, _, cx| {
-                            view.stage(
-                                label.into(),
-                                format!("/api/enhanced-{id}"),
-                                json!({"dumpSource": view.text("dump", cx)}),
-                                cx,
-                            )
-                        }))
-                }),
-            )
-            .child(self.action(
-                "enhanced-uninstall".into(),
-                "Uninstall Enhanced".into(),
-                "/api/enhanced-uninstall",
-                json!({}),
-                cx,
-            ))
-            .into_any_element()
-    }
-
-    fn graphics(&self, cx: &mut Context<Self>) -> AnyElement {
-        panel("Graphics & performance")
-            .child(format!("Current: {} · {} Hz · FOV {} · FPS cap {}", self.value("/graphics/resolution"), self.value("/graphics/refreshRate"), self.value("/graphics/fov"), self.value("/graphics/maxFps")))
-            .children(self.state["presets"].as_array().into_iter().flatten().filter_map(Value::as_str).map(|name|
-                self.action(format!("preset-{name}"), format!("Apply {name}"), "/api/presets/apply", json!({"name": name}), cx)))
-            .child(self.numeric_field("FPS cap (0 disables the limiter)", "fps", "MaxFPS", 0, 1000, cx))
-            .child(self.numeric_field("Field of view", "fov", "FOV", 65, 120, cx))
-            .child(self.numeric_field("Refresh rate", "refresh", "RefreshRate", 1, 1000, cx))
-            .child(self.numeric_field("Render resolution %", "render", "ResolutionPercent", 50, 200, cx))
-            .child(self.field("Resolution (WIDTHxHEIGHT)", "resolution"))
-            .child(Button::new("save-resolution").label("Apply resolution").disabled(self.busy || !self.connected || self.pending.is_some())
-                .on_click(cx.listener(|view, _, _, cx| {
-                    let value = view.text("resolution", cx);
-                    let valid = value.split_once('x').is_some_and(|(w, h)| [w, h].iter().all(|n| n.parse::<u32>().is_ok_and(|n| (320..=16384).contains(&n))));
-                    if valid { view.stage(format!("Set resolution to {value}"), "/api/config".into(), json!({"key": "WindowSize", "value": value}), cx); }
-                    else { view.message = "Enter resolution as WIDTHxHEIGHT, e.g. 1920x1080.".into(); view.failed = true; cx.notify(); }
-                })))
-            .child(div().flex().gap_2().children([(0, "Windowed"), (1, "Fullscreen"), (2, "Borderless")].into_iter().map(|(mode, label)| self.action(format!("display-{mode}"), label.into(), "/api/config", json!({"key": "FullScreenMode", "value": mode}), cx))))
-            .child(self.config_toggle("V-Sync", "/graphics/vsync", "Vsync", cx))
-            .child(self.config_toggle("FPS counter", "/graphics/drawFps", "DrawFPS", cx))
-            .child(self.config_toggle("Frame smoothing", "/advanced/smoothFramerate", "SmoothFramerate", cx))
-            .child(self.action("unlock-graphics".into(), "Toggle hidden graphics options".into(), "/api/config", json!({"key": "RestrictGraphicsOptions", "value": if self.flag("/advanced/unlockOptions") {1} else {0}}), cx))
-            .child(self.action("reduce-cpu".into(), "Toggle reduced CPU pressure".into(), "/api/config", json!({"key": "SerializeRender", "value": if self.flag("/advanced/reduceCpu") {0} else {2}}), cx))
-            .child(self.numeric_field("Maximum frame latency", "latency", "MaxFrameLatency", 0, 4, cx))
-            .child(self.field("VRAM target %", "vram"))
-            .child(Button::new("save-vram").label("Apply VRAM target").disabled(self.busy || !self.connected || self.pending.is_some())
-                .on_click(cx.listener(|view, _, _, cx| {
-                    match view.text("vram", cx).parse::<u32>() {
-                        Ok(target) if (75..=100).contains(&target) => view.stage(format!("Set VRAM target to {target}%"), "/api/vram-target".into(), json!({"limited": target < 100, "target": target}), cx),
-                        _ => { view.message = "VRAM target must be a whole number from 75 to 100.".into(); view.failed = true; cx.notify(); }
-                    }
-                })))
-            .child(self.toggle("Skip intro", "/qol/intro", "/api/intro-skip", "enabled", cx))
-            .child(self.toggle("Skip all intros", "/qol/allIntros", "/api/all-intros-skip", "enabled", cx))
-            .child(self.toggle("Modern DirectX compiler", "/qol/d3dcompiler", "/api/d3dcompiler", "enabled", cx))
-            .child(self.toggle("Read-only config", "/advanced/configReadonly", "/api/config-readonly", "enabled", cx)).into_any_element()
-    }
-
-    fn dxvk(&self, cx: &mut Context<Self>) -> AnyElement {
-        let settings = self
-            .state
-            .pointer("/dxvk/settings")
-            .cloned()
-            .unwrap_or(json!({}));
-        panel("DXVK-GPLAsync")
-            .child(format!("Installed: {}", self.flag("/dxvk/installed")))
-            .child("Install uses the settings reported by the service, or backend defaults for a new installation.")
-            .child(format!("Current settings: {settings}"))
-            .child(self.action("dxvk-install".into(), "Install DXVK".into(), "/api/dxvk-install", settings.clone(), cx))
-            .child(self.action("dxvk-uninstall".into(), "Uninstall DXVK".into(), "/api/dxvk-uninstall", json!({}), cx))
-            .children([("Async compilation", "enableAsync"), ("GPL async cache", "gplAsyncCache"), ("DXVK HUD", "hudEnabled")].into_iter().map(|(label, key)| {
-                let mut next = settings.clone();
-                next[key] = json!(!settings[key].as_bool().unwrap_or(false));
-                self.action(format!("dxvk-{key}"), format!("Toggle {label}"), "/api/dxvk-config", next, cx)
-            }))
-            .children([("Compiler threads", "dxvk-threads", "numCompilerThreads", 64), ("FPS cap", "dxvk-fps", "maxFrameRate", 360), ("Frame latency", "dxvk-latency", "maxFrameLatency", 16)].into_iter().map(|(label, input, setting, max)| {
-                div().flex().items_end().gap_3().child(div().flex_1().child(self.field(label, input)))
-                    .child(Button::new(SharedString::from(format!("apply-{input}"))).label("Apply").disabled(self.busy || !self.connected || self.pending.is_some())
-                        .on_click(cx.listener(move |view, _, _, cx| {
-                            match view.text(input, cx).parse::<u32>() {
-                                Ok(value) if value <= max => { let mut settings = view.state["dxvk"]["settings"].clone(); settings[setting] = json!(value); view.stage(format!("Set DXVK {label} to {value}"), "/api/dxvk-config".into(), settings, cx); }
-                                _ => { view.message = format!("Enter a whole number from 0 to {max}."); view.failed = true; cx.notify(); }
-                            }
-                        })))
-            }))
-            .children(["True", "False", "Auto"].into_iter().map(|mode| { let mut next = settings.clone(); next["tearFree"] = json!(mode); self.action(format!("tearfree-{mode}"), format!("Tear-free: {mode}"), "/api/dxvk-config", next, cx) })).into_any_element()
-    }
-
-    fn tools(&self, cx: &mut Context<Self>) -> AnyElement {
-        panel("Maintenance")
-            .child(format!("Log file: {}", self.value("/logPath")))
-            .children(
-                [
-                    ("/api/logs/clear", "Clear logs"),
-                    ("/api/mod-files/clear", "Clear cached mod files"),
-                    ("/api/reset-stock", "Reset game to stock"),
-                    ("/api/update-check", "Check for updates"),
-                ]
-                .into_iter()
-                .map(|(path, label)| self.action(path.into(), label.into(), path, json!({}), cx)),
-            )
-            .child(self.action(
-                "channel-stable".into(),
-                "Use stable channel".into(),
-                "/api/release-channel",
-                json!({"channel": "stable"}),
-                cx,
-            ))
-            .child(self.action(
-                "channel-beta".into(),
-                "Use beta channel".into(),
-                "/api/release-channel",
-                json!({"channel": "beta"}),
-                cx,
-            ))
-            .into_any_element()
-    }
-}
-
-fn panel(title: &str) -> Div {
-    div()
-        .flex()
-        .flex_col()
-        .gap_4()
-        .p_6()
-        .rounded_lg()
-        .border_1()
-        .border_color(rgb(0x343438))
-        .bg(rgb(0x17171b))
-        .child(
-            div()
-                .text_xl()
-                .font_weight(FontWeight::BOLD)
-                .child(title.to_owned()),
-        )
-}
-
-impl Render for ControlCenter {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let content = match self.page {
-            0 => self.dashboard(cx),
-            1 => self.t7(cx),
-            2 => self.exe(cx),
-            3 => self.enhanced(cx),
-            4 => self.graphics(cx),
-            5 => self.dxvk(cx),
-            _ => self.tools(cx),
-        };
-        let confirmation = self.pending.as_ref().map(|(label, _)| {
-            panel("Confirm operation")
-                .child(label.clone())
-                .child(format!("Target: {}", self.value("/gameDir")))
-                .child(
-                    div()
-                        .flex()
-                        .gap_3()
-                        .child(Button::new("confirm").label("Confirm").primary().on_click(
-                            cx.listener(|view, _, _, cx| {
-                                if let Some((label, request)) = view.pending.take() {
-                                    view.message = format!("Running: {label}…");
-                                    view.failed = false;
-                                    view.send(&request.path, request.body, cx);
-                                }
-                            }),
-                        ))
-                        .child(Button::new("cancel").label("Cancel").on_click(cx.listener(
-                            |view, _, _, cx| {
-                                view.pending = None;
-                                cx.notify();
-                            },
-                        ))),
-                )
-                .into_any_element()
-        });
-        div()
-            .flex()
-            .size_full()
-            .bg(rgb(0x0d0d0f))
-            .text_color(rgb(0xf6f6f6))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .w(px(200.))
-                    .p_4()
-                    .gap_3()
-                    .border_r_1()
-                    .border_color(rgb(0x343438))
-                    .child(
-                        div()
-                            .text_xl()
-                            .font_weight(FontWeight::BOLD)
-                            .child("PATCHOPS III"),
-                    )
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(rgb(0xff4545))
-                            .child("GPUI evaluation"),
-                    )
-                    .children(PAGES.into_iter().enumerate().map(|(index, label)| {
-                        Button::new(SharedString::from(format!("nav-{index}")))
-                            .label(label)
-                            .when(index == self.page, |button| button.primary())
-                            .on_click(cx.listener(move |view, _, _, cx| {
-                                view.page = index;
-                                cx.notify();
-                            }))
-                    })),
-            )
+            .gap(px(10.))
+            .flex_none()
             .child(
                 div()
                     .flex()
                     .flex_col()
                     .flex_1()
                     .min_w_0()
-                    .p_5()
-                    .gap_4()
+                    .gap(px(6.))
+                    .child(components::field_label("Game Directory:"))
+                    .child(self.field("directory")),
+            )
+            .when(dirty, |row| {
+                row.child(
+                    Btn::new("use-directory", "Use Directory")
+                        .disabled(!self.can_act())
+                        .on_click(
+                            cx.listener(|view, _: &ClickEvent, _, cx| view.stage_directory(cx)),
+                        ),
+                )
+            })
+            .child(
+                Btn::new("browse-directory", "Browse...")
+                    .icon(Glyph::FolderOpen)
+                    .disabled(self.busy)
+                    .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
+                        view.choose_directory("directory", window, cx)
+                    })),
+            )
+            .child(
+                self.action(cx, "launch", "Launch Game", "/api/launch", json!({}))
+                    .icon(Glyph::Play)
+                    .primary(),
+            )
+    }
+
+    /// `.error-strip`.
+    fn error_strip(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .flex()
+            .items_center()
+            .flex_none()
+            .gap(px(8.))
+            .min_h(px(34.))
+            .px(px(12.))
+            .py(px(6.))
+            .border_1()
+            .border_color(theme::danger_alpha(0.38))
+            .rounded(px(9.))
+            .bg(theme::danger_alpha(0.12))
+            .text_color(theme::danger_text())
+            .child(icon(Glyph::Alert, 16., theme::danger_text()))
+            .child(div().flex_1().min_w_0().child(self.message.clone()))
+            .child(
+                div()
+                    .id("dismiss-error")
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .size(px(26.))
+                    .rounded(px(7.))
+                    .cursor_pointer()
+                    .hover(|style| style.bg(theme::white(0.12)))
+                    .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
+                        view.failed = false;
+                        cx.notify();
+                    }))
+                    .child(icon(Glyph::Close, 15., theme::danger_text())),
+            )
+    }
+
+    /// `.nav-panel`.
+    fn nav(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .flex_none()
+            .gap(px(7.))
+            .w(px(theme::NAV_WIDTH))
+            .p(px(10.))
+            .border_1()
+            .border_color(theme::border())
+            .rounded(theme::radius())
+            .bg(theme::white(0.045))
+            .children(Page::ALL.into_iter().enumerate().map(|(index, page)| {
+                let active = self.page == page;
+                let color = if active {
+                    theme::text()
+                } else {
+                    theme::muted_strong()
+                };
+                div()
+                    .id(("nav", index))
+                    .flex()
+                    .items_center()
+                    .gap(px(10.))
+                    .min_h(px(theme::ROW_HEIGHT))
+                    .px(px(12.))
+                    .border_1()
+                    .border_color(if active {
+                        theme::accent_alpha(0.22)
+                    } else {
+                        theme::white(0.)
+                    })
+                    .rounded(theme::radius_control())
+                    .bg(if active {
+                        linear_gradient(
+                            135.,
+                            linear_color_stop(theme::accent_alpha(0.22), 0.),
+                            linear_color_stop(theme::white(0.07), 1.),
+                        )
+                    } else {
+                        solid_background(theme::white(0.))
+                    })
+                    .text_size(px(theme::FONT_MD))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(color)
+                    .cursor_pointer()
+                    .when(!active, |this| {
+                        this.hover(|style| style.bg(theme::white(0.06)).text_color(theme::text()))
+                    })
+                    .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
+                        view.page = page;
+                        view.content_scroll.set_offset(point(px(0.), px(0.)));
+                        cx.notify();
+                    }))
+                    .child(icon(page.glyph(), 18., color))
+                    .child(div().truncate().child(page.label()))
+            }))
+    }
+
+    /// `.log-panel`: the last lines of the backend's activity log.
+    fn log_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let entries = self.visible_logs();
+        let status_color = if self.failed {
+            theme::warning()
+        } else {
+            theme::muted()
+        };
+        div()
+            .flex()
+            .flex_col()
+            .flex_none()
+            .h(px(180.))
+            .child(
+                div()
+                    .flex()
+                    .items_baseline()
+                    .justify_between()
+                    .gap(px(12.))
+                    .mb(px(8.))
                     .child(
                         div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .gap_3()
-                            .child(
-                                div()
-                                    .text_2xl()
-                                    .font_weight(FontWeight::BOLD)
-                                    .child(PAGES[self.page]),
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .gap_2()
-                                    .child(
-                                        Button::new("load-settings")
-                                            .label("Load current values")
-                                            .disabled(self.busy || !self.connected)
-                                            .on_click(cx.listener(|view, _, window, cx| {
-                                                view.load_inputs(window, cx)
-                                            })),
-                                    )
-                                    .child(
-                                        Button::new("refresh")
-                                            .label(if self.busy { "Working…" } else { "Refresh" })
-                                            .disabled(self.busy)
-                                            .on_click(cx.listener(|view, _, _, cx| {
-                                                view.message =
-                                                    "Connecting to the local service…".into();
-                                                view.send("/api/status", None, cx);
-                                            })),
-                                    )
-                                    .child(self.action(
-                                        "launch".into(),
-                                        "Launch game".into(),
-                                        "/api/launch",
-                                        json!({}),
-                                        cx,
-                                    )),
-                            ),
+                            .text_size(px(theme::FONT_LG))
+                            .font_weight(FontWeight::BOLD)
+                            .child("Activity Log"),
                     )
-                    .children(confirmation)
                     .child(
                         div()
-                            .id("content-scroll")
-                            .flex_1()
-                            .min_h_0()
-                            .overflow_y_scroll()
-                            .flex()
-                            .flex_col()
-                            .gap_4()
-                            .child(content),
-                    )
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(if self.failed {
-                                rgb(0xff9f0a)
-                            } else {
-                                rgb(0xb6b6bb)
-                            })
+                            .min_w_0()
+                            .truncate()
+                            .text_size(px(theme::FONT_XS))
+                            .text_color(status_color)
                             .child(self.message.clone()),
-                    )
-                    .child(
-                        div()
-                            .id("log-scroll")
-                            .h(px(130.))
-                            .overflow_y_scroll()
-                            .bg(rgb(0x050505))
-                            .rounded_lg()
-                            .p_3()
-                            .text_sm()
-                            .children(
-                                self.state["logs"]
-                                    .as_array()
-                                    .into_iter()
-                                    .flatten()
-                                    .rev()
-                                    .take(80)
-                                    .map(|entry| {
-                                        div()
-                                            .text_color(if entry["category"] == "Error" {
-                                                rgb(0xff4545)
-                                            } else {
-                                                rgb(0xb6b6bb)
-                                            })
-                                            .child(entry["line"].as_str().unwrap_or("").to_owned())
-                                    }),
-                            ),
                     ),
             )
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .p(px(10.))
+                    .border_1()
+                    .border_color(theme::border())
+                    .rounded(theme::radius())
+                    .bg(theme::panel())
+                    .child(
+                        div()
+                            .relative()
+                            .size_full()
+                            .border_1()
+                            .border_color(theme::white(0.))
+                            .rounded(px(9.))
+                            .bg(theme::bg_deep().alpha(0.5))
+                            .child(
+                                div()
+                                    .id("log-scroll")
+                                    .size_full()
+                                    .overflow_y_scroll()
+                                    .track_scroll(&self.log_scroll)
+                                    .px(px(10.))
+                                    .py(px(8.))
+                                    .font_family(cx.theme().mono_font_family.clone())
+                                    .text_size(px(theme::FONT_XS))
+                                    .when(entries.is_empty(), |this| {
+                                        this.text_color(theme::muted()).child("No activity yet.")
+                                    })
+                                    .children(entries.into_iter().map(|(category, message)| {
+                                        let tone = match category.as_str() {
+                                            "Success" => theme::ok(),
+                                            "Warning" => theme::warning(),
+                                            "Error" => theme::danger(),
+                                            _ => theme::muted(),
+                                        };
+                                        div()
+                                            .flex()
+                                            .gap(px(10.))
+                                            .mb(px(4.))
+                                            .text_color(theme::text().alpha(0.76))
+                                            .child(
+                                                div()
+                                                    .w(px(72.))
+                                                    .flex_none()
+                                                    .font_weight(FontWeight::BOLD)
+                                                    .text_color(tone)
+                                                    .child(category),
+                                            )
+                                            .child(div().flex_1().min_w_0().child(message))
+                                    })),
+                            )
+                            .vertical_scrollbar(&self.log_scroll),
+                    ),
+            )
+    }
+
+    /// `.startup-screen`, shown until the first status document arrives.
+    fn startup_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let failed = self.failed;
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .items_center()
+            .justify_center()
+            .gap(px(14.))
+            .child(img("images/logo.png").size(px(64.)).rounded(px(14.)))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap(px(5.))
+                    .max_w(px(360.))
+                    .text_center()
+                    .child(
+                        div()
+                            .text_size(px(theme::FONT_LG))
+                            .font_weight(FontWeight::BOLD)
+                            .child(if failed {
+                                "Startup took too long"
+                            } else {
+                                "Opening PatchOpsIII"
+                            }),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(theme::FONT_SM))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(theme::muted())
+                            .child(if failed {
+                                self.message.clone()
+                            } else {
+                                "Loading your settings...".to_owned()
+                            }),
+                    ),
+            )
+            .when(!failed, |this| {
+                this.child(
+                    div()
+                        .w(px(132.))
+                        .h(px(3.))
+                        .rounded_full()
+                        .bg(theme::white(0.1))
+                        .child(div().w(px(55.)).h_full().rounded_full().bg(theme::accent())),
+                )
+            })
+            .when(failed, |this| {
+                this.child(
+                    Btn::new("retry", "Try Again")
+                        .compact()
+                        .icon(Glyph::Refresh)
+                        .disabled(self.busy)
+                        .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
+                            view.message = "Connecting to the local service…".into();
+                            view.failed = false;
+                            view.send("/api/status", None, cx);
+                        })),
+                )
+            })
+    }
+}
+
+impl Render for ControlCenter {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let ready = !self.state.is_null();
+        let body = if ready {
+            div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .min_h_0()
+                .gap(px(theme::APP_GAP))
+                .child(self.directory_row(cx))
+                .when(self.failed, |this| this.child(self.error_strip(cx)))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_h_0()
+                        .gap(px(theme::PANEL_GAP))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_1()
+                                .min_h_0()
+                                .gap(px(theme::PANEL_GAP))
+                                .child(self.nav(cx))
+                                .child(
+                                    div()
+                                        .relative()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .child(
+                                            div()
+                                                .id("content-scroll")
+                                                .size_full()
+                                                .overflow_y_scroll()
+                                                .track_scroll(&self.content_scroll)
+                                                .flex()
+                                                .flex_col()
+                                                .gap(px(theme::PANEL_GAP))
+                                                .pr(px(8.))
+                                                .child(self.page_view(cx)),
+                                        )
+                                        .vertical_scrollbar(&self.content_scroll),
+                                ),
+                        )
+                        .child(self.log_panel(cx)),
+                )
+        } else {
+            div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .min_h_0()
+                .child(self.startup_screen(cx))
+        };
+        div()
+            .relative()
+            .flex()
+            .flex_col()
+            .size_full()
+            .bg(linear_gradient(
+                180.,
+                linear_color_stop(theme::bg_deep(), 0.),
+                linear_color_stop(theme::bg(), 1.),
+            ))
+            .font(theme::ui_font())
+            .text_color(theme::text())
+            .text_size(px(theme::FONT_MD))
+            .child(self.header(cx))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_h_0()
+                    .p(px(theme::APP_PAD))
+                    .child(body),
+            )
+            .children(self.confirm_modal(cx))
+            .children(self.depot_modal(cx))
     }
 }

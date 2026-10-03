@@ -1,16 +1,16 @@
 mod backend;
 mod ui;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use gpui::{prelude::*, *};
 use gpui_component::{Root, Theme, ThemeMode};
 
 fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
-    let url = std::env::var("PATCHOPSIII_GPUI_BACKEND_URL")
-        .context("Start GPUI with: python scripts/gpui.py run (see native/gpui/README.md)")?;
-    let backend = backend::Backend::start(url)?;
-    Application::new().run(move |cx: &mut App| {
+    let service = backend::BackendService::launch()?;
+    let backend = backend::Backend::start(service.url().to_owned())?;
+    let app = Application::new().with_assets(ui::Assets);
+    app.run(move |cx: &mut App| {
         gpui_component::init(cx);
         Theme::change(ThemeMode::Dark, None, cx);
         let theme = Theme::global_mut(cx);
@@ -41,7 +41,7 @@ fn main() -> Result<()> {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 window_min_size: Some(size(px(800.), px(600.))),
                 titlebar: Some(TitlebarOptions {
-                    title: Some("PatchOpsIII · GPUI".into()),
+                    title: Some("PatchOpsIII".into()),
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -54,5 +54,6 @@ fn main() -> Result<()> {
         .expect("Unable to open the GPUI window");
         cx.activate(true);
     });
+    drop(service);
     Ok(())
 }

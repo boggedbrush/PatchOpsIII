@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build/run the GPUI evaluation without changing Electron's processes or ports."""
+"""Build or run the GPUI desktop app with a source-backed development service."""
 from __future__ import annotations
 
 import argparse

@@ -39,6 +39,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --pattern "*.exe" \
             --pattern "*.AppImage" \
+            --pattern "PatchOpsIII-native-*.zip" \
             --dir release-assets
           find release-assets -maxdepth 1 -type f -print
       - name: Determine VirusTotal CLI release
@@ -107,9 +108,9 @@ jobs:
             printf "| `%s` | `%s` | [Report](%s) | `%s` |\n" \
               "$(basename "$asset")" "$hash" "$vt_url" "$analysis_id" >> "$GITHUB_STEP_SUMMARY"
             printf "%s %s %s\n" "$(basename "$asset")" "$hash" "$analysis_id"
-          done < <(find release-assets -maxdepth 1 -type f \( -name "*.exe" -o -name "*.AppImage" \) -print0)
+          done < <(find release-assets -maxdepth 1 -type f \( -name "*.exe" -o -name "*.AppImage" -o -name "PatchOpsIII-native-*.zip" \) -print0)
 
           if [ "$found" -eq 0 ]; then
-            echo "No .exe or .AppImage assets found for ${{ inputs.tag }}." >&2
+            echo "No executable or native archive assets found for ${{ inputs.tag }}." >&2
             exit 1
           fi

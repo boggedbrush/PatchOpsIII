@@ -1,4 +1,4 @@
-"""Lifecycle checks use harmless stand-ins; no game installation is modified."""
+"""Lifecycle and packaging checks use stand-ins; no game installation is modified."""
 import importlib.util
 import os
 from pathlib import Path
@@ -7,10 +7,15 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from zipfile import ZipFile
 
 spec = importlib.util.spec_from_file_location("gpui_launcher", Path(__file__).with_name("gpui.py"))
 launcher = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(launcher)
+
+package_spec = importlib.util.spec_from_file_location("gpui_packager", Path(__file__).with_name("package_gpui.py"))
+packager = importlib.util.module_from_spec(package_spec)
+package_spec.loader.exec_module(packager)
 
 
 class LifecycleTests(unittest.TestCase):
@@ -57,6 +62,42 @@ class LifecycleTests(unittest.TestCase):
             self.assertIsNotNone(service.poll())
         finally:
             launcher.stop(service)
+
+
+class PackagingTests(unittest.TestCase):
+    def test_archive_is_self_contained_and_matches_native_lookup_layout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            executable = temporary / ("patchopsiii-gpui.exe" if os.name == "nt" else "patchopsiii-gpui")
+            backend = temporary / ("patchops-backend.exe" if os.name == "nt" else "patchops-backend")
+            executable.write_bytes(b"native")
+            backend.write_bytes(b"backend")
+            output = temporary / "PatchOpsIII-native.zip"
+
+            packager.create_archive(executable, backend, output)
+
+            with ZipFile(output) as archive:
+                names = set(archive.namelist())
+                self.assertIn(f"PatchOpsIII/{executable.name}", names)
+                self.assertIn(f"PatchOpsIII/resources/backend-bin/{backend.name}", names)
+                self.assertIn("PatchOpsIII/resources/presets.json", names)
+                self.assertIn("PatchOpsIII/resources/package.json", names)
+                self.assertIn("PatchOpsIII/resources/PatchOpsIII.ico", names)
+                self.assertIn("PatchOpsIII/resources/icon-512.png", names)
+                self.assertIn("PatchOpsIII/THIRD-PARTY-NOTICES/Lucide.txt", names)
+                self.assertFalse(any(name.endswith(".py") for name in names))
+                self.assertEqual(
+                    archive.read(f"PatchOpsIII/resources/backend-bin/{backend.name}"),
+                    b"backend",
+                )
+
+    def test_archive_requires_both_product_executables(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            executable = temporary / "patchopsiii-gpui"
+            executable.write_bytes(b"native")
+            with self.assertRaisesRegex(FileNotFoundError, "patchops-backend"):
+                packager.archive_manifest(executable, temporary / "patchops-backend")
 
 
 if __name__ == "__main__":

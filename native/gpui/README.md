@@ -1,22 +1,59 @@
-# PatchOpsIII GPUI alternative
+# PatchOpsIII native desktop app
 
-A native Rust/GPUI evaluation app alongside the Electron app, targeting Windows
-x64 and Linux x64 (including a future Steam Deck evaluation). It renders native
-controls without Chromium, React, Tauri, or a WebView. The existing Python API
-still performs game operations. This is an experimental alternative, not a
-feature-complete replacement or a production installer.
+This is the primary PatchOpsIII desktop client for Windows x64 and Linux x64,
+including Steam Deck desktop mode. It renders Rust/GPUI controls without
+Chromium, React, Tauri, or a WebView. The established Python API still performs
+game detection, downloads, backups, configuration, and launch operations. The
+Electron/React client remains in the repository as a legacy fallback.
 
-Research, implementation plan, comparison criteria, remaining work, and review
-checks are in [the evaluation document](../../docs/gpui-evaluation.md).
+The original framework research, architecture decision, comparison criteria,
+implemented workflow inventory, and remaining parity work are retained in
+[the native desktop migration record](../../docs/gpui-architecture.md).
+
+## Install a release archive
+
+The native build produces `PatchOpsIII-native-windows-x64.zip` and
+`PatchOpsIII-native-linux-x64.zip`. Each archive has this layout:
+
+```text
+PatchOpsIII/
+├── patchopsiii-gpui[.exe]
+├── resources/
+│   ├── backend-bin/patchops-backend[.exe]
+│   ├── package.json
+│   ├── presets.json
+│   ├── PatchOpsIII.ico
+│   └── icon-512.png
+├── LICENSE
+├── THIRD-PARTY-NOTICES/
+├── README.md
+└── NATIVE-README.md
+```
+
+Extract the whole folder and keep `resources` beside the native executable. On
+Linux, make the native executable executable after extraction if the archive
+tool did not preserve its mode:
+
+```sh
+chmod +x PatchOpsIII/patchopsiii-gpui
+./PatchOpsIII/patchopsiii-gpui
+```
+
+On Windows, run `PatchOpsIII\patchopsiii-gpui.exe`. The native executable starts
+the bundled PyInstaller backend on an OS-assigned loopback port, waits up to 30
+seconds for `/api/health`, opens the UI only after the service is ready, and
+terminates and reaps the service on normal exit. No Python installation is
+needed. Linux still needs a working X11 or Wayland desktop, fonts, and a
+Vulkan-capable driver.
 
 ## Build and run from source
 
-Install Rust with rustup, Python 3.12, and the normal backend requirements.
-The crate pins GPUI 0.2.2 and GPUI Component 0.5.0 with a committed Cargo.lock;
-its toolchain is Rust 1.99.0. GPUI's upstream main branch has since changed its
-platform API; use the pinned published API when editing this app.
+Install Rust with rustup, Python 3.12, and the normal backend requirements. The
+crate pins GPUI 0.2.2 and GPUI Component 0.5.0 with a committed `Cargo.lock` and
+Rust 1.99.0. GPUI's upstream main branch has since changed its platform API; use
+the pinned published APIs when editing this app.
 
-Linux build dependencies (Ubuntu 24.04):
+Linux build dependencies on Ubuntu 24.04:
 
 ```sh
 sudo apt-get install libfontconfig1-dev libfreetype6-dev libxkbcommon-dev \
@@ -24,12 +61,10 @@ sudo apt-get install libfontconfig1-dev libfreetype6-dev libxkbcommon-dev \
   libxcb1-dev libasound2-dev libclang-dev
 ```
 
-Windows needs Visual Studio Build Tools with Desktop development with C++ and
-a Windows SDK, plus Rust's MSVC toolchain. Linux runtime needs a working X11 or
-Wayland session, fonts, and a Vulkan-capable driver. Software rendering is useful
-for smoke checks but does not establish Steam Deck/GPU performance.
+Windows needs Visual Studio Build Tools with Desktop development with C++, a
+Windows SDK, and Rust's MSVC toolchain.
 
-From the repository root, use your Python environment's interpreter:
+From the repository root:
 
 ```sh
 python -m venv .venv
@@ -40,38 +75,42 @@ python scripts/gpui.py build
 python scripts/gpui.py run
 ```
 
-The launcher waits for a healthy API on an OS-assigned loopback port, launches
-the compiled GPUI binary, and stops/reaps both processes on exit, Ctrl+C, or
-startup failure. Build separately so launch measurements exclude compilation.
-For an optimized build, pass `--release` to both commands.
+The launcher remains the recommended development command: it starts the source
+API with an inherited bound socket, waits for health, injects the resulting URL,
+and reaps both processes. A directly started development binary can also find
+`backend/api.py` from the repository and uses `.venv` or
+`PATCHOPSIII_PYTHON`. `PATCHOPSIII_GPUI_BACKEND_URL` selects an externally owned
+loopback API; `PATCHOPSIII_BACKEND_PATH` selects a packaged backend executable.
 
-Electron and GPUI use separate processes and ports, but deliberately share
-backend settings, logs, caches, and game files. Do not perform overlapping game
-mutations in the two apps. Native actions display the selected operation and
-game directory for confirmation. HTTP requests run sequentially on a worker;
-long downloads do not freeze navigation. GET requests time out after 30 seconds,
-operations after 10 minutes. A timeout reports failure and does **not** guarantee
-the Python operation stopped; check logs and refresh before retrying. Closing the
-launcher stops its backend, so wait for file operations to finish before closing.
+Electron and GPUI deliberately share backend settings, logs, caches, and game
+files. Do not perform overlapping game mutations in the two apps. Native actions
+display the selected operation and game directory for confirmation. HTTP
+requests run sequentially on a worker; long downloads do not freeze navigation.
+GET requests time out after 30 seconds and operations after 10 minutes. A timeout
+does not guarantee that the Python operation stopped, so check logs and refresh
+before retrying. Wait for file operations to finish before closing the app.
 
-## Evaluation archives
+## Build a distributable archive
 
-The GPUI workflow checks formatting/lints/tests and builds release executables
-for Linux and Windows. Its ZIP artifacts include the native executable, Python
-backend source, presets, launcher, and documentation. They require Python and
-installed requirements; no Python runtime is bundled yet. They do not publish
-releases or replace Electron's MSI/AppImage workflows.
-
-After extracting an archive:
+The backend build commands are shared with the legacy Electron packaging so the
+PyInstaller flags cannot drift. Install Bun plus PyInstaller in `.venv`, then:
 
 ```sh
-python -m venv .venv
-# Activate the environment as above.
-python -m pip install -r requirements.txt
-# Linux ZIP extraction may require: chmod +x bin/patchopsiii-gpui
-python scripts/gpui.py run --executable bin/patchopsiii-gpui
-# Windows: python scripts/gpui.py run --executable bin/patchopsiii-gpui.exe
+# Linux
+bun run gpui:build:release
+bun run build:backend:linux
+python scripts/package_gpui.py \
+  --executable native/gpui/target/release/patchopsiii-gpui \
+  --backend dist/backend/patchops-backend \
+  --output dist/native/PatchOpsIII-native-linux-x64.zip
+
+# Windows PowerShell uses build:backend:win and the corresponding .exe paths.
 ```
+
+`.github/workflows/gpui-build.yml` runs formatting, Clippy with warnings denied,
+Rust and Python tests, the Linux window-close smoke check, both release builds,
+and archive creation. Stable and beta release workflows attach both native ZIPs
+without changing the existing Electron artifact names or tag behavior.
 
 ## Validation
 
@@ -86,4 +125,12 @@ xvfb-run -a python scripts/smoke_gpui_linux.py --start-session \
   --executable native/gpui/target/release/patchopsiii-gpui
 ```
 
-See the evaluation document for the hardware/manual checks that remain necessary.
+## Remaining gaps
+
+The native app is the primary implementation, but promotion does not imply full
+UI parity. Native installer integration, signing, automatic updates, streaming
+WebSocket logs, some richer progress/detail states, accessibility/IME coverage,
+and real-device Windows, Wayland, and Steam Deck validation remain open. The
+legacy Electron installers stay available while those delivery and parity gaps
+are closed. See the migration record for the detailed workflow matrix and manual
+review checklist.

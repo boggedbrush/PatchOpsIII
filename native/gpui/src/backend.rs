@@ -2,7 +2,318 @@
 use anyhow::{Context, Result, bail};
 use reqwest::blocking::Client;
 use serde_json::Value;
-use std::{sync::mpsc, thread, time::Duration};
+use std::{
+    env,
+    ffi::OsString,
+    fs,
+    net::TcpListener,
+    path::{Path, PathBuf},
+    process::{Child, Command, Stdio},
+    sync::mpsc,
+    thread,
+    time::{Duration, Instant},
+};
+
+const BACKEND_HOST: &str = "127.0.0.1";
+const BACKEND_START_TIMEOUT: Duration = Duration::from_secs(30);
+
+struct LaunchSpec {
+    command: PathBuf,
+    args: Vec<OsString>,
+    app_root: PathBuf,
+    packaged: bool,
+}
+
+/// Owns the local API process for the lifetime of the desktop application.
+///
+/// `PATCHOPSIII_GPUI_BACKEND_URL` remains an escape hatch for the development
+/// launcher and tests. In that mode the process that supplied the URL retains
+/// ownership of the service.
+pub struct BackendService {
+    url: String,
+    child: Option<Child>,
+}
+
+impl BackendService {
+    pub fn launch() -> Result<Self> {
+        if let Ok(url) = env::var("PATCHOPSIII_GPUI_BACKEND_URL") {
+            return Ok(Self {
+                url: validate_url(&url)?,
+                child: None,
+            });
+        }
+
+        let spec = resolve_launch_spec()?;
+        let port = reserve_loopback_port()?;
+        let url = format!("http://{BACKEND_HOST}:{port}");
+        let mut command = Command::new(&spec.command);
+        command
+            .args(&spec.args)
+            .current_dir(&spec.app_root)
+            .env("PATCHOPSIII_BACKEND_HOST", BACKEND_HOST)
+            .env("PATCHOPSIII_BACKEND_PORT", port.to_string())
+            .env("PYTHONUNBUFFERED", "1")
+            .stdin(Stdio::null());
+        if let Some(version) = application_version(&spec.app_root) {
+            command.env("PATCHOPSIII_VERSION", version);
+        }
+        if spec.packaged {
+            command.stdout(Stdio::null()).stderr(Stdio::null());
+        } else {
+            command.stdout(Stdio::inherit()).stderr(Stdio::inherit());
+        }
+        configure_child_process(&mut command);
+
+        let mut child = command.spawn().with_context(|| {
+            format!(
+                "Unable to start the PatchOpsIII backend at {}",
+                spec.command.display()
+            )
+        })?;
+        if let Err(error) = wait_until_healthy(&mut child, &url, BACKEND_START_TIMEOUT) {
+            stop_child(&mut child);
+            return Err(error);
+        }
+        Ok(Self {
+            url,
+            child: Some(child),
+        })
+    }
+
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+}
+
+impl Drop for BackendService {
+    fn drop(&mut self) {
+        if let Some(child) = self.child.as_mut() {
+            stop_child(child);
+        }
+    }
+}
+
+fn backend_executable_name() -> &'static str {
+    if cfg!(windows) {
+        "patchops-backend.exe"
+    } else {
+        "patchops-backend"
+    }
+}
+
+fn resolve_launch_spec() -> Result<LaunchSpec> {
+    if let Some(path) = env::var_os("PATCHOPSIII_BACKEND_PATH").map(PathBuf::from) {
+        let path = if path.is_absolute() {
+            path
+        } else {
+            env::current_dir()
+                .context("Unable to resolve PATCHOPSIII_BACKEND_PATH")?
+                .join(path)
+        };
+        if !path.is_file() {
+            bail!(
+                "PATCHOPSIII_BACKEND_PATH does not name a file: {}",
+                path.display()
+            );
+        }
+        return packaged_launch(path);
+    }
+
+    let executable = env::current_exe().context("Unable to locate the GPUI executable")?;
+    let executable_dir = executable
+        .parent()
+        .context("The GPUI executable has no parent directory")?;
+    let name = backend_executable_name();
+    let packaged_candidates = [
+        executable_dir
+            .join("resources")
+            .join("backend-bin")
+            .join(name),
+        executable_dir.join("backend-bin").join(name),
+        executable_dir
+            .parent()
+            .unwrap_or(executable_dir)
+            .join("Resources")
+            .join("backend-bin")
+            .join(name),
+    ];
+    for path in packaged_candidates {
+        if path.is_file() {
+            return packaged_launch(path);
+        }
+    }
+
+    let app_root = find_source_root(&executable)?;
+    let python = python_command(&app_root);
+    Ok(LaunchSpec {
+        command: python,
+        args: vec![app_root.join("backend").join("api.py").into_os_string()],
+        app_root,
+        packaged: false,
+    })
+}
+
+fn packaged_launch(path: PathBuf) -> Result<LaunchSpec> {
+    ensure_backend_executable(&path)?;
+    let app_root = path
+        .parent()
+        .and_then(Path::parent)
+        .context("Packaged backend has no resources directory")?
+        .to_path_buf();
+    Ok(LaunchSpec {
+        command: path,
+        args: Vec::new(),
+        app_root,
+        packaged: true,
+    })
+}
+
+#[cfg(unix)]
+fn ensure_backend_executable(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut permissions = fs::metadata(path)?.permissions();
+    let mode = permissions.mode();
+    if mode & 0o100 == 0 {
+        permissions.set_mode(mode | 0o100);
+        fs::set_permissions(path, permissions).with_context(|| {
+            format!(
+                "Unable to make the packaged backend executable: {}",
+                path.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn ensure_backend_executable(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
+fn find_source_root(executable: &Path) -> Result<PathBuf> {
+    let current_dir = env::current_dir().context("Unable to read the working directory")?;
+    for start in [Some(current_dir.as_path()), executable.parent()]
+        .into_iter()
+        .flatten()
+    {
+        for candidate in start.ancestors() {
+            if candidate.join("backend").join("api.py").is_file()
+                && candidate.join("presets.json").is_file()
+            {
+                return Ok(candidate.to_path_buf());
+            }
+        }
+    }
+    bail!(
+        "PatchOpsIII backend not found. Install resources/backend-bin/{} next to the app, or run from the repository.",
+        backend_executable_name()
+    )
+}
+
+fn python_command(app_root: &Path) -> PathBuf {
+    if let Some(python) = env::var_os("PATCHOPSIII_PYTHON") {
+        return PathBuf::from(python);
+    }
+    let venv_python = if cfg!(windows) {
+        app_root.join(".venv").join("Scripts").join("python.exe")
+    } else {
+        app_root.join(".venv").join("bin").join("python")
+    };
+    if venv_python.is_file() {
+        venv_python
+    } else {
+        PathBuf::from(if cfg!(windows) { "python" } else { "python3" })
+    }
+}
+
+fn application_version(app_root: &Path) -> Option<String> {
+    if let Ok(version) = env::var("PATCHOPSIII_VERSION")
+        && !version.trim().is_empty()
+    {
+        return Some(version);
+    }
+    let package = fs::read_to_string(app_root.join("package.json")).ok()?;
+    serde_json::from_str::<Value>(&package).ok()?["version"]
+        .as_str()
+        .map(str::to_owned)
+}
+
+fn reserve_loopback_port() -> Result<u16> {
+    let listener = TcpListener::bind((BACKEND_HOST, 0))
+        .context("Unable to reserve a loopback port for the backend")?;
+    Ok(listener.local_addr()?.port())
+}
+
+fn wait_until_healthy(child: &mut Child, url: &str, timeout: Duration) -> Result<()> {
+    let client = Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(Duration::from_secs(1))
+        .timeout(Duration::from_secs(1))
+        .build()?;
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if let Some(status) = child.try_wait().context("Unable to inspect the backend")? {
+            bail!("PatchOpsIII backend exited during startup with {status}");
+        }
+        if let Ok(response) = client.get(format!("{url}/api/health")).send()
+            && response.status().is_success()
+            && response
+                .json::<Value>()
+                .ok()
+                .and_then(|body| body["ok"].as_bool())
+                == Some(true)
+        {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    bail!("PatchOpsIII backend did not become healthy within 30 seconds")
+}
+
+#[cfg(windows)]
+fn configure_child_process(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn configure_child_process(_command: &mut Command) {}
+
+fn stop_child(child: &mut Child) {
+    if matches!(child.try_wait(), Ok(Some(_))) {
+        return;
+    }
+    #[cfg(windows)]
+    {
+        let pid = child.id().to_string();
+        let _ = Command::new("taskkill")
+            .args(["/pid", pid.as_str(), "/t", "/f"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    #[cfg(not(windows))]
+    {
+        let pid = child.id().to_string();
+        let _ = Command::new("kill")
+            .args(["-TERM", pid.as_str()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while Instant::now() < deadline {
+            if matches!(child.try_wait(), Ok(Some(_))) {
+                return;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
 
 pub struct Request {
     pub path: String,
