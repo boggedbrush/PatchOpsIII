@@ -661,6 +661,10 @@ mod tests {
             permissions.set_mode(0o644);
         }
         #[cfg(not(unix))]
+        #[allow(
+            clippy::permissions_set_readonly_false,
+            reason = "Non-Unix cleanup clears the readonly flag; Unix cleanup restores mode bits above."
+        )]
         permissions.set_readonly(false);
         fs::set_permissions(&path, permissions).unwrap();
         fs::remove_dir_all(game).unwrap();

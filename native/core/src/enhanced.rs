@@ -11,7 +11,9 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
-use crate::{app::AppState, exe, fs_ops, models::EnhancedState, steam};
+#[cfg(target_os = "linux")]
+use crate::steam;
+use crate::{app::AppState, exe, fs_ops, models::EnhancedState};
 
 pub const GITHUB_LATEST_ENHANCED_API: &str =
     "https://api.github.com/repos/shiversoftdev/BO3Enhanced/releases/latest";

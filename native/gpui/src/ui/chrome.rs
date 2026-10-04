@@ -39,7 +39,9 @@ const MAXIMIZED_ENV: &str = "PATCHOPSIII_GPUI_MAXIMIZED";
 pub enum Session {
     Windows,
     MacOs,
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     Wayland,
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     X11,
     Other,
 }
@@ -49,7 +51,9 @@ impl Session {
         match self {
             Self::Windows => "Windows",
             Self::MacOs => "macOS",
+            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             Self::Wayland => "Wayland",
+            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             Self::X11 => "X11",
             Self::Other => "headless",
         }
@@ -82,6 +86,7 @@ fn env_flag(name: &str) -> bool {
 /// The app paints every pixel opaquely. Wayland makes client-decorated
 /// surfaces transparent by itself; X11 needs the flag so the rounded corners
 /// and shadow are cut out instead of rendering black.
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 fn background_for(session: Session, csd: bool) -> WindowBackgroundAppearance {
     if session == Session::X11 && csd {
         WindowBackgroundAppearance::Transparent
@@ -90,10 +95,18 @@ fn background_for(session: Session, csd: bool) -> WindowBackgroundAppearance {
     }
 }
 
+#[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+fn background_for(_: Session, _: bool) -> WindowBackgroundAppearance {
+    WindowBackgroundAppearance::Opaque
+}
+
 /// The options for the main window.
 pub fn window_options(bounds: Bounds<Pixels>) -> WindowOptions {
     let session = session();
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     let linux = matches!(session, Session::Wayland | Session::X11);
+    #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+    let linux = false;
     WindowOptions {
         window_bounds: Some(if env_flag(MAXIMIZED_ENV) {
             WindowBounds::Maximized(bounds)
@@ -149,6 +162,7 @@ impl Frame {
         match session() {
             Session::Windows => true,
             Session::MacOs | Session::Other => false,
+            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             Session::Wayland | Session::X11 => self.csd,
         }
     }
