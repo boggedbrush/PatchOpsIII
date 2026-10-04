@@ -1,0 +1,8 @@
+[workspace]
+members = ["core", "gpui"]
+resolver = "3"
+
+[profile.release]
+lto = "thin"
+strip = "debuginfo"
+

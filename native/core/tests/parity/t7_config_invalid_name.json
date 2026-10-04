@@ -1,0 +1,487 @@
+{
+  "expected": {
+    "checkpoints": [
+      {
+        "directories": [
+          "data",
+          "game",
+          "game/players",
+          "game/video",
+          "not-a-game",
+          "resources",
+          "secondary-library",
+          "secondary-library/steamapps",
+          "secondary-library/steamapps/workshop",
+          "steam",
+          "steam/steamapps",
+          "steam/userdata",
+          "steam/userdata/76561198000000000",
+          "steam/userdata/76561198000000000/config"
+        ],
+        "files": [
+          {
+            "mode": 420,
+            "path": "data/electron-settings.json",
+            "sha256": "4c07124e4037a29057b1274d3d2dbe1df207b1350e19c28ec27bf8d4ae4338b2",
+            "size": 61,
+            "text": "{\n  \"release_channel\": \"stable\",\n  \"game_dir\": \"$ROOT/game\"\n}"
+          },
+          {
+            "mode": 420,
+            "path": "game/BlackOpsIII.exe",
+            "sha256": "0f96666e646d0a5ccbce7257d91593556a6747502ccab65a3991b7e097e9d5d2",
+            "size": 29,
+            "text": "PATCHOPS_FAKE_EXE:unverified\n"
+          },
+          {
+            "mode": 420,
+            "path": "game/d3dcompiler_46.dll",
+            "sha256": "0ae6e172362d4d6866dccf7d2de3b99d9964310054626fce519bde4e35295caa",
+            "size": 15,
+            "text": "legacy-compiler"
+          },
+          {
+            "mode": 420,
+            "path": "game/players/config.ini",
+            "sha256": "31e5090dff0b200154b4d7f79766d0101c796eddb073e0b3ae4a3fae3da234b4",
+            "size": 474,
+            "text": "// fixture configuration\nMaxFPS = \"165\" // original\nFOV = \"80\" // original\nFullScreenMode = \"1\" // original\nWindowSize = \"1920x1080\" // original\nRefreshRate = \"60\" // original\nResolutionPercent = \"100\" // original\nVsync = \"1\" // original\nDrawFPS = \"0\" // original\nSmoothFramerate = \"0\" // original\nRestrictGraphicsOptions = \"1\" // original\nSerializeRender = \"0\" // original\nMaxFrameLatency = \"1\" // original\nVideoMemory = \"1\" // original\nStreamMinResident = \"0\" // original\n"
+          },
+          {
+            "mode": 420,
+            "path": "game/t7patch.conf",
+            "sha256": "1d753acbca3ca8d7bef8cb73831810f54d6d48ed990fb7e6242eb74c230fde9a",
+            "size": 70,
+            "text": "playername=^1OldName\nnetworkpassword=old\nisfriendsonly=0\nunknown=keep\n"
+          },
+          {
+            "mode": 420,
+            "path": "game/t7patch.dll",
+            "sha256": "e41e48279440133a6f109cbd9b8486bd57b16b10c61a34bf7ed4547bc7f748a1",
+            "size": 10,
+            "text": "fixture-t7"
+          },
+          {
+            "mode": 420,
+            "path": "game/t7patchloader.dll",
+            "sha256": "fc61197d6de766eaddc97b118f5e7aed71805be61dcc7de5ec351bbd5b94caca",
+            "size": 14,
+            "text": "fixture-loader"
+          },
+          {
+            "mode": 420,
+            "path": "game/video/BO3_Global_Logo_LogoSequence.mkv",
+            "sha256": "06cd6175508d0d415bfd1944079df661fe73691ad4dd17ccc1688a298e6ed083",
+            "size": 9,
+            "text": "intro-one"
+          },
+          {
+            "mode": 420,
+            "path": "game/video/Frontend_Intro.mkv",
+            "sha256": "5d3568fc674ae38d3d215ec7e9e46e02fd1c31987199c7d0aab8b7a3a41f64a2",
+            "size": 9,
+            "text": "intro-two"
+          },
+          {
+            "mode": 420,
+            "path": "resources/presets.json",
+            "sha256": "e29c9752c43f216794bbe7c82739e5f6821f1debb71a734e152df2b9fb14d5f2",
+            "size": 5082,
+            "text": "{\n  \"Smooth Preset\": {\n    \"SmoothFramerate\": [\"1\", \"Enable smoothing at the cost of some performance\"],\n    \"CorpseCount\": [\"16\", \"Maximum number of corpses is 32, 16 is selected for a balanced approach\"],\n    \"MaxFrameLatency\": [\"4\", \"Driver can queue up to 4 frames\"],\n    \"SerializeRender\": [\"0\", \"0 is the default for the best performance, 1 and 2 improve latency but require a powerful CPU.\"],\n    \"VideoMemory\": [\"1\", \"Target all of the available VRAM to reduce stuttering\"],\n    \"RestrictGraphicsOptions\": [\"0\", \"Advanced graphics options unlocked\"],\n    \"Vsync\": [\"1\", \"Vertical sync enabled\"],\n    \"BackbufferCount\": [\"3\", \"Triple buffering enabled\"],\n    \"MeshQuality\": [\"0\", \"Highest quality meshes\"],\n    \"TextureFilter\": [\"2\", \"High anisotropic filtering\"],\n    \"TextureQuality\": [\"1\", \"High texture quality (balanced)\"],\n    \"TextureQualityFX\": [\"1\", \"Improved effect quality\"],\n    \"TextureQualityProbes\": [\"0\", \"Default reflection quality\"],\n    \"TextureQualityBakedSunShadows\": [\"1\", \"Slightly reduced baked sun shadow quality\"],\n    \"TextureLowDetailResident\": [\"0\", \"Lowest detail resident streaming disabled\"],\n    \"DisableDynamicLightShadows\": [\"1\", \"Dynamic light shadows disabled\"],\n    \"DisableDynamicSunShadows\": [\"1\", \"Dynamic sun shadows disabled\"],\n    \"SpotShadowTextureSize\": [\"1024\", \"Spot light shadow resolution set to 1024\"],\n    \"OmniShadowTextureSize\": [\"256\", \"Omni (point) light shadow resolution set to 256\"],\n    \"ShadowFiltering\": [\"1\", \"Multi-sampled soft shadows enabled\"],\n    \"ActorShadows\": [\"0\", \"Actor shadows disabled\"],\n    \"VolumetricLightingEnabled\": [\"0\", \"Volumetric lighting disabled\"],\n    \"VolumetricLightingMaxSunSamples\": [\"8\", \"Max sun samples for volumetric lighting\"],\n    \"VolumetricLightingMaxLightSamples\": [\"40\", \"Max light samples for volumetric lighting\"],\n    \"VolumetricLightingSkipSunSamples\": [\"1\", \"Skip alternate sun samples\"],\n    \"VolumetricLightingSkipLightSamples\": [\"1\", \"Skip alternate light samples\"],\n    \"OIT\": [\"1\", \"Order-independent transparency enabled\"],\n    \"OITLayers\": [\"8\", \"8 transparency layers set\"],\n    \"SSAOTechnique\": [\"GTAO Low Quality\", \"Ambient occlusion set to GTAO Low Quality\"],\n    \"AATechnique\": [\"FXAA\", \"Anti-aliasing set to FXAA\"],\n    \"MotionBlur\": [\"Off\", \"Motion blur disabled\"],\n    \"MotionBlurQuality\": [\"Medium\", \"Medium quality motion blur (if enabled)\"],\n    \"SubsurfaceScattering\": [\"0\", \"Subsurface scattering disabled\"],\n    \"StreamMinResident\": [\"0\", \"No reduction in minimum asset residency in VRAM\"]\n  },\n  \"Low-Latency Preset\": {\n    \"SmoothFramerate\": [\"0\", \"Disable smoothing to minimize frame delay\"],\n    \"CorpseCount\": [\"16\", \"Maximum number of corpses is 32, 16 is selected for a balanced approach\"],\n    \"MaxFrameLatency\": [\"1\", \"Driver can only queue up to 1 frame\"],\n    \"SerializeRender\": [\"2\", \"0 is the default for the best performance, 1 and 2 improve latency but require a powerful CPU.\"],\n    \"VideoMemory\": [\"0.75\", \"Target 75% the available VRAM to increase performance\"],\n    \"RestrictGraphicsOptions\": [\"0\", \"Advanced graphics options unlocked\"],\n    \"Vsync\": [\"0\", \"Vertical sync disabled for lower latency\"],\n    \"BackbufferCount\": [\"2\", \"Reset Vsync to double buffer\"],\n    \"MeshQuality\": [\"0\", \"Highest quality meshes\"],\n    \"TextureFilter\": [\"2\", \"High anisotropic filtering\"],\n    \"TextureQuality\": [\"1\", \"High texture quality (balanced)\"],\n    \"TextureQualityFX\": [\"1\", \"Improved effect quality\"],\n    \"TextureQualityProbes\": [\"0\", \"Default reflection quality\"],\n    \"TextureQualityBakedSunShadows\": [\"1\", \"Slightly reduced baked sun shadow quality\"],\n    \"TextureLowDetailResident\": [\"0\", \"Lowest detail resident streaming disabled\"],\n    \"DisableDynamicLightShadows\": [\"1\", \"Dynamic light shadows disabled\"],\n    \"DisableDynamicSunShadows\": [\"1\", \"Dynamic sun shadows disabled\"],\n    \"SpotShadowTextureSize\": [\"1024\", \"Spot light shadow resolution set to 1024\"],\n    \"OmniShadowTextureSize\": [\"256\", \"Omni (point) light shadow resolution set to 256\"],\n    \"ShadowFiltering\": [\"1\", \"Multi-sampled soft shadows enabled\"],\n    \"ActorShadows\": [\"0\", \"Actor shadows disabled\"],\n    \"VolumetricLightingEnabled\": [\"0\", \"Volumetric lighting disabled\"],\n    \"VolumetricLightingMaxSunSamples\": [\"8\", \"Max sun samples for volumetric lighting\"],\n    \"VolumetricLightingMaxLightSamples\": [\"40\", \"Max light samples for volumetric lighting\"],\n    \"VolumetricLightingSkipSunSamples\": [\"1\", \"Skip alternate sun samples\"],\n    \"VolumetricLightingSkipLightSamples\": [\"1\", \"Skip alternate light samples\"],\n    \"OIT\": [\"1\", \"Order-independent transparency enabled\"],\n    \"OITLayers\": [\"8\", \"8 transparency layers set\"],\n    \"SSAOTechnique\": [\"GTAO Low Quality\", \"Ambient occlusion set to GTAO Low Quality\"],\n    \"AATechnique\": [\"FXAA\", \"Anti-aliasing set to FXAA\"],\n    \"MotionBlur\": [\"Off\", \"Motion blur disabled\"],\n    \"MotionBlurQuality\": [\"Medium\", \"Medium quality motion blur (if enabled)\"],\n    \"SubsurfaceScattering\": [\"0\", \"Subsurface scattering disabled\"],\n    \"StreamMinResident\": [\"1\", \"Reduce the minimum asset residency in VRAM\"]\n  }\n}\n"
+          },
+          {
+            "mode": 420,
+            "path": "secondary-library/steamapps/workshop/appworkshop_311210.acf",
+            "sha256": "1e41744c2d76714baeae696764a96898a65315748ed695f05aa6890dd4f7a78a",
+            "size": 85,
+            "text": "\"AppWorkshop\"\n{\n  \"WorkshopItemsInstalled\"\n  {\n  }\n  \"WorkshopItemDetails\"\n  {\n  }\n}\n"
+          },
+          {
+            "mode": 420,
+            "path": "steam/steamapps/libraryfolders.vdf",
+            "sha256": "1225e4effb5115a68ff774612689de1eb40580299937a428b8aa5ff8d01a864d",
+            "size": 153,
+            "text": "\"libraryfolders\"\n{\n  \"0\"\n  {\n    \"path\" \"$ROOT/steam\"\n  }\n  \"1\"\n  {\n    \"path\" \"$ROOT/secondary-library\"\n    \"apps\"\n    {\n      \"311210\" \"1\"\n    }\n  }\n}\n"
+          },
+          {
+            "mode": 420,
+            "path": "steam/userdata/76561198000000000/config/localconfig.vdf",
+            "sha256": "6c7fefd9df196943bb300cec2b60d2fdd528efc08d9bad7fa4dfdc7b9b51a093",
+            "size": 211,
+            "text": "\"UserLocalConfigStore\"\n{\n  \"Software\"\n  {\n    \"Valve\"\n    {\n      \"Steam\"\n      {\n        \"apps\"\n        {\n          \"311210\"\n          {\n            \"LaunchOptions\" \"\"\n          }\n        }\n      }\n    }\n  }\n}\n"
+          }
+        ]
+      },
+      {
+        "directories": [
+          "data",
+          "game",
+          "game/players",
+          "game/video",
+          "not-a-game",
+          "resources",
+          "secondary-library",
+          "secondary-library/steamapps",
+          "secondary-library/steamapps/workshop",
+          "steam",
+          "steam/steamapps",
+          "steam/userdata",
+          "steam/userdata/76561198000000000",
+          "steam/userdata/76561198000000000/config"
+        ],
+        "files": [
+          {
+            "mode": 420,
+            "path": "data/electron-settings.json",
+            "sha256": "4c07124e4037a29057b1274d3d2dbe1df207b1350e19c28ec27bf8d4ae4338b2",
+            "size": 61,
+            "text": "{\n  \"release_channel\": \"stable\",\n  \"game_dir\": \"$ROOT/game\"\n}"
+          },
+          {
+            "mode": 420,
+            "path": "game/BlackOpsIII.exe",
+            "sha256": "0f96666e646d0a5ccbce7257d91593556a6747502ccab65a3991b7e097e9d5d2",
+            "size": 29,
+            "text": "PATCHOPS_FAKE_EXE:unverified\n"
+          },
+          {
+            "mode": 420,
+            "path": "game/d3dcompiler_46.dll",
+            "sha256": "0ae6e172362d4d6866dccf7d2de3b99d9964310054626fce519bde4e35295caa",
+            "size": 15,
+            "text": "legacy-compiler"
+          },
+          {
+            "mode": 420,
+            "path": "game/players/config.ini",
+            "sha256": "31e5090dff0b200154b4d7f79766d0101c796eddb073e0b3ae4a3fae3da234b4",
+            "size": 474,
+            "text": "// fixture configuration\nMaxFPS = \"165\" // original\nFOV = \"80\" // original\nFullScreenMode = \"1\" // original\nWindowSize = \"1920x1080\" // original\nRefreshRate = \"60\" // original\nResolutionPercent = \"100\" // original\nVsync = \"1\" // original\nDrawFPS = \"0\" // original\nSmoothFramerate = \"0\" // original\nRestrictGraphicsOptions = \"1\" // original\nSerializeRender = \"0\" // original\nMaxFrameLatency = \"1\" // original\nVideoMemory = \"1\" // original\nStreamMinResident = \"0\" // original\n"
+          },
+          {
+            "mode": 420,
+            "path": "game/t7patch.conf",
+            "sha256": "1d753acbca3ca8d7bef8cb73831810f54d6d48ed990fb7e6242eb74c230fde9a",
+            "size": 70,
+            "text": "playername=^1OldName\nnetworkpassword=old\nisfriendsonly=0\nunknown=keep\n"
+          },
+          {
+            "mode": 420,
+            "path": "game/t7patch.dll",
+            "sha256": "e41e48279440133a6f109cbd9b8486bd57b16b10c61a34bf7ed4547bc7f748a1",
+            "size": 10,
+            "text": "fixture-t7"
+          },
+          {
+            "mode": 420,
+            "path": "game/t7patchloader.dll",
+            "sha256": "fc61197d6de766eaddc97b118f5e7aed71805be61dcc7de5ec351bbd5b94caca",
+            "size": 14,
+            "text": "fixture-loader"
+          },
+          {
+            "mode": 420,
+            "path": "game/video/BO3_Global_Logo_LogoSequence.mkv",
+            "sha256": "06cd6175508d0d415bfd1944079df661fe73691ad4dd17ccc1688a298e6ed083",
+            "size": 9,
+            "text": "intro-one"
+          },
+          {
+            "mode": 420,
+            "path": "game/video/Frontend_Intro.mkv",
+            "sha256": "5d3568fc674ae38d3d215ec7e9e46e02fd1c31987199c7d0aab8b7a3a41f64a2",
+            "size": 9,
+            "text": "intro-two"
+          },
+          {
+            "mode": 420,
+            "path": "resources/presets.json",
+            "sha256": "e29c9752c43f216794bbe7c82739e5f6821f1debb71a734e152df2b9fb14d5f2",
+            "size": 5082,
+            "text": "{\n  \"Smooth Preset\": {\n    \"SmoothFramerate\": [\"1\", \"Enable smoothing at the cost of some performance\"],\n    \"CorpseCount\": [\"16\", \"Maximum number of corpses is 32, 16 is selected for a balanced approach\"],\n    \"MaxFrameLatency\": [\"4\", \"Driver can queue up to 4 frames\"],\n    \"SerializeRender\": [\"0\", \"0 is the default for the best performance, 1 and 2 improve latency but require a powerful CPU.\"],\n    \"VideoMemory\": [\"1\", \"Target all of the available VRAM to reduce stuttering\"],\n    \"RestrictGraphicsOptions\": [\"0\", \"Advanced graphics options unlocked\"],\n    \"Vsync\": [\"1\", \"Vertical sync enabled\"],\n    \"BackbufferCount\": [\"3\", \"Triple buffering enabled\"],\n    \"MeshQuality\": [\"0\", \"Highest quality meshes\"],\n    \"TextureFilter\": [\"2\", \"High anisotropic filtering\"],\n    \"TextureQuality\": [\"1\", \"High texture quality (balanced)\"],\n    \"TextureQualityFX\": [\"1\", \"Improved effect quality\"],\n    \"TextureQualityProbes\": [\"0\", \"Default reflection quality\"],\n    \"TextureQualityBakedSunShadows\": [\"1\", \"Slightly reduced baked sun shadow quality\"],\n    \"TextureLowDetailResident\": [\"0\", \"Lowest detail resident streaming disabled\"],\n    \"DisableDynamicLightShadows\": [\"1\", \"Dynamic light shadows disabled\"],\n    \"DisableDynamicSunShadows\": [\"1\", \"Dynamic sun shadows disabled\"],\n    \"SpotShadowTextureSize\": [\"1024\", \"Spot light shadow resolution set to 1024\"],\n    \"OmniShadowTextureSize\": [\"256\", \"Omni (point) light shadow resolution set to 256\"],\n    \"ShadowFiltering\": [\"1\", \"Multi-sampled soft shadows enabled\"],\n    \"ActorShadows\": [\"0\", \"Actor shadows disabled\"],\n    \"VolumetricLightingEnabled\": [\"0\", \"Volumetric lighting disabled\"],\n    \"VolumetricLightingMaxSunSamples\": [\"8\", \"Max sun samples for volumetric lighting\"],\n    \"VolumetricLightingMaxLightSamples\": [\"40\", \"Max light samples for volumetric lighting\"],\n    \"VolumetricLightingSkipSunSamples\": [\"1\", \"Skip alternate sun samples\"],\n    \"VolumetricLightingSkipLightSamples\": [\"1\", \"Skip alternate light samples\"],\n    \"OIT\": [\"1\", \"Order-independent transparency enabled\"],\n    \"OITLayers\": [\"8\", \"8 transparency layers set\"],\n    \"SSAOTechnique\": [\"GTAO Low Quality\", \"Ambient occlusion set to GTAO Low Quality\"],\n    \"AATechnique\": [\"FXAA\", \"Anti-aliasing set to FXAA\"],\n    \"MotionBlur\": [\"Off\", \"Motion blur disabled\"],\n    \"MotionBlurQuality\": [\"Medium\", \"Medium quality motion blur (if enabled)\"],\n    \"SubsurfaceScattering\": [\"0\", \"Subsurface scattering disabled\"],\n    \"StreamMinResident\": [\"0\", \"No reduction in minimum asset residency in VRAM\"]\n  },\n  \"Low-Latency Preset\": {\n    \"SmoothFramerate\": [\"0\", \"Disable smoothing to minimize frame delay\"],\n    \"CorpseCount\": [\"16\", \"Maximum number of corpses is 32, 16 is selected for a balanced approach\"],\n    \"MaxFrameLatency\": [\"1\", \"Driver can only queue up to 1 frame\"],\n    \"SerializeRender\": [\"2\", \"0 is the default for the best performance, 1 and 2 improve latency but require a powerful CPU.\"],\n    \"VideoMemory\": [\"0.75\", \"Target 75% the available VRAM to increase performance\"],\n    \"RestrictGraphicsOptions\": [\"0\", \"Advanced graphics options unlocked\"],\n    \"Vsync\": [\"0\", \"Vertical sync disabled for lower latency\"],\n    \"BackbufferCount\": [\"2\", \"Reset Vsync to double buffer\"],\n    \"MeshQuality\": [\"0\", \"Highest quality meshes\"],\n    \"TextureFilter\": [\"2\", \"High anisotropic filtering\"],\n    \"TextureQuality\": [\"1\", \"High texture quality (balanced)\"],\n    \"TextureQualityFX\": [\"1\", \"Improved effect quality\"],\n    \"TextureQualityProbes\": [\"0\", \"Default reflection quality\"],\n    \"TextureQualityBakedSunShadows\": [\"1\", \"Slightly reduced baked sun shadow quality\"],\n    \"TextureLowDetailResident\": [\"0\", \"Lowest detail resident streaming disabled\"],\n    \"DisableDynamicLightShadows\": [\"1\", \"Dynamic light shadows disabled\"],\n    \"DisableDynamicSunShadows\": [\"1\", \"Dynamic sun shadows disabled\"],\n    \"SpotShadowTextureSize\": [\"1024\", \"Spot light shadow resolution set to 1024\"],\n    \"OmniShadowTextureSize\": [\"256\", \"Omni (point) light shadow resolution set to 256\"],\n    \"ShadowFiltering\": [\"1\", \"Multi-sampled soft shadows enabled\"],\n    \"ActorShadows\": [\"0\", \"Actor shadows disabled\"],\n    \"VolumetricLightingEnabled\": [\"0\", \"Volumetric lighting disabled\"],\n    \"VolumetricLightingMaxSunSamples\": [\"8\", \"Max sun samples for volumetric lighting\"],\n    \"VolumetricLightingMaxLightSamples\": [\"40\", \"Max light samples for volumetric lighting\"],\n    \"VolumetricLightingSkipSunSamples\": [\"1\", \"Skip alternate sun samples\"],\n    \"VolumetricLightingSkipLightSamples\": [\"1\", \"Skip alternate light samples\"],\n    \"OIT\": [\"1\", \"Order-independent transparency enabled\"],\n    \"OITLayers\": [\"8\", \"8 transparency layers set\"],\n    \"SSAOTechnique\": [\"GTAO Low Quality\", \"Ambient occlusion set to GTAO Low Quality\"],\n    \"AATechnique\": [\"FXAA\", \"Anti-aliasing set to FXAA\"],\n    \"MotionBlur\": [\"Off\", \"Motion blur disabled\"],\n    \"MotionBlurQuality\": [\"Medium\", \"Medium quality motion blur (if enabled)\"],\n    \"SubsurfaceScattering\": [\"0\", \"Subsurface scattering disabled\"],\n    \"StreamMinResident\": [\"1\", \"Reduce the minimum asset residency in VRAM\"]\n  }\n}\n"
+          },
+          {
+            "mode": 420,
+            "path": "secondary-library/steamapps/workshop/appworkshop_311210.acf",
+            "sha256": "1e41744c2d76714baeae696764a96898a65315748ed695f05aa6890dd4f7a78a",
+            "size": 85,
+            "text": "\"AppWorkshop\"\n{\n  \"WorkshopItemsInstalled\"\n  {\n  }\n  \"WorkshopItemDetails\"\n  {\n  }\n}\n"
+          },
+          {
+            "mode": 420,
+            "path": "steam/steamapps/libraryfolders.vdf",
+            "sha256": "1225e4effb5115a68ff774612689de1eb40580299937a428b8aa5ff8d01a864d",
+            "size": 153,
+            "text": "\"libraryfolders\"\n{\n  \"0\"\n  {\n    \"path\" \"$ROOT/steam\"\n  }\n  \"1\"\n  {\n    \"path\" \"$ROOT/secondary-library\"\n    \"apps\"\n    {\n      \"311210\" \"1\"\n    }\n  }\n}\n"
+          },
+          {
+            "mode": 420,
+            "path": "steam/userdata/76561198000000000/config/localconfig.vdf",
+            "sha256": "6c7fefd9df196943bb300cec2b60d2fdd528efc08d9bad7fa4dfdc7b9b51a093",
+            "size": 211,
+            "text": "\"UserLocalConfigStore\"\n{\n  \"Software\"\n  {\n    \"Valve\"\n    {\n      \"Steam\"\n      {\n        \"apps\"\n        {\n          \"311210\"\n          {\n            \"LaunchOptions\" \"\"\n          }\n        }\n      }\n    }\n  }\n}\n"
+          }
+        ]
+      }
+    ],
+    "filesystem": {
+      "directories": [
+        "data",
+        "game",
+        "game/players",
+        "game/video",
+        "not-a-game",
+        "resources",
+        "secondary-library",
+        "secondary-library/steamapps",
+        "secondary-library/steamapps/workshop",
+        "steam",
+        "steam/steamapps",
+        "steam/userdata",
+        "steam/userdata/76561198000000000",
+        "steam/userdata/76561198000000000/config"
+      ],
+      "files": [
+        {
+          "mode": 420,
+          "path": "data/electron-settings.json",
+          "sha256": "4c07124e4037a29057b1274d3d2dbe1df207b1350e19c28ec27bf8d4ae4338b2",
+          "size": 61,
+          "text": "{\n  \"release_channel\": \"stable\",\n  \"game_dir\": \"$ROOT/game\"\n}"
+        },
+        {
+          "mode": 420,
+          "path": "game/BlackOpsIII.exe",
+          "sha256": "0f96666e646d0a5ccbce7257d91593556a6747502ccab65a3991b7e097e9d5d2",
+          "size": 29,
+          "text": "PATCHOPS_FAKE_EXE:unverified\n"
+        },
+        {
+          "mode": 420,
+          "path": "game/d3dcompiler_46.dll",
+          "sha256": "0ae6e172362d4d6866dccf7d2de3b99d9964310054626fce519bde4e35295caa",
+          "size": 15,
+          "text": "legacy-compiler"
+        },
+        {
+          "mode": 420,
+          "path": "game/players/config.ini",
+          "sha256": "31e5090dff0b200154b4d7f79766d0101c796eddb073e0b3ae4a3fae3da234b4",
+          "size": 474,
+          "text": "// fixture configuration\nMaxFPS = \"165\" // original\nFOV = \"80\" // original\nFullScreenMode = \"1\" // original\nWindowSize = \"1920x1080\" // original\nRefreshRate = \"60\" // original\nResolutionPercent = \"100\" // original\nVsync = \"1\" // original\nDrawFPS = \"0\" // original\nSmoothFramerate = \"0\" // original\nRestrictGraphicsOptions = \"1\" // original\nSerializeRender = \"0\" // original\nMaxFrameLatency = \"1\" // original\nVideoMemory = \"1\" // original\nStreamMinResident = \"0\" // original\n"
+        },
+        {
+          "mode": 420,
+          "path": "game/t7patch.conf",
+          "sha256": "1d753acbca3ca8d7bef8cb73831810f54d6d48ed990fb7e6242eb74c230fde9a",
+          "size": 70,
+          "text": "playername=^1OldName\nnetworkpassword=old\nisfriendsonly=0\nunknown=keep\n"
+        },
+        {
+          "mode": 420,
+          "path": "game/t7patch.dll",
+          "sha256": "e41e48279440133a6f109cbd9b8486bd57b16b10c61a34bf7ed4547bc7f748a1",
+          "size": 10,
+          "text": "fixture-t7"
+        },
+        {
+          "mode": 420,
+          "path": "game/t7patchloader.dll",
+          "sha256": "fc61197d6de766eaddc97b118f5e7aed71805be61dcc7de5ec351bbd5b94caca",
+          "size": 14,
+          "text": "fixture-loader"
+        },
+        {
+          "mode": 420,
+          "path": "game/video/BO3_Global_Logo_LogoSequence.mkv",
+          "sha256": "06cd6175508d0d415bfd1944079df661fe73691ad4dd17ccc1688a298e6ed083",
+          "size": 9,
+          "text": "intro-one"
+        },
+        {
+          "mode": 420,
+          "path": "game/video/Frontend_Intro.mkv",
+          "sha256": "5d3568fc674ae38d3d215ec7e9e46e02fd1c31987199c7d0aab8b7a3a41f64a2",
+          "size": 9,
+          "text": "intro-two"
+        },
+        {
+          "mode": 420,
+          "path": "resources/presets.json",
+          "sha256": "e29c9752c43f216794bbe7c82739e5f6821f1debb71a734e152df2b9fb14d5f2",
+          "size": 5082,
+          "text": "{\n  \"Smooth Preset\": {\n    \"SmoothFramerate\": [\"1\", \"Enable smoothing at the cost of some performance\"],\n    \"CorpseCount\": [\"16\", \"Maximum number of corpses is 32, 16 is selected for a balanced approach\"],\n    \"MaxFrameLatency\": [\"4\", \"Driver can queue up to 4 frames\"],\n    \"SerializeRender\": [\"0\", \"0 is the default for the best performance, 1 and 2 improve latency but require a powerful CPU.\"],\n    \"VideoMemory\": [\"1\", \"Target all of the available VRAM to reduce stuttering\"],\n    \"RestrictGraphicsOptions\": [\"0\", \"Advanced graphics options unlocked\"],\n    \"Vsync\": [\"1\", \"Vertical sync enabled\"],\n    \"BackbufferCount\": [\"3\", \"Triple buffering enabled\"],\n    \"MeshQuality\": [\"0\", \"Highest quality meshes\"],\n    \"TextureFilter\": [\"2\", \"High anisotropic filtering\"],\n    \"TextureQuality\": [\"1\", \"High texture quality (balanced)\"],\n    \"TextureQualityFX\": [\"1\", \"Improved effect quality\"],\n    \"TextureQualityProbes\": [\"0\", \"Default reflection quality\"],\n    \"TextureQualityBakedSunShadows\": [\"1\", \"Slightly reduced baked sun shadow quality\"],\n    \"TextureLowDetailResident\": [\"0\", \"Lowest detail resident streaming disabled\"],\n    \"DisableDynamicLightShadows\": [\"1\", \"Dynamic light shadows disabled\"],\n    \"DisableDynamicSunShadows\": [\"1\", \"Dynamic sun shadows disabled\"],\n    \"SpotShadowTextureSize\": [\"1024\", \"Spot light shadow resolution set to 1024\"],\n    \"OmniShadowTextureSize\": [\"256\", \"Omni (point) light shadow resolution set to 256\"],\n    \"ShadowFiltering\": [\"1\", \"Multi-sampled soft shadows enabled\"],\n    \"ActorShadows\": [\"0\", \"Actor shadows disabled\"],\n    \"VolumetricLightingEnabled\": [\"0\", \"Volumetric lighting disabled\"],\n    \"VolumetricLightingMaxSunSamples\": [\"8\", \"Max sun samples for volumetric lighting\"],\n    \"VolumetricLightingMaxLightSamples\": [\"40\", \"Max light samples for volumetric lighting\"],\n    \"VolumetricLightingSkipSunSamples\": [\"1\", \"Skip alternate sun samples\"],\n    \"VolumetricLightingSkipLightSamples\": [\"1\", \"Skip alternate light samples\"],\n    \"OIT\": [\"1\", \"Order-independent transparency enabled\"],\n    \"OITLayers\": [\"8\", \"8 transparency layers set\"],\n    \"SSAOTechnique\": [\"GTAO Low Quality\", \"Ambient occlusion set to GTAO Low Quality\"],\n    \"AATechnique\": [\"FXAA\", \"Anti-aliasing set to FXAA\"],\n    \"MotionBlur\": [\"Off\", \"Motion blur disabled\"],\n    \"MotionBlurQuality\": [\"Medium\", \"Medium quality motion blur (if enabled)\"],\n    \"SubsurfaceScattering\": [\"0\", \"Subsurface scattering disabled\"],\n    \"StreamMinResident\": [\"0\", \"No reduction in minimum asset residency in VRAM\"]\n  },\n  \"Low-Latency Preset\": {\n    \"SmoothFramerate\": [\"0\", \"Disable smoothing to minimize frame delay\"],\n    \"CorpseCount\": [\"16\", \"Maximum number of corpses is 32, 16 is selected for a balanced approach\"],\n    \"MaxFrameLatency\": [\"1\", \"Driver can only queue up to 1 frame\"],\n    \"SerializeRender\": [\"2\", \"0 is the default for the best performance, 1 and 2 improve latency but require a powerful CPU.\"],\n    \"VideoMemory\": [\"0.75\", \"Target 75% the available VRAM to increase performance\"],\n    \"RestrictGraphicsOptions\": [\"0\", \"Advanced graphics options unlocked\"],\n    \"Vsync\": [\"0\", \"Vertical sync disabled for lower latency\"],\n    \"BackbufferCount\": [\"2\", \"Reset Vsync to double buffer\"],\n    \"MeshQuality\": [\"0\", \"Highest quality meshes\"],\n    \"TextureFilter\": [\"2\", \"High anisotropic filtering\"],\n    \"TextureQuality\": [\"1\", \"High texture quality (balanced)\"],\n    \"TextureQualityFX\": [\"1\", \"Improved effect quality\"],\n    \"TextureQualityProbes\": [\"0\", \"Default reflection quality\"],\n    \"TextureQualityBakedSunShadows\": [\"1\", \"Slightly reduced baked sun shadow quality\"],\n    \"TextureLowDetailResident\": [\"0\", \"Lowest detail resident streaming disabled\"],\n    \"DisableDynamicLightShadows\": [\"1\", \"Dynamic light shadows disabled\"],\n    \"DisableDynamicSunShadows\": [\"1\", \"Dynamic sun shadows disabled\"],\n    \"SpotShadowTextureSize\": [\"1024\", \"Spot light shadow resolution set to 1024\"],\n    \"OmniShadowTextureSize\": [\"256\", \"Omni (point) light shadow resolution set to 256\"],\n    \"ShadowFiltering\": [\"1\", \"Multi-sampled soft shadows enabled\"],\n    \"ActorShadows\": [\"0\", \"Actor shadows disabled\"],\n    \"VolumetricLightingEnabled\": [\"0\", \"Volumetric lighting disabled\"],\n    \"VolumetricLightingMaxSunSamples\": [\"8\", \"Max sun samples for volumetric lighting\"],\n    \"VolumetricLightingMaxLightSamples\": [\"40\", \"Max light samples for volumetric lighting\"],\n    \"VolumetricLightingSkipSunSamples\": [\"1\", \"Skip alternate sun samples\"],\n    \"VolumetricLightingSkipLightSamples\": [\"1\", \"Skip alternate light samples\"],\n    \"OIT\": [\"1\", \"Order-independent transparency enabled\"],\n    \"OITLayers\": [\"8\", \"8 transparency layers set\"],\n    \"SSAOTechnique\": [\"GTAO Low Quality\", \"Ambient occlusion set to GTAO Low Quality\"],\n    \"AATechnique\": [\"FXAA\", \"Anti-aliasing set to FXAA\"],\n    \"MotionBlur\": [\"Off\", \"Motion blur disabled\"],\n    \"MotionBlurQuality\": [\"Medium\", \"Medium quality motion blur (if enabled)\"],\n    \"SubsurfaceScattering\": [\"0\", \"Subsurface scattering disabled\"],\n    \"StreamMinResident\": [\"1\", \"Reduce the minimum asset residency in VRAM\"]\n  }\n}\n"
+        },
+        {
+          "mode": 420,
+          "path": "secondary-library/steamapps/workshop/appworkshop_311210.acf",
+          "sha256": "1e41744c2d76714baeae696764a96898a65315748ed695f05aa6890dd4f7a78a",
+          "size": 85,
+          "text": "\"AppWorkshop\"\n{\n  \"WorkshopItemsInstalled\"\n  {\n  }\n  \"WorkshopItemDetails\"\n  {\n  }\n}\n"
+        },
+        {
+          "mode": 420,
+          "path": "steam/steamapps/libraryfolders.vdf",
+          "sha256": "1225e4effb5115a68ff774612689de1eb40580299937a428b8aa5ff8d01a864d",
+          "size": 153,
+          "text": "\"libraryfolders\"\n{\n  \"0\"\n  {\n    \"path\" \"$ROOT/steam\"\n  }\n  \"1\"\n  {\n    \"path\" \"$ROOT/secondary-library\"\n    \"apps\"\n    {\n      \"311210\" \"1\"\n    }\n  }\n}\n"
+        },
+        {
+          "mode": 420,
+          "path": "steam/userdata/76561198000000000/config/localconfig.vdf",
+          "sha256": "6c7fefd9df196943bb300cec2b60d2fdd528efc08d9bad7fa4dfdc7b9b51a093",
+          "size": 211,
+          "text": "\"UserLocalConfigStore\"\n{\n  \"Software\"\n  {\n    \"Valve\"\n    {\n      \"Steam\"\n      {\n        \"apps\"\n        {\n          \"311210\"\n          {\n            \"LaunchOptions\" \"\"\n          }\n        }\n      }\n    }\n  }\n}\n"
+        }
+      ]
+    },
+    "responses": [
+      {
+        "error": "Gamertag cannot be empty.",
+        "ok": false
+      },
+      {
+        "error": "Gamertag cannot exceed 20 characters.",
+        "ok": false
+      }
+    ]
+  },
+  "fixture": {
+    "directories": [
+      "data",
+      "game",
+      "game/players",
+      "game/video",
+      "not-a-game",
+      "resources",
+      "secondary-library",
+      "secondary-library/steamapps",
+      "secondary-library/steamapps/workshop",
+      "steam",
+      "steam/steamapps",
+      "steam/userdata",
+      "steam/userdata/76561198000000000",
+      "steam/userdata/76561198000000000/config"
+    ],
+    "files": [
+      {
+        "mode": 420,
+        "path": "data/electron-settings.json",
+        "sha256": "4c07124e4037a29057b1274d3d2dbe1df207b1350e19c28ec27bf8d4ae4338b2",
+        "size": 61,
+        "text": "{\n  \"release_channel\": \"stable\",\n  \"game_dir\": \"$ROOT/game\"\n}"
+      },
+      {
+        "mode": 420,
+        "path": "game/BlackOpsIII.exe",
+        "sha256": "0f96666e646d0a5ccbce7257d91593556a6747502ccab65a3991b7e097e9d5d2",
+        "size": 29,
+        "text": "PATCHOPS_FAKE_EXE:unverified\n"
+      },
+      {
+        "mode": 420,
+        "path": "game/d3dcompiler_46.dll",
+        "sha256": "0ae6e172362d4d6866dccf7d2de3b99d9964310054626fce519bde4e35295caa",
+        "size": 15,
+        "text": "legacy-compiler"
+      },
+      {
+        "mode": 420,
+        "path": "game/players/config.ini",
+        "sha256": "31e5090dff0b200154b4d7f79766d0101c796eddb073e0b3ae4a3fae3da234b4",
+        "size": 474,
+        "text": "// fixture configuration\nMaxFPS = \"165\" // original\nFOV = \"80\" // original\nFullScreenMode = \"1\" // original\nWindowSize = \"1920x1080\" // original\nRefreshRate = \"60\" // original\nResolutionPercent = \"100\" // original\nVsync = \"1\" // original\nDrawFPS = \"0\" // original\nSmoothFramerate = \"0\" // original\nRestrictGraphicsOptions = \"1\" // original\nSerializeRender = \"0\" // original\nMaxFrameLatency = \"1\" // original\nVideoMemory = \"1\" // original\nStreamMinResident = \"0\" // original\n"
+      },
+      {
+        "mode": 420,
+        "path": "game/t7patch.conf",
+        "sha256": "1d753acbca3ca8d7bef8cb73831810f54d6d48ed990fb7e6242eb74c230fde9a",
+        "size": 70,
+        "text": "playername=^1OldName\nnetworkpassword=old\nisfriendsonly=0\nunknown=keep\n"
+      },
+      {
+        "mode": 420,
+        "path": "game/t7patch.dll",
+        "sha256": "e41e48279440133a6f109cbd9b8486bd57b16b10c61a34bf7ed4547bc7f748a1",
+        "size": 10,
+        "text": "fixture-t7"
+      },
+      {
+        "mode": 420,
+        "path": "game/t7patchloader.dll",
+        "sha256": "fc61197d6de766eaddc97b118f5e7aed71805be61dcc7de5ec351bbd5b94caca",
+        "size": 14,
+        "text": "fixture-loader"
+      },
+      {
+        "mode": 420,
+        "path": "game/video/BO3_Global_Logo_LogoSequence.mkv",
+        "sha256": "06cd6175508d0d415bfd1944079df661fe73691ad4dd17ccc1688a298e6ed083",
+        "size": 9,
+        "text": "intro-one"
+      },
+      {
+        "mode": 420,
+        "path": "game/video/Frontend_Intro.mkv",
+        "sha256": "5d3568fc674ae38d3d215ec7e9e46e02fd1c31987199c7d0aab8b7a3a41f64a2",
+        "size": 9,
+        "text": "intro-two"
+      },
+      {
+        "mode": 420,
+        "path": "resources/presets.json",
+        "sha256": "e29c9752c43f216794bbe7c82739e5f6821f1debb71a734e152df2b9fb14d5f2",
+        "size": 5082,
+        "text": "{\n  \"Smooth Preset\": {\n    \"SmoothFramerate\": [\"1\", \"Enable smoothing at the cost of some performance\"],\n    \"CorpseCount\": [\"16\", \"Maximum number of corpses is 32, 16 is selected for a balanced approach\"],\n    \"MaxFrameLatency\": [\"4\", \"Driver can queue up to 4 frames\"],\n    \"SerializeRender\": [\"0\", \"0 is the default for the best performance, 1 and 2 improve latency but require a powerful CPU.\"],\n    \"VideoMemory\": [\"1\", \"Target all of the available VRAM to reduce stuttering\"],\n    \"RestrictGraphicsOptions\": [\"0\", \"Advanced graphics options unlocked\"],\n    \"Vsync\": [\"1\", \"Vertical sync enabled\"],\n    \"BackbufferCount\": [\"3\", \"Triple buffering enabled\"],\n    \"MeshQuality\": [\"0\", \"Highest quality meshes\"],\n    \"TextureFilter\": [\"2\", \"High anisotropic filtering\"],\n    \"TextureQuality\": [\"1\", \"High texture quality (balanced)\"],\n    \"TextureQualityFX\": [\"1\", \"Improved effect quality\"],\n    \"TextureQualityProbes\": [\"0\", \"Default reflection quality\"],\n    \"TextureQualityBakedSunShadows\": [\"1\", \"Slightly reduced baked sun shadow quality\"],\n    \"TextureLowDetailResident\": [\"0\", \"Lowest detail resident streaming disabled\"],\n    \"DisableDynamicLightShadows\": [\"1\", \"Dynamic light shadows disabled\"],\n    \"DisableDynamicSunShadows\": [\"1\", \"Dynamic sun shadows disabled\"],\n    \"SpotShadowTextureSize\": [\"1024\", \"Spot light shadow resolution set to 1024\"],\n    \"OmniShadowTextureSize\": [\"256\", \"Omni (point) light shadow resolution set to 256\"],\n    \"ShadowFiltering\": [\"1\", \"Multi-sampled soft shadows enabled\"],\n    \"ActorShadows\": [\"0\", \"Actor shadows disabled\"],\n    \"VolumetricLightingEnabled\": [\"0\", \"Volumetric lighting disabled\"],\n    \"VolumetricLightingMaxSunSamples\": [\"8\", \"Max sun samples for volumetric lighting\"],\n    \"VolumetricLightingMaxLightSamples\": [\"40\", \"Max light samples for volumetric lighting\"],\n    \"VolumetricLightingSkipSunSamples\": [\"1\", \"Skip alternate sun samples\"],\n    \"VolumetricLightingSkipLightSamples\": [\"1\", \"Skip alternate light samples\"],\n    \"OIT\": [\"1\", \"Order-independent transparency enabled\"],\n    \"OITLayers\": [\"8\", \"8 transparency layers set\"],\n    \"SSAOTechnique\": [\"GTAO Low Quality\", \"Ambient occlusion set to GTAO Low Quality\"],\n    \"AATechnique\": [\"FXAA\", \"Anti-aliasing set to FXAA\"],\n    \"MotionBlur\": [\"Off\", \"Motion blur disabled\"],\n    \"MotionBlurQuality\": [\"Medium\", \"Medium quality motion blur (if enabled)\"],\n    \"SubsurfaceScattering\": [\"0\", \"Subsurface scattering disabled\"],\n    \"StreamMinResident\": [\"0\", \"No reduction in minimum asset residency in VRAM\"]\n  },\n  \"Low-Latency Preset\": {\n    \"SmoothFramerate\": [\"0\", \"Disable smoothing to minimize frame delay\"],\n    \"CorpseCount\": [\"16\", \"Maximum number of corpses is 32, 16 is selected for a balanced approach\"],\n    \"MaxFrameLatency\": [\"1\", \"Driver can only queue up to 1 frame\"],\n    \"SerializeRender\": [\"2\", \"0 is the default for the best performance, 1 and 2 improve latency but require a powerful CPU.\"],\n    \"VideoMemory\": [\"0.75\", \"Target 75% the available VRAM to increase performance\"],\n    \"RestrictGraphicsOptions\": [\"0\", \"Advanced graphics options unlocked\"],\n    \"Vsync\": [\"0\", \"Vertical sync disabled for lower latency\"],\n    \"BackbufferCount\": [\"2\", \"Reset Vsync to double buffer\"],\n    \"MeshQuality\": [\"0\", \"Highest quality meshes\"],\n    \"TextureFilter\": [\"2\", \"High anisotropic filtering\"],\n    \"TextureQuality\": [\"1\", \"High texture quality (balanced)\"],\n    \"TextureQualityFX\": [\"1\", \"Improved effect quality\"],\n    \"TextureQualityProbes\": [\"0\", \"Default reflection quality\"],\n    \"TextureQualityBakedSunShadows\": [\"1\", \"Slightly reduced baked sun shadow quality\"],\n    \"TextureLowDetailResident\": [\"0\", \"Lowest detail resident streaming disabled\"],\n    \"DisableDynamicLightShadows\": [\"1\", \"Dynamic light shadows disabled\"],\n    \"DisableDynamicSunShadows\": [\"1\", \"Dynamic sun shadows disabled\"],\n    \"SpotShadowTextureSize\": [\"1024\", \"Spot light shadow resolution set to 1024\"],\n    \"OmniShadowTextureSize\": [\"256\", \"Omni (point) light shadow resolution set to 256\"],\n    \"ShadowFiltering\": [\"1\", \"Multi-sampled soft shadows enabled\"],\n    \"ActorShadows\": [\"0\", \"Actor shadows disabled\"],\n    \"VolumetricLightingEnabled\": [\"0\", \"Volumetric lighting disabled\"],\n    \"VolumetricLightingMaxSunSamples\": [\"8\", \"Max sun samples for volumetric lighting\"],\n    \"VolumetricLightingMaxLightSamples\": [\"40\", \"Max light samples for volumetric lighting\"],\n    \"VolumetricLightingSkipSunSamples\": [\"1\", \"Skip alternate sun samples\"],\n    \"VolumetricLightingSkipLightSamples\": [\"1\", \"Skip alternate light samples\"],\n    \"OIT\": [\"1\", \"Order-independent transparency enabled\"],\n    \"OITLayers\": [\"8\", \"8 transparency layers set\"],\n    \"SSAOTechnique\": [\"GTAO Low Quality\", \"Ambient occlusion set to GTAO Low Quality\"],\n    \"AATechnique\": [\"FXAA\", \"Anti-aliasing set to FXAA\"],\n    \"MotionBlur\": [\"Off\", \"Motion blur disabled\"],\n    \"MotionBlurQuality\": [\"Medium\", \"Medium quality motion blur (if enabled)\"],\n    \"SubsurfaceScattering\": [\"0\", \"Subsurface scattering disabled\"],\n    \"StreamMinResident\": [\"1\", \"Reduce the minimum asset residency in VRAM\"]\n  }\n}\n"
+      },
+      {
+        "mode": 420,
+        "path": "secondary-library/steamapps/workshop/appworkshop_311210.acf",
+        "sha256": "1e41744c2d76714baeae696764a96898a65315748ed695f05aa6890dd4f7a78a",
+        "size": 85,
+        "text": "\"AppWorkshop\"\n{\n  \"WorkshopItemsInstalled\"\n  {\n  }\n  \"WorkshopItemDetails\"\n  {\n  }\n}\n"
+      },
+      {
+        "mode": 420,
+        "path": "steam/steamapps/libraryfolders.vdf",
+        "sha256": "1225e4effb5115a68ff774612689de1eb40580299937a428b8aa5ff8d01a864d",
+        "size": 153,
+        "text": "\"libraryfolders\"\n{\n  \"0\"\n  {\n    \"path\" \"$ROOT/steam\"\n  }\n  \"1\"\n  {\n    \"path\" \"$ROOT/secondary-library\"\n    \"apps\"\n    {\n      \"311210\" \"1\"\n    }\n  }\n}\n"
+      },
+      {
+        "mode": 420,
+        "path": "steam/userdata/76561198000000000/config/localconfig.vdf",
+        "sha256": "6c7fefd9df196943bb300cec2b60d2fdd528efc08d9bad7fa4dfdc7b9b51a093",
+        "size": 211,
+        "text": "\"UserLocalConfigStore\"\n{\n  \"Software\"\n  {\n    \"Valve\"\n    {\n      \"Steam\"\n      {\n        \"apps\"\n        {\n          \"311210\"\n          {\n            \"LaunchOptions\" \"\"\n          }\n        }\n      }\n    }\n  }\n}\n"
+      }
+    ]
+  },
+  "name": "t7_config_invalid_name",
+  "operations": [
+    {
+      "body": {
+        "gamertag": "  "
+      },
+      "method": "POST",
+      "path": "/api/t7-config"
+    },
+    {
+      "body": {
+        "gamertag": "aaaaaaaaaaaaaaaaaaaaa"
+      },
+      "method": "POST",
+      "path": "/api/t7-config"
+    }
+  ],
+  "runner": "direct endpoint functions",
+  "schemaVersion": 1,
+  "sourceHashes": {
+    "backend/api.py": "080be5c4a3b929134298179cd3f4d1558c288a50dcdb38978ada831925a57a46",
+    "bo3_enhanced.py": "32a670c8a63a64216ee5c46aa000d2e3840ca348ca0fd5031c81699252cf57b8",
+    "dxvk_manager.py": "8e150458bc7480ac89cd9e64c558ba438f61a09611bbf24b962cba02d7e4a5e5",
+    "t7_patch.py": "73e66fadd1c0775742b7bb6d9c6c73a3c9df8304d3117abd8ac768dfc68cc3ea",
+    "utils.py": "313069c3f70b92888239c9ef15ce2379713b029e019426e76b386f088b556564"
+  },
+  "sourceOfTruth": "Python backend on main"
+}

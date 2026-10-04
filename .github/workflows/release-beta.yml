@@ -309,6 +309,14 @@ jobs:
       ref: ${{ needs.prepare.outputs.tag }}
     secrets: inherit
 
+  build-native:
+    # GPUI + patchops-core archives; no Python backend bundle in native assets.
+    needs:
+      - prepare
+    uses: ./.github/workflows/gpui-build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.tag }}
+
   release:
     name: Publish beta release
     runs-on: ubuntu-latest
@@ -318,6 +326,7 @@ jobs:
       - prepare
       - build-windows
       - build-linux
+      - build-native
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -334,6 +343,16 @@ jobs:
         with:
           name: ${{ needs.build-linux.outputs.artifact_name }}
           path: artifacts/linux
+      - name: Download native Linux archive
+        uses: actions/download-artifact@v4
+        with:
+          name: PatchOpsIII-native-Linux
+          path: artifacts/native-linux
+      - name: Download native Windows archive
+        uses: actions/download-artifact@v4
+        with:
+          name: PatchOpsIII-native-Windows
+          path: artifacts/native-windows
       - name: Inspect downloaded artifacts
         run: |
           set -euo pipefail
@@ -468,6 +487,15 @@ jobs:
           if [ -f "$(dirname "$linux_exec")/PatchOpsIII.AppImage.sig" ]; then
             cp "$(dirname "$linux_exec")/PatchOpsIII.AppImage.sig" "release/PatchOpsIII-Beta.AppImage.sig"
           fi
+          native_linux=$(find artifacts/native-linux -type f -name 'PatchOpsIII-native-linux-x64.zip' -print -quit)
+          native_windows=$(find artifacts/native-windows -type f -name 'PatchOpsIII-native-windows-x64.zip' -print -quit)
+          if [ -z "$native_linux" ] || [ -z "$native_windows" ]; then
+            echo "Native desktop archives were not produced" >&2
+            find artifacts/native-linux artifacts/native-windows -type f -print >&2
+            exit 1
+          fi
+          cp "$native_linux" "release/PatchOpsIII-native-linux-x64.zip"
+          cp "$native_windows" "release/PatchOpsIII-native-windows-x64.zip"
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:

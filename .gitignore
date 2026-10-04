@@ -23,9 +23,14 @@ node_modules/
 # text files:
 *.txt
 !requirements.txt
+!native/gpui/assets/icons/LICENSE-lucide.txt
 
 # vdf files:
 *.vdf
 
 # codex:
 .codex/
+
+# Rust native workspace build output (Cargo.lock is committed)
+native/target/
+native/gpui/target/

@@ -1,0 +1,43 @@
+{
+  "enhancedLegacyStatusBinding": "in memory per AppState; no filesystem difference",
+  "expectedDiffAllowlist": {
+    "dxvk_config_write": [
+      "data/DXVK Managed",
+      "data/DXVK Managed/originals",
+      "data/DXVK Managed/manifest.json",
+      "data/DXVK Managed/originals/dxvk.conf"
+    ]
+  },
+  "goldensModified": false,
+  "mismatchCount": 0,
+  "rustSourcesAtReport": {
+    "native/core/src/app.rs": "d23b3dfd767e639473e0be4b7d2a0a2d3e7065aeb0cc88e7e34c3553d4e8e089",
+    "native/core/src/dxvk.rs": "2f738ea6f0f02a3c5e49ae2bc4e3b77d56d8504b1c9d23a1d10ac24ebceae36b",
+    "native/core/src/engine.rs": "6b7d5acc1d2fab3a49a1dc3e8dce932b088d3ab2bc1e4e978e54b3051f2332a1",
+    "native/core/src/enhanced.rs": "4bece67520e09fd967c9599c3acdbda4a578579b698923277d5997ea5732a3ee",
+    "native/core/src/exe.rs": "0237b2f2bae032806e100bf2d664a409182088a8dcb61dddb76f73b5321ae05c",
+    "native/core/src/fs_ops.rs": "5d588d9fa973ce64291f7ceb7b3b6295510876bf32acb58678fc4cb1d170a4e5",
+    "native/core/src/lib.rs": "973f5f9d453388c5d47debc895fa07eccda13baa76f6f29c17baeb34c45298e7",
+    "native/core/src/models.rs": "4cb649a262fd8d7f59d6c35b3c8ed1b206f37691310a785c594163a543665121",
+    "native/core/src/steam.rs": "b047db4b08f4bc985e8b28e1a5bc65363a858f0972d4a3834f01cf6716de9617",
+    "native/core/src/t7.rs": "b0174695aa50953896927fa12c94148991321cfd0a853e3009b7c41b67e97412",
+    "native/core/tests/parity.rs": "8e38487c85b843812a73e0b4207e2db851d966b0de49cc8b85d08d0a608cf495"
+  },
+  "rustSourcesBeforeLaunch": {
+    "native/core/src/app.rs": "d23b3dfd767e639473e0be4b7d2a0a2d3e7065aeb0cc88e7e34c3553d4e8e089",
+    "native/core/src/dxvk.rs": "2f738ea6f0f02a3c5e49ae2bc4e3b77d56d8504b1c9d23a1d10ac24ebceae36b",
+    "native/core/src/engine.rs": "6b7d5acc1d2fab3a49a1dc3e8dce932b088d3ab2bc1e4e978e54b3051f2332a1",
+    "native/core/src/enhanced.rs": "4bece67520e09fd967c9599c3acdbda4a578579b698923277d5997ea5732a3ee",
+    "native/core/src/exe.rs": "0237b2f2bae032806e100bf2d664a409182088a8dcb61dddb76f73b5321ae05c",
+    "native/core/src/fs_ops.rs": "5d588d9fa973ce64291f7ceb7b3b6295510876bf32acb58678fc4cb1d170a4e5",
+    "native/core/src/lib.rs": "973f5f9d453388c5d47debc895fa07eccda13baa76f6f29c17baeb34c45298e7",
+    "native/core/src/models.rs": "4cb649a262fd8d7f59d6c35b3c8ed1b206f37691310a785c594163a543665121",
+    "native/core/src/steam.rs": "b047db4b08f4bc985e8b28e1a5bc65363a858f0972d4a3834f01cf6716de9617",
+    "native/core/src/t7.rs": "b0174695aa50953896927fa12c94148991321cfd0a853e3009b7c41b67e97412",
+    "native/core/tests/parity.rs": "8e38487c85b843812a73e0b4207e2db851d966b0de49cc8b85d08d0a608cf495"
+  },
+  "rustSourcesChangedBetweenLaunchAndReport": [],
+  "summary": "test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.13s",
+  "testBinary": "native/target/debug/deps/parity-4cab83e5679c2c93",
+  "testBinarySha256": "0ff78ffa4cfd7c0312abe1b1b4facc7ed6b6586370af3109402c11a3984b6e93"
+}

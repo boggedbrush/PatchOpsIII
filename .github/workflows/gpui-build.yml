@@ -1,0 +1,110 @@
+name: PatchOpsIII Native Build
+
+on:
+  pull_request:
+    paths:
+      - 'native/**'
+      - 'scripts/*gpui*.py'
+      - 'scripts/measure_desktop.py'
+      - 'presets.json'
+      - 'package.json'
+      - 'docs/gpui-architecture.md'
+      - '.github/workflows/gpui-build.yml'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to build
+        required: false
+        type: string
+        default: ''
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to build
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: Native ${{ matrix.os }} archive
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            executable: native/target/release/patchopsiii-gpui
+            archive: dist/native/PatchOpsIII-native-linux-x64.zip
+            artifact: PatchOpsIII-native-Linux
+          - os: windows-2022
+            executable: native/target/release/patchopsiii-gpui.exe
+            archive: dist/native/PatchOpsIII-native-windows-x64.zip
+            artifact: PatchOpsIII-native-Windows
+    runs-on: ${{ matrix.os }}
+    env:
+      PYTHON_VERSION: '3.12'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.99.0'
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - name: Linux native and packaging dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y binutils libfontconfig1-dev libfreetype6-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libx11-xcb-dev libxcb1-dev libasound2-dev libclang-dev mesa-vulkan-drivers xvfb xauth openbox xcompmgr xdotool bubblewrap sway
+      - name: Python lifecycle and packaging tests
+        run: python -m unittest scripts/test_gpui.py
+      - name: Format
+        run: cargo fmt --manifest-path native/Cargo.toml --all --check
+      - name: Lint
+        run: cargo clippy --locked --manifest-path native/Cargo.toml --workspace --all-targets -- -D warnings
+      - name: Core unit tests
+        run: cargo test --locked --manifest-path native/Cargo.toml -p patchops-core --lib
+      - name: Python-oracle parity tests (Linux isolation harness)
+        if: runner.os == 'Linux'
+        run: |
+          # Ubuntu 24.04 blocks unprivileged user namespaces via AppArmor;
+          # the bubblewrap sandbox needs them on this ephemeral runner.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          cargo test --locked --manifest-path native/Cargo.toml -p patchops-core --test parity
+      - name: GPUI tests
+        run: cargo test --locked --manifest-path native/Cargo.toml -p patchopsiii-gpui
+      - name: Build native release
+        run: python scripts/gpui.py build --release
+      - name: Create self-contained native archive
+        run: python scripts/package_gpui.py --executable ${{ matrix.executable }} --output ${{ matrix.archive }}
+      - name: Verify in-process status (Windows)
+        if: runner.os == 'Windows'
+        run: python scripts/smoke_gpui_linux.py --status-only --executable ${{ matrix.executable }}
+      - name: Smoke test the self-contained Linux archive
+        if: runner.os == 'Linux'
+        run: |
+          python -m zipfile -e ${{ matrix.archive }} "${RUNNER_TEMP}/patchops-native"
+          chmod +x "${RUNNER_TEMP}/patchops-native/PatchOpsIII/patchopsiii-gpui"
+          xvfb-run -a python scripts/smoke_gpui_linux.py --start-session --executable "${RUNNER_TEMP}/patchops-native/PatchOpsIII/patchopsiii-gpui"
+      - name: Smoke test the native Wayland window (headless sway)
+        if: runner.os == 'Linux'
+        run: python scripts/smoke_gpui_wayland.py --executable "${RUNNER_TEMP}/patchops-native/PatchOpsIII/patchopsiii-gpui" --compositor sway --keep-log "${RUNNER_TEMP}/wayland-smoke.log"
+      - name: Upload Wayland smoke log
+        if: failure() && runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: wayland-smoke-log
+          path: ${{ runner.temp }}/wayland-smoke.log
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.archive }}
+          if-no-files-found: error

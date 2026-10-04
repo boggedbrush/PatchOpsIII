@@ -22,6 +22,8 @@
   - [Advanced Tab](#advanced-tab)
   - [Terminal & Logging](#terminal--logging)
 - [Installation](#installation)
+- [Native desktop architecture](#native-desktop-architecture)
+- [Legacy Electron app](#legacy-electron-app)
 - [Forked Components](#forked-components)
 - [Quick Start](#quick-start)
 - [Screenshots](#screenshots)
@@ -32,7 +34,7 @@
 - [Star History](#star-history)
 
 ## Overview
-PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popular community tools and quality-of-life tweaks in a single polished Electron interface backed by a local Python API. Whether you are securing your game with T7 Patch, smoothing shader compilation stutter with DXVK, or fine-tuning launch options, PatchOpsIII consolidates every workflow into one cohesive experience.
+PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popular community tools and quality-of-life tweaks in a native Rust/GPUI desktop interface with in-process Rust operations. Whether you are securing your game with T7 Patch, smoothing shader compilation stutter with DXVK, or fine-tuning launch options, PatchOpsIII consolidates every workflow into one cohesive experience. The previous Electron/React client remains available in this repository as a legacy fallback.
 
 ## Key Features
 
@@ -59,32 +61,46 @@ PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popul
 
 ## Installation
 1. **Download:** Grab the latest release from the [Releases page](https://github.com/boggedbrush/PatchOpsIII/releases).
-2. **Windows:** Run `PatchOpsIII.msi`, follow the installer, then launch PatchOpsIII. The `PatchOpsIII.exe` installer remains available for compatibility with older updaters.
-3. **Linux & Steam Deck:** Download `PatchOpsIII.AppImage`, make it executable, then run it.
-4. **Dependencies:** The packaged build bundles all required Python dependencies; no additional setup is needed.
+2. **Windows:** Download `PatchOpsIII-native-windows-x64.zip`, extract the entire `PatchOpsIII` folder, and run `patchopsiii-gpui.exe` from that folder.
+3. **Linux & Steam Deck:** Download `PatchOpsIII-native-linux-x64.zip`, extract it, run `chmod +x PatchOpsIII/patchopsiii-gpui`, then launch that executable from a desktop session.
+4. **Dependencies:** Keep the executable and its `resources` directory together. The archive bundles one Rust executable, presets, metadata, and icons; Python is not required on the destination system. Linux still requires a supported X11/Wayland session, system fonts, and working graphics drivers.
+
+The existing `PatchOpsIII.msi`, `PatchOpsIII.exe`, and `PatchOpsIII.AppImage` release assets are the legacy Electron fallback while native installer/updater work remains open.
 
 ### Developer Setup
-PatchOpsIII uses a React + TypeScript renderer wrapped by Electron. Bun is the JavaScript runtime/package manager, while Python runs the local backend API.
+
+The primary desktop app uses Rust 1.99.0, GPUI 0.2.2, GPUI Component 0.5.0,
+and the `patchops-core` library in the `native/` Cargo workspace. Install Rust
+through rustup and the platform build packages listed in the native README.
 
 ```bash
-# install Python service dependencies
-python -m venv .venv
-source .venv/bin/activate  # On Windows use: .venv\Scripts\activate
-pip install -r requirements.txt
-
-# install desktop frontend dependencies
-bun install
-
-# run Vite and the Python local API
-bun run dev
-
-# run the Electron desktop app
-bun run dev:desktop
+cargo +1.99.0 build --locked --manifest-path native/Cargo.toml -p patchopsiii-gpui
+./native/target/debug/patchopsiii-gpui
+# Optional Python standard-library launchers (no backend dependencies):
+python scripts/gpui.py build
+python scripts/gpui.py run
+# Equivalent package scripts: bun run gpui:build / bun run gpui:run
 ```
 
-The browser development server uses Vite on `127.0.0.1:5173` and the Python API on `127.0.0.1:8765`. The Electron desktop command uses Vite on `127.0.0.1:5174` and its Python API on `127.0.0.1:8766`, so both commands can run at the same time. The renderer communicates with Python through HTTP APIs and `/ws` WebSockets; Electron IPC is reserved for desktop-specific bridge actions such as selecting a local game directory.
+See [native/gpui/README.md](native/gpui/README.md) for release packaging,
+validation commands, and remaining hardware checks. Rust operations run on a
+worker thread within the native app; no Python service or HTTP listener starts.
+
+## Native desktop architecture
+
+The primary Rust/GPUI client lives in [native/gpui](native/gpui/README.md) and
+shares toolkit-independent operations from [native/core](native/core).
+The worker dispatches existing `/api/...` action identifiers directly to Rust,
+preserving the JSON shapes consumed by the UI. Downloads use outbound HTTPS.
+See [the architecture and migration record](docs/gpui-architecture.md) for the
+progress callback contract, migration details, and remaining validation work.
+
+## Legacy Electron app
+
+The Electron/React application in `src/` remains buildable as a fallback. To work on it, install Python 3.12 dependencies with `python -m pip install -r requirements.txt` and Bun dependencies with `bun install`, then use `bun run dev:desktop`; `bun run dist:linux` and `bun run dist:win` retain the established AppImage/MSI/NSIS builds. The browser development server remains available through `bun run dev`. Electron and GPUI share backend settings, logs, caches, and game files, so do not perform overlapping game mutations in both clients.
 
 ## Forked Components
+
 - **BO3 Enhanced Proton fork metadata:** [bo3-enhanced-proton/README.md](bo3-enhanced-proton/README.md)
   - Upstream source: https://github.com/Weather-OS/GDK-Proton
   - Current base release: `release10-32`
@@ -99,6 +115,8 @@ The browser development server uses Vite on `127.0.0.1:5173` and the Python API 
 5. Visit the **Advanced** tab to unlock VRAM, tweak frame latency, and set your config to read-only once satisfied.
 
 ## Screenshots
+
+These screenshots show the legacy Electron client; updated native screenshots are tracked with the native UI work.
 <table>
   <tr>
     <td align="center"><img src="https://raw.githubusercontent.com/boggedbrush/PatchOpsIII/main/website/assets/img/screenshots/dashboard.png" alt="Dashboard" /><br/><sub>Dashboard</sub></td>
