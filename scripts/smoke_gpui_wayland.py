@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Check that the native GPUI app maps a window on a Wayland compositor and exits cleanly.
 
-By default a private headless compositor is started (weston --backend=headless,
-or kwin_wayland --virtual) on its own socket, so no desktop session is needed:
+By default a private headless compositor is started (sway with the wlroots
+headless backend, kwin_wayland --virtual, or weston --backend=headless) on its
+own socket, so no desktop session is needed. GPUI 0.2.2 requires a wl_seat,
+which weston's headless backend does not advertise; sway always creates one:
 
     python scripts/smoke_gpui_wayland.py --executable path/to/patchopsiii-gpui
 
@@ -46,8 +48,10 @@ def stop(process):
             process.wait()
 
 
-def compositor_command(kind):
-    """Command line for a headless compositor listening on SOCKET."""
+def compositor_command(kind, config):
+    """Command line for a headless compositor. Sway names its own socket."""
+    if kind == "sway":
+        return ["sway", "--config", str(config)]
     if kind == "weston":
         return ["weston", "--backend=headless", f"--socket={SOCKET}", "--idle-time=0", "--width=1280", "--height=900"]
     if kind == "kwin":
@@ -58,29 +62,32 @@ def compositor_command(kind):
 def pick_compositor(requested):
     if requested != "auto":
         return requested
-    for kind, binary in (("weston", "weston"), ("kwin", "kwin_wayland")):
+    for kind, binary in (("sway", "sway"), ("kwin", "kwin_wayland"), ("weston", "weston")):
         if shutil.which(binary):
             return kind
-    raise RuntimeError("No headless Wayland compositor found: install weston (or pass --compositor existing)")
+    raise RuntimeError("No headless Wayland compositor found: install sway (or pass --compositor existing)")
 
 
 def wait_for_socket(runtime, compositor, timeout=20):
-    path = runtime / SOCKET
+    """Wait for the compositor's socket in the private runtime dir; return its name."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if compositor.poll() is not None:
             raise RuntimeError(f"Wayland compositor exited early with {compositor.returncode}")
-        if path.exists():
+        sockets = sorted(path.name for path in runtime.glob("wayland-*") if not path.name.endswith(".lock"))
+        if (runtime / SOCKET).exists():
+            sockets = [SOCKET]
+        if sockets:
             time.sleep(0.5)
-            return
+            return sockets[0]
         time.sleep(0.1)
-    raise RuntimeError(f"Wayland socket {path} did not appear")
+    raise RuntimeError(f"No Wayland socket appeared in {runtime}")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--executable", type=Path, required=True)
-    parser.add_argument("--compositor", choices=["auto", "weston", "kwin", "existing"], default="auto")
+    parser.add_argument("--compositor", choices=["auto", "sway", "weston", "kwin", "existing"], default="auto")
     parser.add_argument("--timeout", type=int, default=APP_TIMEOUT)
     parser.add_argument("--keep-log", type=Path, help="Write the app's stderr (incl. the Wayland protocol trace) here")
     args = parser.parse_args()
@@ -109,18 +116,27 @@ def main():
                 runtime = temporary / "run"
                 runtime.mkdir(mode=0o700)
                 env["XDG_RUNTIME_DIR"] = str(runtime)
-                env["WAYLAND_DISPLAY"] = SOCKET
                 compositor_env = {key: value for key, value in env.items() if key != "WAYLAND_DEBUG"}
-                compositor_env.update({"WLR_BACKENDS": "headless", "QT_QPA_PLATFORM": "offscreen"})
+                compositor_env.update(
+                    {
+                        "WLR_BACKENDS": "headless",
+                        "WLR_LIBINPUT_NO_DEVICES": "1",
+                        "WLR_RENDERER": "pixman",
+                        "QT_QPA_PLATFORM": "offscreen",
+                    }
+                )
+                config = temporary / "sway.conf"
+                config.write_text("output HEADLESS-1 resolution 1280x900\n")
                 log = (temporary / "compositor.log").open("w")
-                compositor = subprocess.Popen(compositor_command(kind), env=compositor_env, stdout=log, stderr=subprocess.STDOUT)
+                compositor = subprocess.Popen(compositor_command(kind, config), env=compositor_env, stdout=log, stderr=subprocess.STDOUT)
                 owned.append(compositor)
                 try:
-                    wait_for_socket(runtime, compositor)
+                    socket = wait_for_socket(runtime, compositor)
                 except RuntimeError:
                     print((temporary / "compositor.log").read_text(errors="replace"))
                     raise
-                print(f"Started headless {kind} on {SOCKET}")
+                env["WAYLAND_DISPLAY"] = socket
+                print(f"Started headless {kind} on {socket}")
             app = subprocess.run(
                 [str(args.executable.resolve())],
                 env=env,

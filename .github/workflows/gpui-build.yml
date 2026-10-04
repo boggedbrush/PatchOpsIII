@@ -62,7 +62,7 @@ jobs:
           workspaces: native
       - name: Linux native and packaging dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y binutils libfontconfig1-dev libfreetype6-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libx11-xcb-dev libxcb1-dev libasound2-dev libclang-dev mesa-vulkan-drivers xvfb xauth openbox xcompmgr xdotool bubblewrap weston
+        run: sudo apt-get update && sudo apt-get install -y binutils libfontconfig1-dev libfreetype6-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libx11-xcb-dev libxcb1-dev libasound2-dev libclang-dev mesa-vulkan-drivers xvfb xauth openbox xcompmgr xdotool bubblewrap sway
       - name: Python lifecycle and packaging tests
         run: python -m unittest scripts/test_gpui.py
       - name: Format
@@ -93,9 +93,9 @@ jobs:
           python -m zipfile -e ${{ matrix.archive }} "${RUNNER_TEMP}/patchops-native"
           chmod +x "${RUNNER_TEMP}/patchops-native/PatchOpsIII/patchopsiii-gpui"
           xvfb-run -a python scripts/smoke_gpui_linux.py --start-session --executable "${RUNNER_TEMP}/patchops-native/PatchOpsIII/patchopsiii-gpui"
-      - name: Smoke test the native Wayland window
+      - name: Smoke test the native Wayland window (headless sway)
         if: runner.os == 'Linux'
-        run: python scripts/smoke_gpui_wayland.py --executable "${RUNNER_TEMP}/patchops-native/PatchOpsIII/patchopsiii-gpui" --compositor weston --keep-log "${RUNNER_TEMP}/wayland-smoke.log"
+        run: python scripts/smoke_gpui_wayland.py --executable "${RUNNER_TEMP}/patchops-native/PatchOpsIII/patchopsiii-gpui" --compositor sway --keep-log "${RUNNER_TEMP}/wayland-smoke.log"
       - name: Upload Wayland smoke log
         if: failure() && runner.os == 'Linux'
         uses: actions/upload-artifact@v4
