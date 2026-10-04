@@ -63,7 +63,9 @@ root, isolated PID namespace, and fake `steam`/`pkill` commands. The home
 environment variable is read, never changed; real Steam files/processes cannot
 be affected. No network-performing Rust dispatch is exercised. Missing or
 unsupported bubblewrap fails explicitly; there is no host fallback. Tests on
-other platforms are ignored pending equivalent filesystem/process isolation.
+other platforms compile an empty parity test target and skip these Linux-only
+cases cleanly, pending equivalent filesystem/process isolation. Linux CI needs
+the apt package `bubblewrap`; the native Ubuntu workflow already includes it.
 
 ## Normalization rules
 
@@ -84,20 +86,60 @@ other platforms are ignored pending equivalent filesystem/process isolation.
    runners use fixed umask `002`; fixture files explicitly start at `0644`.
    This catches atomic replacements that change existing permission bits.
 6. Known current/compatible EXEs contain nonempty marker bytes and a
-   `logicalSha256` alias used **only by the Python hash seam**. Their physical
+   `logicalSha256` alias used by the Python and Rust status hash seams. Their physical
    sizes/hashes are also recorded. Production code checks build identity by
    SHA-256, not a fixed EXE byte size; fake bytes cannot have the real digest.
 
-## Missing Rust adapters (three explicit ignores)
+## Test seams and reviewed migration differences
 
-| Case | Adapter needed |
-| --- | --- |
-| `status_september_2026_current` | Injectable file-hash provider, covering the September 2026 hash and BuildID 24784313. |
-| `status_compatible_build` | Same hash seam, covering the compatible digest and BuildID 10650222. |
-| `t7_release_asset_discovery` | Expose a pure asset selector or injectable HTTP transport; the existing selector is private to installation/download. |
+All 31 cases run on Linux; there are no ignored adapter cases. Historical
+`rustIgnore` fixture metadata records the original gaps and does not skip tests.
+`Engine::with_exe_hash_provider` injects status hashes, including preserved EXE
+probes. Mutation checks always hash physical bytes. `logicalSha256` is adapter
+metadata excluded from snapshot comparison; physical sizes/hashes/content still
+compare exactly. `select_t7_release_asset` is a public pure JSON selector using
+the installer selection logic, and the Engine wrapper retains discovery logs.
+Steam lifecycle callbacks mirror the Python runner's no-op process hooks;
+production still closes/waits/reopens Steam. No process lifecycle is verified
+by these goldens.
 
-These cases contain real Python expected output. Running them explicitly with
-`--ignored` fails with the missing adapter reason; they cannot silently pass.
+DXVK configure first adopts an unbound legacy install only when both root DLLs
+are regular, non-symlink files whose SHA-256 pair matches the same known official
+GPLAsync release, and root `dxvk.conf` is regular and non-symlink. Unknown,
+incomplete, mixed, or unsafe installs remain refused. The manifest records the
+canonical game directory and physical installed hashes. The original config is
+copied and verified before configuring; uninstall restores it. Existing managed
+state must validate before reuse. Filenames/config shape alone never prove
+ownership. The fake DLL fixture uses a narrowly scoped legacy recognition hash
+provider for the v3.0-1 pair; manifest/backup hashes always use real fixture bytes.
+
+The **only filesystem expected-diff allowlist**, in `expected_snapshot` in
+`../parity.rs`, applies to `dxvk_config_write` checkpoints/final state:
+
+- Add `data/DXVK Managed` and `data/DXVK Managed/originals` directories.
+- Add `data/DXVK Managed/manifest.json`: version 1, `$ROOT/game` binding, exact
+  physical fixture DLL hashes, Python's expected updated config hash, and the
+  original fixture config hash. Expected JSON bytes/mode/size/hash are computed
+  independently from the fixture and Python golden, never from Rust output.
+- Add `data/DXVK Managed/originals/dxvk.conf`: exact original fixture bytes and
+  mode. No DLL backup, other extra file/directory, response/log difference, or
+  existing-file rewrite is allowed by this policy.
+
+These are intentional ownership records required by the reviewed safety policy.
+No Python golden is changed or regenerated to accept Rust behavior.
+
+Enhanced legacy status metadata is bound **in memory per AppState** on first
+matching status read: legacy state must be installed with nonempty recorded
+files, all four Enhanced markers and all recorded files must be regular files
+inside the current game directory, paths must be safe and belong to the Enhanced
+or root dump whitelist, and recorded hashes (if present) must match. Partial
+modern ownership metadata is refused. The first canonical binding cannot follow
+a second game directory in the same AppState. Counts, backup status, and timestamps
+are preserved. The JSON file is left byte-for-byte intact, keeping Python status
+reads free of filesystem writes. This display binding does not authorize
+install/uninstall; the existing verified archive/ownership adoption still applies.
+A durable binding across app restarts would require a separately reviewed
+Enhanced filesystem allowlist, which this task did not authorize.
 
 ## Results
 
@@ -106,7 +148,8 @@ See [RESULTS.md](RESULTS.md) for concrete regressions and
 checkpoints and derivative size/hash differences). Dispatch errors are captured
 as `{"dispatchError": ...}` diagnostic values: this wrapper is not a production
 API response and is not accepted as equivalent to Python's `ok/error/state`
-JSON. The strict suite deliberately remains red while these differences exist.
+JSON. The latest isolated run passes all 31 cases with the exact DXVK ownership
+allowlist above.
 
 Status-envelope differences do not prevent the harness from checking the
 remaining response fields or filesystem changes.

@@ -124,16 +124,23 @@ compatible-depot failures retain `Steam console command: ...` in their message.
 - `c582a62`, `58f7ba3` and versions from #50/#51: package.json is the embedded
   runtime release version; no duplicate hard-coded desktop version is introduced.
 
-Core intentionally keeps PR #40's stronger archive/path validation and ownership
-rules. It may refuse uninstall/adoption of files Python would modify without
-proof of ownership. Config validation also limits unsupported keys/values.
-Rust config writes retain CRLF line endings and explicitly reject read-only files;
-Python normalizes line endings and exposes platform permission errors.
-Steam writes retain the first original backup and create the PR #40 sibling backup;
-VDF formatting and logs differ from Python. Enhanced status does not adopt
-legacy timestamps/file counts without matching game-directory provenance.
-Exact log text and filesystem behavior are tracked by the concurrently maintained
-Python-oracle parity suite; passing core unit tests alone is not full parity.
+Core keeps PR #40's archive/path validation and ownership rules. The Linux
+Python-oracle suite now passes all 31 cases without ignored adapters. Config
+writes normalize CRLF to LF, use Python's 0400/0600 read-only modes, and retain
+permission error/log text. Steam launch-option applies use a permission-preserving
+rolling backup on every apply, including no-ops, and no extra localconfig sibling
+backup. Unrelated VDF operations retain their existing recovery policy.
+
+DXVK settings adopt Python-era root DLL/config installs only when the DLL pair
+matches one verified official release; the adoption manifest records real hashes
+and preserves the original config. Unknown/foreign DLLs are refused. The parity
+suite allows only the exact manifest, config backup, and their directories.
+Enhanced first-read status binds matching legacy file records in memory per
+AppState and preserves counts/timestamps without rewriting legacy JSON or
+claiming destructive ownership. Durable status binding would require a separate
+review of its filesystem difference. Verified archive adoption is still required
+before installation/cleanup. See `native/core/tests/parity/README.md` for exact
+rules, the narrow DXVK allowlist, and test seam limits.
 
 Native archives contain the Rust binary, resources and docs only. The optional
 Python scripts use the standard library as build/package/smoke helpers. Native CI

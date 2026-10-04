@@ -1,4 +1,5 @@
 //! Python main is the oracle. See parity/README.md for isolation and normalization.
+#![cfg(target_os = "linux")]
 use patchops_core::{AppState, Engine};
 use regex::Regex;
 use serde_json::{Value, json};
@@ -211,27 +212,152 @@ fn differences(case: &str, location: &str, expected: &Value, actual: &Value, cou
     }
 }
 
+// Reviewed DXVK adoption differences only. Construct exact expected ownership
+// bytes from the Python fixture and expected config, never from Rust output.
+fn expected_snapshot(name: &str, golden: &Value, snapshot: &Value) -> Value {
+    let mut expected = snapshot.clone();
+    if name != "dxvk_config_write" {
+        return expected;
+    }
+    let fixture_file = |name: &str| {
+        golden["fixture"]["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|file| file["path"] == format!("game/{name}"))
+            .unwrap()
+    };
+    let config = expected["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|file| file["path"] == "game/dxvk.conf")
+        .unwrap();
+    let manifest = json!({
+        "version": 1,
+        "game_dir": "$ROOT/game",
+        "files": [
+            {"name": "dxgi.dll", "installed_sha256": fixture_file("dxgi.dll")["sha256"], "original_sha256": null},
+            {"name": "d3d11.dll", "installed_sha256": fixture_file("d3d11.dll")["sha256"], "original_sha256": null},
+            {"name": "dxvk.conf", "installed_sha256": config["sha256"], "original_sha256": fixture_file("dxvk.conf")["sha256"]}
+        ]
+    });
+    let text = serde_json::to_string_pretty(&manifest).unwrap();
+    let mut backup = fixture_file("dxvk.conf").clone();
+    backup["path"] = json!("data/DXVK Managed/originals/dxvk.conf");
+    let files = expected["files"].as_array_mut().unwrap();
+    files.push(backup);
+    files.push(json!({"path": "data/DXVK Managed/manifest.json", "mode": 0o664,
+        "sha256": format!("{:x}", Sha256::digest(text.as_bytes())), "size": text.len(), "text": text}));
+    files.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
+    let directories = expected["directories"].as_array_mut().unwrap();
+    directories.extend([
+        json!("data/DXVK Managed"),
+        json!("data/DXVK Managed/originals"),
+    ]);
+    directories.sort_by(|a, b| a.as_str().cmp(&b.as_str()));
+    expected
+}
+
 fn run_case(name: &str) {
     let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
         .unwrap();
-    let golden: Value = serde_json::from_slice(
+    let mut golden: Value = serde_json::from_slice(
         &fs::read(repo.join(format!("native/core/tests/parity/{name}.json"))).unwrap(),
     )
     .unwrap();
-    assert!(
-        golden.get("rustIgnore").is_none(),
-        "adapter missing: {}",
-        golden["rustIgnore"]
-    );
     if let Ok(root) = env::var("PATCHOPS_PARITY_CHILD_ROOT") {
         let root = PathBuf::from(root);
-        let engine = Engine::new(
-            AppState::new(root.join("data"), Some(root.join("resources")), None).unwrap(),
-        );
+        let state = AppState::new(root.join("data"), Some(root.join("resources")), None).unwrap();
+        if name == "dxvk_config_write" {
+            // Synthetic fixture payloads stand in for one verified GPLAsync
+            // release pair. Production has no override and hashes real DLLs.
+            let game = root.join("game");
+            state.set_dxvk_legacy_hash_provider(std::sync::Arc::new(move |path| {
+                if path == game.join("dxgi.dll") {
+                    assert_eq!(fs::read(path).unwrap(), b"\x00\xfffixture-dxgi");
+                    Ok("177cea0f3d64ac7a2834e24637aecb4ab133e036c50c2568489079cefb8fd7ec".into())
+                } else if path == game.join("d3d11.dll") {
+                    assert_eq!(fs::read(path).unwrap(), b"fixture-d3d11");
+                    Ok("c9e9d1a7844077df38cd0e540be1b435db7c9fed878a60fc32d22c778345fc09".into())
+                } else {
+                    Err("unexpected legacy DLL probe".into())
+                }
+            }));
+        }
+        // Mirror the Python oracle's disabled Steam lifecycle hooks.
+        state.set_steam_lifecycle_callback(std::sync::Arc::new(|_| Ok(())));
+        let aliases: std::collections::HashMap<PathBuf, String> = golden["fixture"]["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|file| {
+                Some((
+                    root.join(file["path"].as_str()?),
+                    file["logicalSha256"].as_str()?.to_owned(),
+                ))
+            })
+            .collect();
+        fn strip_alias_metadata(value: &mut Value) {
+            match value {
+                Value::Object(object) => {
+                    object.remove("logicalSha256");
+                    for value in object.values_mut() {
+                        strip_alias_metadata(value);
+                    }
+                }
+                Value::Array(array) => {
+                    for value in array {
+                        strip_alias_metadata(value);
+                    }
+                }
+                _ => {}
+            }
+        }
+        strip_alias_metadata(&mut golden);
+        let engine = Engine::new(state).with_exe_hash_provider(std::sync::Arc::new(move |path| {
+            aliases.get(path).cloned().map(Ok).unwrap_or_else(|| {
+                fs::read(path)
+                    .map(|bytes| format!("{:x}", Sha256::digest(bytes)))
+                    .map_err(|e| e.to_string())
+            })
+        }));
         let mut count = 0;
-        for (index, operation) in golden["operations"].as_array().unwrap().iter().enumerate() {
+        let internal = golden["internalOperation"].as_str() == Some("t7_release_asset_discovery");
+        if internal {
+            let actual = golden["expected"]["responses"][0]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|item| {
+                    let mut item = item.clone();
+                    let asset = engine
+                        .resolve_t7_release_asset(
+                            item["assetKey"].as_str().unwrap(),
+                            &item["release"],
+                        )
+                        .unwrap();
+                    item["resolved"] = json!({"url": asset.url, "sha256": [asset.sha256]});
+                    item
+                })
+                .collect::<Vec<_>>();
+            differences(
+                name,
+                "responses/0",
+                &golden["expected"]["responses"][0],
+                &json!(actual),
+                &mut count,
+            );
+        }
+        for (index, operation) in golden["operations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .enumerate()
+            .filter(|_| !internal)
+        {
             let body = operation.get("body").map(|body| {
                 serde_json::from_str::<Value>(
                     &body.to_string().replace("$ROOT", root.to_str().unwrap()),
@@ -251,7 +377,7 @@ fn run_case(name: &str) {
             differences(
                 name,
                 &format!("checkpoints/{index}"),
-                &golden["expected"]["checkpoints"][index],
+                &expected_snapshot(name, &golden, &golden["expected"]["checkpoints"][index]),
                 &snapshot(&root),
                 &mut count,
             );
@@ -259,7 +385,7 @@ fn run_case(name: &str) {
         differences(
             name,
             "filesystem",
-            &golden["expected"]["filesystem"],
+            &expected_snapshot(name, &golden, &golden["expected"]["filesystem"]),
             &snapshot(&root),
             &mut count,
         );
@@ -269,10 +395,6 @@ fn run_case(name: &str) {
         );
         return;
     }
-    assert!(
-        cfg!(target_os = "linux"),
-        "this harness needs Linux bubblewrap; supply platform isolation adapters elsewhere"
-    );
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -283,9 +405,13 @@ fn run_case(name: &str) {
     ));
     let root = scratch.join("root");
     recreate(&root, &golden["fixture"]);
+    let mut physical_fixture = golden["fixture"].clone();
+    for file in physical_fixture["files"].as_array_mut().unwrap() {
+        file.as_object_mut().unwrap().remove("logicalSha256");
+    }
     assert_eq!(
         snapshot(&root),
-        golden["fixture"],
+        physical_fixture,
         "fixture reconstruction must be lossless"
     );
     let tools = scratch.join("tools");
@@ -395,18 +521,6 @@ case!(status_alternate_executable);
 case!(config_readonly_roundtrip);
 case!(vram_target_roundtrip);
 
-#[test]
-#[ignore = "needs injectable EXE SHA-256 provider; fake bytes cannot hash to the Sep 2026 Steam digest"]
-fn status_september_2026_current() {
-    run_case("status_september_2026_current");
-}
-#[test]
-#[ignore = "needs injectable EXE SHA-256 provider; fake bytes cannot hash to the compatible Steam digest"]
-fn status_compatible_build() {
-    run_case("status_compatible_build");
-}
-#[test]
-#[ignore = "needs public release-asset selection API or injectable HTTP transport; install otherwise downloads archives"]
-fn t7_release_asset_discovery() {
-    run_case("t7_release_asset_discovery");
-}
+case!(status_september_2026_current);
+case!(status_compatible_build);
+case!(t7_release_asset_discovery);

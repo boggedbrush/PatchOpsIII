@@ -1,31 +1,43 @@
 {
-  "mismatchCount": 135,
+  "enhancedLegacyStatusBinding": "in memory per AppState; no filesystem difference",
+  "expectedDiffAllowlist": {
+    "dxvk_config_write": [
+      "data/DXVK Managed",
+      "data/DXVK Managed/originals",
+      "data/DXVK Managed/manifest.json",
+      "data/DXVK Managed/originals/dxvk.conf"
+    ]
+  },
+  "goldensModified": false,
+  "mismatchCount": 0,
   "rustSourcesAtReport": {
-    "native/core/src/app.rs": "d9349229ac31f1a1d14e5d7bd391cc610b88bab8f3f0e1d9122f3e3ff084eb29",
-    "native/core/src/dxvk.rs": "d47cb3d23491daf4519bdb84d90e71ea5c5e10318db98ed0660e6d2e390aaa93",
-    "native/core/src/engine.rs": "962fb6557c6045502a2c0a86691bdc2c953dc5861b6f816393695e399c0345f7",
-    "native/core/src/enhanced.rs": "b1b424b2515068204b640adf1776484b881ceb1ed51a8653b3236e0365cb0a55",
-    "native/core/src/exe.rs": "1d9579e324edfcc2c7c54771aa2c2092f41ae94bd75bb9a51ca78ae029af0384",
+    "native/core/src/app.rs": "d23b3dfd767e639473e0be4b7d2a0a2d3e7065aeb0cc88e7e34c3553d4e8e089",
+    "native/core/src/dxvk.rs": "2f738ea6f0f02a3c5e49ae2bc4e3b77d56d8504b1c9d23a1d10ac24ebceae36b",
+    "native/core/src/engine.rs": "6b7d5acc1d2fab3a49a1dc3e8dce932b088d3ab2bc1e4e978e54b3051f2332a1",
+    "native/core/src/enhanced.rs": "4bece67520e09fd967c9599c3acdbda4a578579b698923277d5997ea5732a3ee",
+    "native/core/src/exe.rs": "0237b2f2bae032806e100bf2d664a409182088a8dcb61dddb76f73b5321ae05c",
     "native/core/src/fs_ops.rs": "5d588d9fa973ce64291f7ceb7b3b6295510876bf32acb58678fc4cb1d170a4e5",
-    "native/core/src/lib.rs": "5a2f5cd5035d166bdfc2d70e661b7f4a00ce413f79a86e49e35425ada9edfdb5",
+    "native/core/src/lib.rs": "973f5f9d453388c5d47debc895fa07eccda13baa76f6f29c17baeb34c45298e7",
     "native/core/src/models.rs": "4cb649a262fd8d7f59d6c35b3c8ed1b206f37691310a785c594163a543665121",
-    "native/core/src/steam.rs": "9a5a993c86b2909c1d1b870bad0eebb5d61e4c4611b54b69551aa13c1e145c45",
-    "native/core/src/t7.rs": "688d0a0652a036d8df49891a7be6b68ebc23ce727db4e5df76106455cf74e38d"
+    "native/core/src/steam.rs": "b047db4b08f4bc985e8b28e1a5bc65363a858f0972d4a3834f01cf6716de9617",
+    "native/core/src/t7.rs": "b0174695aa50953896927fa12c94148991321cfd0a853e3009b7c41b67e97412",
+    "native/core/tests/parity.rs": "8e38487c85b843812a73e0b4207e2db851d966b0de49cc8b85d08d0a608cf495"
   },
   "rustSourcesBeforeLaunch": {
-    "native/core/src/app.rs": "d9349229ac31f1a1d14e5d7bd391cc610b88bab8f3f0e1d9122f3e3ff084eb29",
-    "native/core/src/dxvk.rs": "d47cb3d23491daf4519bdb84d90e71ea5c5e10318db98ed0660e6d2e390aaa93",
-    "native/core/src/engine.rs": "962fb6557c6045502a2c0a86691bdc2c953dc5861b6f816393695e399c0345f7",
-    "native/core/src/enhanced.rs": "b1b424b2515068204b640adf1776484b881ceb1ed51a8653b3236e0365cb0a55",
-    "native/core/src/exe.rs": "1d9579e324edfcc2c7c54771aa2c2092f41ae94bd75bb9a51ca78ae029af0384",
+    "native/core/src/app.rs": "d23b3dfd767e639473e0be4b7d2a0a2d3e7065aeb0cc88e7e34c3553d4e8e089",
+    "native/core/src/dxvk.rs": "2f738ea6f0f02a3c5e49ae2bc4e3b77d56d8504b1c9d23a1d10ac24ebceae36b",
+    "native/core/src/engine.rs": "6b7d5acc1d2fab3a49a1dc3e8dce932b088d3ab2bc1e4e978e54b3051f2332a1",
+    "native/core/src/enhanced.rs": "4bece67520e09fd967c9599c3acdbda4a578579b698923277d5997ea5732a3ee",
+    "native/core/src/exe.rs": "0237b2f2bae032806e100bf2d664a409182088a8dcb61dddb76f73b5321ae05c",
     "native/core/src/fs_ops.rs": "5d588d9fa973ce64291f7ceb7b3b6295510876bf32acb58678fc4cb1d170a4e5",
-    "native/core/src/lib.rs": "5a2f5cd5035d166bdfc2d70e661b7f4a00ce413f79a86e49e35425ada9edfdb5",
+    "native/core/src/lib.rs": "973f5f9d453388c5d47debc895fa07eccda13baa76f6f29c17baeb34c45298e7",
     "native/core/src/models.rs": "4cb649a262fd8d7f59d6c35b3c8ed1b206f37691310a785c594163a543665121",
-    "native/core/src/steam.rs": "9a5a993c86b2909c1d1b870bad0eebb5d61e4c4611b54b69551aa13c1e145c45",
-    "native/core/src/t7.rs": "688d0a0652a036d8df49891a7be6b68ebc23ce727db4e5df76106455cf74e38d"
+    "native/core/src/steam.rs": "b047db4b08f4bc985e8b28e1a5bc65363a858f0972d4a3834f01cf6716de9617",
+    "native/core/src/t7.rs": "b0174695aa50953896927fa12c94148991321cfd0a853e3009b7c41b67e97412",
+    "native/core/tests/parity.rs": "8e38487c85b843812a73e0b4207e2db851d966b0de49cc8b85d08d0a608cf495"
   },
   "rustSourcesChangedBetweenLaunchAndReport": [],
-  "summary": "test result: FAILED. 17 passed; 11 failed; 3 ignored; 0 measured; 0 filtered out; finished in 10.53s",
+  "summary": "test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.13s",
   "testBinary": "native/target/debug/deps/parity-4cab83e5679c2c93",
-  "testBinarySha256": "21c8aebfb1d99126ce863b2675b43f38420313d58b07eacf3b179608e0074182"
+  "testBinarySha256": "0ff78ffa4cfd7c0312abe1b1b4facc7ed6b6586370af3109402c11a3984b6e93"
 }
