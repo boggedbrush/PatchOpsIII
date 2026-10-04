@@ -73,7 +73,11 @@ jobs:
         run: cargo test --locked --manifest-path native/Cargo.toml -p patchops-core --lib
       - name: Python-oracle parity tests (Linux isolation harness)
         if: runner.os == 'Linux'
-        run: cargo test --locked --manifest-path native/Cargo.toml -p patchops-core --test parity
+        run: |
+          # Ubuntu 24.04 blocks unprivileged user namespaces via AppArmor;
+          # the bubblewrap sandbox needs them on this ephemeral runner.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          cargo test --locked --manifest-path native/Cargo.toml -p patchops-core --test parity
       - name: GPUI tests
         run: cargo test --locked --manifest-path native/Cargo.toml -p patchopsiii-gpui
       - name: Build native release
