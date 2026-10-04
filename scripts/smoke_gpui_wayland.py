@@ -163,11 +163,12 @@ def main():
             raise RuntimeError(f"{message}\n--- app log tail ---\n{tail}")
 
     require(any("compositor: Wayland" in line for line in report), "GPUI did not choose the Wayland platform")
-    # libwayland prints events as "xdg_toplevel#23.configure(...)" and requests with a leading "->".
-    require(any(re.search(r"xdg_toplevel#\d+\.configure\(", line) and "->" not in line for line in lines), "The compositor never configured the toplevel")
+    # libwayland prints events as "xdg_toplevel#23.configure(...)" (libwayland >= 1.23; older
+    # releases use "@23") and requests with a leading "->".
+    require(any(re.search(r"xdg_toplevel[#@]\d+\.configure\(", line) and "->" not in line for line in lines), "The compositor never configured the toplevel")
     require(any("ack_configure" in line for line in lines), "The client never acked a configure")
     require(any("set_title" in line and "PatchOpsIII" in line for line in lines), "The window title was not set")
-    decoration = [line for line in lines if re.search(r"zxdg_toplevel_decoration_v1#\d+\.configure\(", line)]
+    decoration = [line for line in lines if re.search(r"zxdg_toplevel_decoration_v1[#@]\d+\.configure\(", line)]
     print(f"xdg-decoration configure events: {len(decoration)} (mode 1 = client-side, 2 = server-side)")
     require(any(FIRST_FRAME in line for line in report), "GPUI never rendered a first frame")
     require(app.returncode == 0, f"GPUI exited with status {app.returncode}")
