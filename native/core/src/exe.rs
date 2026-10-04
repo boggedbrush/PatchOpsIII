@@ -74,11 +74,20 @@ fn active_exe_hash(path: &Path) -> Result<String, String> {
 
 // Status probes may reuse metadata-identified hashes. Mutations always reread
 // bytes, including the source, staging file and activated target.
-fn hash_for_probe(path: &Path, use_cache: bool) -> Result<String, String> {
-    if use_cache {
-        active_exe_hash(path)
-    } else {
-        fs_ops::sha256_file(path)
+pub type ExeHashProvider = dyn Fn(&Path) -> Result<String, String> + Send + Sync;
+
+#[derive(Clone, Copy)]
+enum HashProbe<'a> {
+    Cached,
+    Fresh,
+    Provider(&'a ExeHashProvider),
+}
+
+fn hash_for_probe(path: &Path, probe: HashProbe<'_>) -> Result<String, String> {
+    match probe {
+        HashProbe::Cached => active_exe_hash(path),
+        HashProbe::Fresh => fs_ops::sha256_file(path),
+        HashProbe::Provider(provider) => provider(path),
     }
 }
 
@@ -321,10 +330,10 @@ fn build_backup_candidates(target: &Path, build_id: &str, role: &str) -> Vec<Pat
 fn first_matching_hash(
     candidates: Vec<PathBuf>,
     hashes: &[&str],
-    use_cache: bool,
+    probe: HashProbe<'_>,
 ) -> Option<PathBuf> {
     candidates.into_iter().find(|candidate| {
-        hash_for_probe(candidate, use_cache)
+        hash_for_probe(candidate, probe)
             .map(|hash| {
                 hashes
                     .iter()
@@ -334,23 +343,23 @@ fn first_matching_hash(
     })
 }
 
-fn validated_preserved_compatible(target: &Path, use_cache: bool) -> Option<PathBuf> {
+fn validated_preserved_compatible(target: &Path, probe: HashProbe<'_>) -> Option<PathBuf> {
     first_matching_hash(
         build_backup_candidates(target, COMPATIBLE_STEAM_BUILD_ID, "compatible"),
         COMPATIBLE_BUILD_SHA256,
-        use_cache,
+        probe,
     )
 }
 
-fn validated_latest_backup(target: &Path, use_cache: bool) -> Option<PathBuf> {
+fn validated_latest_backup(target: &Path, probe: HashProbe<'_>) -> Option<PathBuf> {
     first_matching_hash(
         build_backup_candidates(target, CURRENT_STEAM_BUILD_ID, "current"),
         &[DEFAULT_STEAM_EXE_SHA256],
-        use_cache,
+        probe,
     )
     .or_else(|| {
         fs_ops::existing_backup(target).filter(|candidate| {
-            hash_for_probe(candidate, use_cache)
+            hash_for_probe(candidate, probe)
                 .map(|hash| hash.eq_ignore_ascii_case(DEFAULT_STEAM_EXE_SHA256))
                 .unwrap_or(false)
         })
@@ -361,7 +370,7 @@ fn validated_enhanced_backup(
     settings: &Settings,
     game_dir: Option<&Path>,
     target: &Path,
-    use_cache: bool,
+    probe: HashProbe<'_>,
 ) -> Option<PathBuf> {
     let known = known_enhanced_hashes(settings, game_dir);
     if known.is_empty() {
@@ -383,17 +392,27 @@ fn validated_enhanced_backup(
         ".bak",
     ));
     candidates.into_iter().find(|candidate| {
-        hash_for_probe(candidate, use_cache)
+        hash_for_probe(candidate, probe)
             .map(|hash| known.contains(&hash.to_ascii_lowercase()))
             .unwrap_or(false)
     })
 }
 
 pub fn status(settings: &Settings, game_dir: Option<&Path>) -> ExeSwapState {
+    status_with_hash_provider(settings, game_dir, None)
+}
+
+/// Inject hashes for status probes only. EXE mutations always hash actual bytes.
+pub fn status_with_hash_provider(
+    settings: &Settings,
+    game_dir: Option<&Path>,
+    provider: Option<&ExeHashProvider>,
+) -> ExeSwapState {
+    let probe = provider.map_or(HashProbe::Cached, HashProbe::Provider);
     let executable = game_dir.and_then(find_executable);
     let exe_hash = executable
         .as_deref()
-        .and_then(|path| active_exe_hash(path).ok())
+        .and_then(|path| hash_for_probe(path, probe).ok())
         .unwrap_or_default()
         .to_ascii_lowercase();
     let enhanced_active = game_dir.is_some_and(crate::enhanced::detect_install);
@@ -423,13 +442,13 @@ pub fn status(settings: &Settings, game_dir: Option<&Path>) -> ExeSwapState {
 
     let latest_available = executable
         .as_deref()
-        .is_some_and(|path| validated_latest_backup(path, true).is_some());
+        .is_some_and(|path| validated_latest_backup(path, probe).is_some());
     let compatible_available = executable
         .as_deref()
-        .is_some_and(|path| validated_preserved_compatible(path, true).is_some());
+        .is_some_and(|path| validated_preserved_compatible(path, probe).is_some());
     let enhanced_available = executable
         .as_deref()
-        .is_some_and(|path| validated_enhanced_backup(settings, game_dir, path, true).is_some());
+        .is_some_and(|path| validated_enhanced_backup(settings, game_dir, path, probe).is_some());
     let patch_label = if profile == COMPATIBLE_EXE_ID {
         "T7 Patch 2.04"
     } else {
@@ -680,7 +699,7 @@ fn activate_compatible_from_depot(
         return Ok(());
     };
 
-    if let Some(source) = validated_preserved_compatible(&target, false) {
+    if let Some(source) = validated_preserved_compatible(&target, HashProbe::Fresh) {
         activate_source(
             &target,
             &source,
@@ -726,7 +745,7 @@ pub fn activate_current(state: &AppState, game_dir: &Path) -> Result<(), String>
         state.log("Info", "Latest executable is already active.");
         return Ok(());
     };
-    let source = validated_latest_backup(&target, false)
+    let source = validated_latest_backup(&target, HashProbe::Fresh)
         .ok_or_else(|| "No backup executable found. Cannot restore the current EXE.".to_string())?;
     activate_source(
         &target,
@@ -752,7 +771,7 @@ pub fn activate_enhanced(state: &AppState, game_dir: &Path) -> Result<(), String
         return Ok(());
     };
     let settings = state.load_settings();
-    let source = validated_enhanced_backup(&settings, Some(game_dir), &target, false)
+    let source = validated_enhanced_backup(&settings, Some(game_dir), &target, HashProbe::Fresh)
         .ok_or_else(|| "No PatchOpsIII-preserved Enhanced executable was found.".to_string())?;
     let hash = fs_ops::sha256_file(&source)?;
     let expected = [hash.as_str()];

@@ -3,6 +3,7 @@ use std::{
     fs::{self, File},
     io::{self, Read},
     path::{Component, Path, PathBuf},
+    sync::Mutex,
 };
 
 use serde::{Deserialize, Serialize};
@@ -198,13 +199,71 @@ pub fn detect_install(game_dir: &Path) -> bool {
         .all(|name| game_dir.join(name).is_file())
 }
 
+fn legacy_status_files_match(state: &PersistedState, game_dir: &Path) -> bool {
+    if !state.installed
+        || !EXPECTED_ENHANCED_FILES.iter().all(|name| {
+            fs::symlink_metadata(game_dir.join(name))
+                .is_ok_and(|meta| meta.is_file() && !meta.file_type().is_symlink())
+        })
+        || state.installed_files.is_empty()
+        || !state.created_files.is_empty()
+        || !state.owned_backups.is_empty()
+        || !state.original_backup_hashes.is_empty()
+    {
+        return false;
+    }
+    let mut seen = HashSet::new();
+    state
+        .installed_files
+        .iter()
+        .chain(state.dump_only_files.iter())
+        .all(|name| {
+            let Ok((relative, normalized)) = normalized_legacy_path(name) else {
+                return false;
+            };
+            if !seen.insert(normalized.clone()) && !state.dump_only_files.contains(name) {
+                return false;
+            }
+            let allowed = EXPECTED_ENHANCED_FILES.contains(&normalized.as_str())
+                || (relative.components().count() == 1
+                    && UWP_DUMP_WHITELIST.contains(&normalized.as_str()));
+            let Ok(target) = contained_target(game_dir, &relative) else {
+                return false;
+            };
+            allowed
+                && fs::symlink_metadata(&target)
+                    .is_ok_and(|meta| meta.is_file() && !meta.file_type().is_symlink())
+                && state.installed_hashes.get(name).is_none_or(|expected| {
+                    fs_ops::sha256_file(&target)
+                        .is_ok_and(|actual| actual.eq_ignore_ascii_case(expected))
+                })
+        })
+}
+
 fn status_at(
     storage_dir: &Path,
+    legacy_binding: &Mutex<Option<String>>,
     game_dir: Option<&Path>,
     current_launch_options: Option<&str>,
     dump_source: String,
 ) -> (EnhancedState, Option<String>) {
-    let stored = load_state(storage_dir);
+    let mut stored = load_state(storage_dir);
+    // Legacy Python status metadata has no destructive ownership proof. Bind
+    // it in this AppState only; verified archive adoption remains required for
+    // install/uninstall. Do not rewrite the legacy JSON merely by reading it.
+    if let Some(game_dir) = game_dir
+        && stored.game_directory.is_none()
+        && legacy_status_files_match(&stored, game_dir)
+        && let Ok(key) = canonical_game_key(game_dir)
+        && let Ok(mut binding) = legacy_binding.lock()
+    {
+        if binding.is_none() {
+            *binding = Some(key.clone());
+        }
+        if binding.as_deref() == Some(&key) {
+            stored.game_directory = Some(key);
+        }
+    }
     let mut persisted = match game_dir.filter(|game_dir| state_belongs_to_game(&stored, game_dir)) {
         Some(_) => stored,
         None => PersistedState::default(),
@@ -248,6 +307,7 @@ pub fn status(
 ) -> EnhancedState {
     let (result, stale_state_error) = status_at(
         state.data_dir(),
+        state.legacy_enhanced_binding(),
         game_dir,
         current_launch_options,
         dump_source,
@@ -1933,6 +1993,81 @@ mod tests {
         let error = adopt_legacy_state(&game, &enhanced, None, &storage).unwrap_err();
         assert!(error.contains("no recorded SHA-256 checksum"));
         assert_eq!(fs::read(state_path(&storage)).unwrap(), original);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn legacy_status_binding_preserves_metadata_and_cannot_follow_another_game() {
+        let root = temp_dir("legacy-status-binding");
+        let game = root.join("game");
+        let other = root.join("other");
+        let storage = root.join("storage");
+        fs::create_dir_all(&storage).unwrap();
+        for directory in [&game, &other] {
+            fs::create_dir_all(directory).unwrap();
+            for name in EXPECTED_ENHANCED_FILES {
+                fs::write(directory.join(name), b"legacy enhanced").unwrap();
+            }
+        }
+        let legacy = serde_json::json!({"installed": true,
+            "installed_files": EXPECTED_ENHANCED_FILES,
+            "detected_at": "2026-09-10T12:00:00Z", "acknowledged_at": "2026-09-10T13:00:00Z"});
+        let original = serde_json::to_vec(&legacy).unwrap();
+        fs::write(state_path(&storage), &original).unwrap();
+        let binding = Mutex::new(None);
+        let (result, error) = status_at(&storage, &binding, Some(&game), None, String::new());
+        assert!(error.is_none());
+        assert_eq!(result.files_installed, 4);
+        assert_eq!(result.backup_status, "Created");
+        assert_eq!(result.detected_at.as_deref(), Some("2026-09-10T12:00:00Z"));
+        assert_eq!(
+            result.acknowledged_at.as_deref(),
+            Some("2026-09-10T13:00:00Z")
+        );
+        assert_eq!(
+            binding.lock().unwrap().as_deref(),
+            Some(canonical_game_key(&game).unwrap().as_str())
+        );
+        let (result, _) = status_at(&storage, &binding, Some(&other), None, String::new());
+        assert_eq!(result.files_installed, 0);
+        assert_eq!(fs::read(state_path(&storage)).unwrap(), original);
+        assert!(!state_has_owned_install(&load_state(&storage), &game));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn legacy_status_does_not_bind_missing_unsafe_or_hash_mismatched_files() {
+        let root = temp_dir("legacy-status-refusal");
+        let game = root.join("game");
+        fs::create_dir_all(&game).unwrap();
+        let mut stored = PersistedState {
+            installed: true,
+            installed_files: EXPECTED_ENHANCED_FILES
+                .iter()
+                .map(|name| (*name).into())
+                .collect(),
+            ..Default::default()
+        };
+        assert!(!legacy_status_files_match(&stored, &game));
+        for name in EXPECTED_ENHANCED_FILES {
+            fs::write(game.join(name), b"legacy enhanced").unwrap();
+        }
+        assert!(legacy_status_files_match(&stored, &game));
+        stored.installed_files.push("../foreign.dll".into());
+        assert!(!legacy_status_files_match(&stored, &game));
+        stored.installed_files.pop();
+        stored
+            .installed_hashes
+            .insert(EXPECTED_ENHANCED_FILES[0].into(), "a".repeat(64));
+        assert!(!legacy_status_files_match(&stored, &game));
+        #[cfg(unix)]
+        {
+            stored.installed_hashes.clear();
+            let path = game.join(EXPECTED_ENHANCED_FILES[0]);
+            fs::remove_file(&path).unwrap();
+            std::os::unix::fs::symlink(game.join(EXPECTED_ENHANCED_FILES[1]), path).unwrap();
+            assert!(!legacy_status_files_match(&stored, &game));
+        }
         fs::remove_dir_all(root).unwrap();
     }
 

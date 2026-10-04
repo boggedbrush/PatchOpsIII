@@ -22,7 +22,7 @@ const LEGACY_RELEASE_API: &str =
 const COMPATIBLE_ARCHIVE_URL: &str = "https://github.com/shiversoftdev/t7patch/releases/download/Current/Linux.Steamdeck.and.Manual.Windows.Install.zip";
 const LPC_ARCHIVE_URL: &str =
     "https://github.com/shiversoftdev/t7patch/releases/download/Current/LPC.1.zip";
-const PATCH_ARCHIVE_NAME: &str = "Linux.Steamdeck.and.Manual.Windows.Install.zip";
+pub(crate) const PATCH_ARCHIVE_NAME: &str = "Linux.Steamdeck.and.Manual.Windows.Install.zip";
 const LPC_ARCHIVE_NAME: &str = "LPC.1.zip";
 const COMPATIBLE_ARCHIVE_SHA256: &str =
     "388491c01643b0abd51f13290d0c36dec9737fcfbb0ed5e2f5ef6804e1b73dcb";
@@ -600,7 +600,7 @@ fn mode_for_profile(game_dir: &Path, profile: Option<&str>) -> &'static str {
         {
             "Default"
         }
-        Some(value) if value.eq_ignore_ascii_case("compatible") => "Compatible",
+        Some(value) if value.eq_ignore_ascii_case("compatible") => "Custom",
         Some(_) => "Custom",
         None if ["BlackOpsIII.exe", "BlackOps3.exe"]
             .iter()
@@ -762,6 +762,40 @@ fn release_digests_from_json(body: &[u8]) -> Result<HashMap<String, ReleaseAsset
         .collect())
 }
 
+/// Release selection without HTTP or downloads. Only assets with valid GitHub
+/// SHA-256 metadata participate, using the same selector as installation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct T7ReleaseAsset {
+    pub name: String,
+    pub url: String,
+    pub sha256: String,
+}
+
+pub fn select_t7_release_asset(
+    asset_key: &str,
+    release: &serde_json::Value,
+) -> Result<Option<T7ReleaseAsset>, String> {
+    let (spec, discover_current) = match asset_key {
+        "current_archive" => (CURRENT_ARCHIVE, true),
+        "compatible_archive" => (COMPATIBLE_ARCHIVE, false),
+        "lpc_archive" => (LPC_ARCHIVE, false),
+        _ => return Err("Unsupported T7 release asset key.".into()),
+    };
+    let assets =
+        release_digests_from_json(&serde_json::to_vec(release).map_err(|e| e.to_string())?)?;
+    Ok(
+        select_release_asset(spec, &assets, discover_current).map(|asset| T7ReleaseAsset {
+            name: asset.name.clone(),
+            url: if asset.download_url.is_empty() {
+                spec.url.into()
+            } else {
+                asset.download_url.clone()
+            },
+            sha256: asset.digest.clone(),
+        }),
+    )
+}
+
 fn trusted_asset(
     spec: AssetSpec,
     release: &Result<HashMap<String, ReleaseAsset>, String>,
@@ -771,7 +805,7 @@ fn trusted_asset(
     if let Ok(assets) = release
         && let Some(asset) = select_release_asset(spec, assets, discover_current)
     {
-        if asset.name != spec.name {
+        if discover_current && asset.name != spec.name {
             state.log(
                 "Info",
                 format!("Using latest T7 Patch release asset {}.", asset.name),
@@ -2240,7 +2274,7 @@ mod tests {
         assert!(patch_profile("unverified").is_err());
 
         let game = temp_dir("profile");
-        assert_eq!(mode_for_profile(&game, Some("compatible")), "Compatible");
+        assert_eq!(mode_for_profile(&game, Some("compatible")), "Custom");
         fs::remove_dir_all(game).unwrap();
 
         let digests = release_digests_from_json(

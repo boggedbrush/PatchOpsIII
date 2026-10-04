@@ -175,12 +175,14 @@ pub fn status(game_dir: Option<&Path>) -> DxvkState {
 pub fn configure(state: &AppState, game_dir: &Path, settings: &DxvkSettings) -> Result<(), String> {
     validate_settings(settings)?;
     let game_dir = validate_game_dir(game_dir)?;
-    configure_managed(
+    let provider = state.dxvk_legacy_hash_provider();
+    adopt_legacy_install_with_hash_provider(
         state.data_dir(),
         &game_dir,
-        settings,
-        &state.mod_files_dir(),
+        &known_legacy_pairs(),
+        provider.as_deref(),
     )?;
+    configure_managed(state.data_dir(), &game_dir, settings)?;
     state.log("Success", "Updated dxvk.conf from DXVK settings.");
     Ok(())
 }
@@ -189,12 +191,11 @@ fn configure_managed(
     storage_dir: &Path,
     game_dir: &Path,
     settings: &DxvkSettings,
-    staging_root: &Path,
 ) -> Result<(), String> {
     let conf = flat_target(game_dir, "dxvk.conf")?;
     let mut manifest = managed_manifest_for_configure(storage_dir, game_dir)?;
     verify_managed_targets(&manifest, game_dir, storage_dir)?;
-    let stage = create_private_dir(staging_root, "dxvk-configure")?;
+    let stage = create_private_dir(storage_dir, "dxvk-configure")?;
     let snapshot = Snapshot::capture(std::slice::from_ref(&conf), &stage.join("rollback"))?;
     let result = (|| {
         fs_ops::atomic_write(&conf, build_conf(settings, true).as_bytes())?;
@@ -604,6 +605,15 @@ fn adopt_legacy_install(
     game_dir: &Path,
     expected_pairs: &[[String; 2]],
 ) -> Result<bool, String> {
+    adopt_legacy_install_with_hash_provider(storage_dir, game_dir, expected_pairs, None)
+}
+
+fn adopt_legacy_install_with_hash_provider(
+    storage_dir: &Path,
+    game_dir: &Path,
+    expected_pairs: &[[String; 2]],
+    provider: Option<&crate::exe::ExeHashProvider>,
+) -> Result<bool, String> {
     if load_managed_manifest(storage_dir, game_dir)?.is_some() {
         return Ok(false);
     }
@@ -621,7 +631,11 @@ fn adopt_legacy_install(
         fs_ops::sha256_file(&dlls[0])?,
         fs_ops::sha256_file(&dlls[1])?,
     ];
-    if !expected_pairs.iter().any(|pair| pair == &actual) {
+    let identity = match provider {
+        Some(provider) => [provider(&dlls[0])?, provider(&dlls[1])?],
+        None => actual.clone(),
+    };
+    if !expected_pairs.iter().any(|pair| pair == &identity) {
         return Err("The unmanaged DXVK DLLs do not match the same verified release known to this build; no files were changed. Remove or restore the unknown installation manually before installing PatchOpsIII-managed DXVK.".into());
     }
     let config = &targets[2];
@@ -1395,6 +1409,50 @@ dxvk.hud=fps,frametimes,gpuload\n"
     }
 
     #[test]
+    fn configure_adopts_verified_python_layout_and_refuses_foreign_dlls() {
+        let root = temp_dir("configure-adoption");
+        let game = root.join("game");
+        let storage = root.join("storage");
+        fs::create_dir_all(&game).unwrap();
+        fs::write(game.join("BlackOpsIII.exe"), b"game").unwrap();
+        fs::write(game.join("dxgi.dll"), b"synthetic dxgi").unwrap();
+        fs::write(game.join("d3d11.dll"), b"synthetic d3d11").unwrap();
+        let original = b"dxvk.enableAsync=true\ndxgi.maxFrameLatency=1\n";
+        fs::write(game.join("dxvk.conf"), original).unwrap();
+        let state = AppState::new(storage.clone(), None, None).unwrap();
+        let settings = DxvkSettings {
+            max_frame_rate: 144,
+            ..Default::default()
+        };
+        assert!(configure(&state, &game, &settings).is_err());
+        assert_eq!(fs::read(game.join("dxvk.conf")).unwrap(), original);
+        assert!(!managed_state_dir(&storage).exists());
+        state.set_dxvk_legacy_hash_provider(std::sync::Arc::new(|path| {
+            let index = if path.file_name().unwrap() == "dxgi.dll" {
+                0
+            } else {
+                1
+            };
+            Ok(KNOWN_LEGACY_DXVK_PAIRS[7][index].to_owned())
+        }));
+        configure(&state, &game, &settings).unwrap();
+        let manifest = load_managed_manifest(&storage, &game).unwrap().unwrap();
+        assert_eq!(
+            manifest.files[0].installed_sha256,
+            fs_ops::sha256_file(&game.join("dxgi.dll")).unwrap()
+        );
+        assert_eq!(
+            fs::read(managed_backup_path(&managed_state_dir(&storage), "dxvk.conf").unwrap())
+                .unwrap(),
+            original
+        );
+        configure(&state, &game, &settings).unwrap();
+        uninstall_managed_files(&storage, &game).unwrap();
+        assert_eq!(fs::read(game.join("dxvk.conf")).unwrap(), original);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn exact_legacy_pair_is_adopted_and_custom_config_is_restored() {
         let root = temp_dir("legacy-adopt");
         let storage = root.join("data");
@@ -1485,13 +1543,10 @@ dxvk.hud=fps,frametimes,gpuload\n"
         let config = game.join("dxvk.conf");
         fs::write(&config, b"unmanaged sentinel").unwrap();
 
-        let staging = root.join("staging");
-        let error =
-            configure_managed(&storage, &game, &DxvkSettings::default(), &staging).unwrap_err();
+        let error = configure_managed(&storage, &game, &DxvkSettings::default()).unwrap_err();
         assert_eq!(error, UNMANAGED_CONFIG_MESSAGE);
         assert_eq!(fs::read(&config).unwrap(), b"unmanaged sentinel");
         assert!(!managed_state_dir(&storage).exists());
-        assert!(!staging.exists());
 
         fs::remove_dir_all(root).unwrap();
     }

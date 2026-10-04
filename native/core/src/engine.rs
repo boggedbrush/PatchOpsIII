@@ -2,6 +2,7 @@ use std::{
     cmp::Ordering,
     io::Read,
     path::{Path, PathBuf},
+    sync::Arc,
     time::Duration,
 };
 
@@ -19,11 +20,38 @@ use crate::{
 /// thread; no method requires a GUI or async runtime.
 pub struct Engine {
     state: AppState,
+    exe_hash_provider: Option<Arc<exe::ExeHashProvider>>,
 }
 
 impl Engine {
     pub fn new(state: AppState) -> Self {
-        Self { state }
+        Self {
+            state,
+            exe_hash_provider: None,
+        }
+    }
+
+    /// Replace only EXE status hashing; installation and activation remain verified.
+    pub fn with_exe_hash_provider(mut self, provider: Arc<exe::ExeHashProvider>) -> Self {
+        self.exe_hash_provider = Some(provider);
+        self
+    }
+
+    /// Resolve mocked or cached release metadata through the installation selector.
+    pub fn resolve_t7_release_asset(
+        &self,
+        asset_key: &str,
+        release: &Value,
+    ) -> Result<crate::T7ReleaseAsset, String> {
+        let asset = t7::select_t7_release_asset(asset_key, release)?
+            .ok_or_else(|| "No unambiguous trusted T7 release asset.".to_owned())?;
+        if asset_key == "current_archive" && asset.name != t7::PATCH_ARCHIVE_NAME {
+            self.state.log(
+                "Info",
+                format!("Using latest T7 Patch release asset {}.", asset.name),
+            );
+        }
+        Ok(asset)
     }
 
     pub fn state(&self) -> &AppState {
@@ -31,7 +59,7 @@ impl Engine {
     }
 
     pub fn current_state(&self) -> Result<PatchOpsState, String> {
-        current_state(&self.state)
+        current_state(&self.state, self.exe_hash_provider.as_deref())
     }
 
     /// Dispatch the legacy local-HTTP paths without HTTP. The returned JSON
@@ -338,7 +366,10 @@ fn normalize_wire_value(mut value: Value) -> Value {
     value
 }
 
-fn current_state(state: &AppState) -> Result<PatchOpsState, String> {
+fn current_state(
+    state: &AppState,
+    hash_provider: Option<&exe::ExeHashProvider>,
+) -> Result<PatchOpsState, String> {
     let settings = state.load_settings();
     let game_dir = steam::find_game_directory(settings.game_dir.as_deref());
     let current_launch_options = steam::current_launch_options();
@@ -348,7 +379,7 @@ fn current_state(state: &AppState) -> Result<PatchOpsState, String> {
         .find(|profile| profile.active)
         .map(|profile| profile.id.clone())
         .unwrap_or_else(|| "custom".into());
-    let exe_swap = exe::status(&settings, game_dir.as_deref());
+    let exe_swap = exe::status_with_hash_provider(&settings, game_dir.as_deref(), hash_provider);
     let t7_state = t7::status(game_dir.as_deref(), Some(&exe_swap.profile));
     let dxvk_state = dxvk::status(game_dir.as_deref());
     let enhanced_state = enhanced::status(

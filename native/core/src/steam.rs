@@ -268,7 +268,7 @@ fn serialize_vdf(object: &VdfObject) -> String {
             output.push_str(&quote_vdf(&entry.key));
             match &entry.value {
                 VdfValue::String(value) => {
-                    output.push('\t');
+                    output.push(' ');
                     output.push_str(&quote_vdf(value));
                     if let Some(condition) = &entry.condition {
                         output.push_str("\t[");
@@ -410,6 +410,15 @@ fn update_vdf(
     legacy_backup: Option<&Path>,
     change: impl FnOnce(&mut VdfObject) -> Result<(), String>,
 ) -> Result<(), String> {
+    update_vdf_with_backup(path, legacy_backup, false, change)
+}
+
+fn update_vdf_with_backup(
+    path: &Path,
+    legacy_backup: Option<&Path>,
+    rolling: bool,
+    change: impl FnOnce(&mut VdfObject) -> Result<(), String>,
+) -> Result<(), String> {
     let original = fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
     let text = String::from_utf8(original.clone())
         .map_err(|error| format!("{} is not valid UTF-8: {error}", path.display()))?;
@@ -417,11 +426,23 @@ fn update_vdf(
     change(&mut document)?;
     let updated = serialize_vdf(&document);
     parse_vdf(&updated).map_err(|error| format!("refusing to write invalid VDF: {error}"))?;
+    if rolling {
+        let backup =
+            legacy_backup.ok_or_else(|| "Rolling VDF backup path is required.".to_owned())?;
+        // Match Python copy2: refresh bytes and permissions on every apply.
+        fs_ops::atomic_write(backup, &original)?;
+        fs::set_permissions(
+            backup,
+            fs::metadata(path).map_err(|e| e.to_string())?.permissions(),
+        )
+        .map_err(|e| e.to_string())?;
+    }
     if updated.as_bytes() == original {
         return Ok(());
     }
-
-    preserve_original(path, &original, legacy_backup)?;
+    if !rolling {
+        preserve_original(path, &original, legacy_backup)?;
+    }
     if let Err(write_error) = fs_ops::atomic_write(path, updated.as_bytes()) {
         if let Some(temporary) = atomic_temp_path(path) {
             let _ = fs::remove_file(temporary);
@@ -806,7 +827,7 @@ fn set_launch_options_at(
     } else {
         merged_launch_options(&current, requested, preserve_fs_game)
     };
-    update_vdf(config, Some(legacy_backup), |document| {
+    update_vdf_with_backup(config, Some(legacy_backup), true, |document| {
         let app = ensure_path(
             document,
             &[
@@ -1015,6 +1036,9 @@ fn linux_steam_running() -> Result<bool, String> {
 }
 
 fn close_steam(app: &AppState) -> Result<(), String> {
+    if let Some(result) = app.steam_lifecycle_override(false) {
+        return result;
+    }
     #[cfg(windows)]
     let result = Command::new("taskkill")
         .args(["/F", "/IM", "steam.exe"])
@@ -1070,6 +1094,9 @@ fn close_steam(app: &AppState) -> Result<(), String> {
 }
 
 fn open_steam(app: &AppState) -> Result<(), String> {
+    if let Some(result) = app.steam_lifecycle_override(true) {
+        return result;
+    }
     #[cfg(windows)]
     let child = steam_executable()
         .ok_or_else(|| "Steam executable was not found.".to_string())
@@ -1126,18 +1153,23 @@ pub fn apply_launch_options(
         preserve_fs_game,
         false,
     );
+    let result = result.map(|final_options| {
+        app.log(
+            "Success",
+            format!("Config backup created at {}", legacy_backup.display()),
+        );
+        app.log(
+            "Info",
+            format!("Setting launch options to: {final_options}"),
+        );
+    });
     if let Err(error) = open_steam(app) {
         app.log(
             "Warning",
             format!("Launch options were processed, but Steam could not be reopened: {error}"),
         );
     }
-    result.map(|final_options| {
-        app.log(
-            "Success",
-            format!("Set Steam launch options to: {final_options}"),
-        );
-    })
+    result
 }
 
 pub fn apply_launch_profile(app: &AppState, profile_id: &str) -> Result<(), String> {
@@ -3295,7 +3327,7 @@ mod tests {
     }
 
     #[test]
-    fn vdf_launch_update_preserves_unknown_fields_and_original_backup() {
+    fn vdf_launch_update_preserves_unknown_fields_and_rolling_backup() {
         let root = fixture_dir("vdf");
         let config = root.join("localconfig.vdf");
         let legacy = root.join("backups/localconfig_backup.vdf");
@@ -3358,9 +3390,65 @@ mod tests {
         );
         assert_eq!(string_value(&updated, &["OtherRoot"]), "still here");
         assert_eq!(fs::read(&legacy).unwrap(), fixture.as_bytes());
+        assert!(!fs_ops::backup_path(&config).exists());
+        let first_update = fs::read(&config).unwrap();
+        set_launch_options_at(&config, &legacy, APP_ID, "", true, false).unwrap();
+        assert_eq!(fs::read(&legacy).unwrap(), first_update);
+        assert_eq!(fs::read(&config).unwrap(), first_update);
+        set_launch_options_at(&config, &legacy, APP_ID, "+set fs_game next", false, false).unwrap();
+        assert_eq!(fs::read(&legacy).unwrap(), first_update);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn launch_backup_failure_leaves_steam_config_unchanged() {
+        let root = fixture_dir("launch-backup-failure");
+        let config = root.join("localconfig.vdf");
+        let original = b"\"UserLocalConfigStore\" { \"unknown\" \"keep\" }\n";
+        fs::write(&config, original).unwrap();
+        let blocked = root.join("blocked");
+        fs::write(&blocked, b"not a directory").unwrap();
+        assert!(
+            set_launch_options_at(
+                &config,
+                &blocked.join("backup.vdf"),
+                APP_ID,
+                "-novid",
+                false,
+                false
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read(&config).unwrap(), original);
+        assert!(!fs_ops::backup_path(&config).exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rolling_launch_backup_preserves_source_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = fixture_dir("launch-backup-mode");
+        let config = root.join("localconfig.vdf");
+        let backup = root.join("backups/backup.vdf");
+        fs::write(&config, b"\"UserLocalConfigStore\" {}\n").unwrap();
+        fs::set_permissions(&config, fs::Permissions::from_mode(0o600)).unwrap();
+        set_launch_options_at(&config, &backup, APP_ID, "-novid", false, false).unwrap();
         assert_eq!(
-            fs::read(fs_ops::backup_path(&config)).unwrap(),
-            fixture.as_bytes()
+            config.metadata().unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            backup.metadata().unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        fs::set_permissions(&config, fs::Permissions::from_mode(0o640)).unwrap();
+        let first = fs::read(&config).unwrap();
+        set_launch_options_at(&config, &backup, APP_ID, "", true, false).unwrap();
+        assert_eq!(fs::read(&backup).unwrap(), first);
+        assert_eq!(
+            backup.metadata().unwrap().permissions().mode() & 0o777,
+            0o640
         );
         fs::remove_dir_all(root).unwrap();
     }

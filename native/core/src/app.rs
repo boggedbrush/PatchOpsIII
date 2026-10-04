@@ -19,6 +19,9 @@ pub const APP_VERSION: &str = env!("PATCHOPSIII_VERSION");
 
 /// Toolkit-neutral hook for forwarding structured log entries to a UI.
 pub type EventCallback = Arc<dyn Fn(LogEntry) + Send + Sync + 'static>;
+/// Embedders can replace Steam process management (false = close, true = open).
+/// The default implementation still closes Steam and waits before config writes.
+pub type SteamLifecycleCallback = Arc<dyn Fn(bool) -> Result<(), String> + Send + Sync + 'static>;
 pub type ProgressCallback = Arc<dyn Fn(OperationProgress) + Send + Sync + 'static>;
 
 #[derive(Clone)]
@@ -29,6 +32,9 @@ struct AppStateInner {
     resource_dir: Option<PathBuf>,
     on_log: Option<EventCallback>,
     on_progress: Mutex<Option<ProgressCallback>>,
+    steam_lifecycle: Mutex<Option<SteamLifecycleCallback>>,
+    dxvk_legacy_hash_provider: Mutex<Option<Arc<crate::exe::ExeHashProvider>>>,
+    legacy_enhanced_binding: Mutex<Option<String>>,
     active_operation: Mutex<Option<String>>,
     logs: Mutex<VecDeque<LogEntry>>,
     operation: Mutex<()>,
@@ -183,14 +189,14 @@ pub fn write_config_values(
         .permissions()
         .readonly()
     {
-        return Err("config.ini is read-only. Unlock it before making changes.".into());
+        return Err(format!(
+            "[Errno 13] Permission denied: '{}'",
+            path.display()
+        ));
     }
     let mut content = read_config(game_dir);
-    let line_ending = if content.contains("\r\n") {
-        "\r\n"
-    } else {
-        "\n"
-    };
+    // Python text-mode writes normalize CRLF input to LF.
+    let line_ending = "\n";
     let mut lines: Vec<String> = content.lines().map(str::to_owned).collect();
 
     for (key, value, comment) in updates {
@@ -337,8 +343,7 @@ pub fn set_config_readonly(state: &AppState, game_dir: &Path, enabled: bool) -> 
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mode = permissions.mode();
-        permissions.set_mode(if enabled { mode & !0o222 } else { mode | 0o200 });
+        permissions.set_mode(if enabled { 0o400 } else { 0o600 });
     }
     #[cfg(not(unix))]
     permissions.set_readonly(enabled);
@@ -646,7 +651,7 @@ mod tests {
 
         let updates = vec![("MaxFPS".into(), "240".into(), "Maximum FPS cap".into())];
         let error = write_config_values(&game, &updates).unwrap_err();
-        assert!(error.contains("read-only"));
+        assert!(error.contains("Permission denied"));
         assert_eq!(fs::read(&path).unwrap(), original);
 
         let mut permissions = path.metadata().unwrap().permissions();
@@ -679,6 +684,33 @@ pub struct Settings {
 }
 
 impl AppState {
+    /// Override legacy DLL recognition for synthetic fixtures. Manifest and
+    /// backup checks always use physical hashes, as do downloads and mutations.
+    pub fn set_dxvk_legacy_hash_provider(&self, provider: Arc<crate::exe::ExeHashProvider>) {
+        *self
+            .0
+            .dxvk_legacy_hash_provider
+            .lock()
+            .expect("DXVK hash provider lock") = Some(provider);
+    }
+
+    pub(crate) fn dxvk_legacy_hash_provider(&self) -> Option<Arc<crate::exe::ExeHashProvider>> {
+        self.0.dxvk_legacy_hash_provider.lock().ok()?.clone()
+    }
+
+    pub(crate) fn legacy_enhanced_binding(&self) -> &Mutex<Option<String>> {
+        &self.0.legacy_enhanced_binding
+    }
+
+    pub fn set_steam_lifecycle_callback(&self, callback: SteamLifecycleCallback) {
+        *self.0.steam_lifecycle.lock().expect("Steam lifecycle lock") = Some(callback);
+    }
+
+    pub(crate) fn steam_lifecycle_override(&self, opening: bool) -> Option<Result<(), String>> {
+        let callback = self.0.steam_lifecycle.lock().ok()?.clone()?;
+        Some(callback(opening))
+    }
+
     pub fn new(
         data_dir: PathBuf,
         resource_dir: Option<PathBuf>,
@@ -690,6 +722,9 @@ impl AppState {
             resource_dir,
             on_log,
             on_progress: Mutex::new(None),
+            steam_lifecycle: Mutex::new(None),
+            dxvk_legacy_hash_provider: Mutex::new(None),
+            legacy_enhanced_binding: Mutex::new(None),
             active_operation: Mutex::new(None),
             logs: Mutex::new(VecDeque::with_capacity(300)),
             operation: Mutex::new(()),
