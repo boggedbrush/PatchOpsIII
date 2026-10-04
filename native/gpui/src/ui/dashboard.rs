@@ -1,5 +1,6 @@
 //! Dashboard: status overview, quality-of-life options and launch options.
 use super::components::{Btn, check_row, column, columns, hairline, panel, radio_row, status_row};
+use super::progress::Operation;
 use super::{ControlCenter, theme};
 use crate::backend::Request;
 use gpui::{prelude::*, *};
@@ -248,7 +249,8 @@ impl ControlCenter {
                                     json!({"options": selected_option, "preserve_fs_game": false}),
                                 )),
                         ),
-                ),
+                )
+                .children(self.progress_strip(&[Operation::WorkshopInstall])),
         )
     }
 

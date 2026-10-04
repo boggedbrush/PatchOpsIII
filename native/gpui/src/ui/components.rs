@@ -237,7 +237,19 @@ impl RenderOnce for Btn {
             .when_some(self.glyph, |this, glyph| {
                 this.child(icon(glyph, if self.compact { 15. } else { 16. }, color))
             })
-            .child(self.label)
+            // `white-space: normal` on `.small-button`: when equal-width buttons
+            // share a narrow row the label wraps instead of being clipped. GPUI
+            // only wraps text inside a definite width, hence `w_full`; content-
+            // sized buttons keep a bare label (a `w_full` child there collapses).
+            .child(if self.grow && self.glyph.is_none() {
+                div()
+                    .w_full()
+                    .text_center()
+                    .child(self.label)
+                    .into_any_element()
+            } else {
+                self.label.into_any_element()
+            })
             .when(!enabled, |this| this.opacity(0.62).cursor_not_allowed())
             .when(enabled, |this| {
                 this.cursor_pointer()
@@ -460,7 +472,7 @@ pub fn radio_row(
         .flex()
         .items_center()
         .gap(px(10.))
-        .min_h(px(32.))
+        .min_h(px(30.))
         .min_w_0()
         .border_b_1()
         .border_color(theme::border())

@@ -2,6 +2,7 @@
 use super::components::{
     Btn, Glyph, bare_panel, card, card_title, column, columns, field_label, icon, metric,
 };
+use super::progress::Operation;
 use super::{ControlCenter, Validation, format_timestamp, theme};
 use gpui::{prelude::*, *};
 use serde_json::json;
@@ -103,7 +104,7 @@ impl ControlCenter {
             .justify_center()
             .gap(px(4.))
             .flex_1()
-            .min_w(px(220.))
+            .min_w(px(260.))
             .min_h(px(120.))
             .p(px(14.))
             .border_1()
@@ -141,7 +142,7 @@ impl ControlCenter {
             .flex_col()
             .gap(px(10.))
             .flex_1()
-            .min_w(px(240.))
+            .min_w(px(300.))
             .child(
                 div()
                     .flex()
@@ -212,6 +213,9 @@ impl ControlCenter {
             });
         card()
             .child(card_title(Some(Glyph::Download), "Install Source"))
+            .children(
+                self.progress_strip(&[Operation::EnhancedValidate, Operation::EnhancedInstall]),
+            )
             .child(
                 div()
                     .flex()
@@ -364,6 +368,7 @@ impl ControlCenter {
                     ))
                     .child("Danger Zone"),
             )
+            .children(self.progress_strip(&[Operation::EnhancedUninstall]))
             .when(open, |this| {
                 this.child(
                     div().flex().justify_end().child(

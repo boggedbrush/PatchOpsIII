@@ -4,6 +4,7 @@
 //! ones that CSS resolves to at the default 1150x820 window.
 use gpui::{App, Font, FontFallbacks, FontFeatures, FontStyle, FontWeight, Hsla, Pixels, px, rgb};
 use gpui_component::Theme;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 pub const FONT_XS: f32 = 12.;
 pub const FONT_SM: f32 = 13.;
@@ -32,6 +33,67 @@ pub fn radius_card() -> Pixels {
     px(5.)
 }
 
+/// How much of the desktop shows through the window.
+///
+/// The shell (page background, titlebar, nav) turns translucent while cards,
+/// fields and the activity log keep a near-opaque base so text stays legible
+/// (>= 4.5:1 for body and muted text even over a pure-white wallpaper; see
+/// the per-surface notes below). `Opaque` reproduces the Electron look exactly.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Backdrop {
+    /// Fully opaque surfaces: X11 without a compositor, GNOME, and
+    /// `PATCHOPSIII_GPUI_OPAQUE=1`.
+    Opaque,
+    /// Plain alpha transparency without a blur (X11 compositors, wlroots-style
+    /// Wayland compositors that may blur on their own).
+    Translucent,
+    /// Transparency over a blurred desktop: Windows acrylic, KDE Plasma
+    /// (`org_kde_kwin_blur`), macOS.
+    Blurred,
+}
+
+static BACKDROP: AtomicU8 = AtomicU8::new(0);
+
+pub fn set_backdrop(backdrop: Backdrop) {
+    BACKDROP.store(backdrop as u8, Ordering::Relaxed);
+}
+
+pub fn backdrop() -> Backdrop {
+    match BACKDROP.load(Ordering::Relaxed) {
+        1 => Backdrop::Translucent,
+        2 => Backdrop::Blurred,
+        _ => Backdrop::Opaque,
+    }
+}
+
+/// Alpha of the page background and the nav column.
+fn shell_alpha() -> f32 {
+    match backdrop() {
+        Backdrop::Opaque => 1.,
+        Backdrop::Translucent => 0.92,
+        // 0.84 over a pure-white wallpaper still gives muted text 6.4:1 (and
+        // body text 12:1), so it stays AA even where no blur is applied.
+        Backdrop::Blurred => 0.84,
+    }
+}
+
+/// Alpha of cards, buttons and input wells. The raised look of the Electron
+/// UI comes from a faint white overlay; when the window is translucent the
+/// overlay is replaced by its pre-composited colour plus a high alpha, so the
+/// surface does not turn into a pane of glass.
+fn card_alpha() -> f32 {
+    match backdrop() {
+        Backdrop::Opaque => 1.,
+        Backdrop::Translucent => 0.97,
+        // 0.92 over white: body text 12.6:1, muted text 6.8:1.
+        Backdrop::Blurred => 0.92,
+    }
+}
+
+fn is_translucent() -> bool {
+    backdrop() != Backdrop::Opaque
+}
+
 fn hex(value: u32) -> Hsla {
     rgb(value).into()
 }
@@ -44,24 +106,66 @@ pub fn white(alpha: f32) -> Hsla {
     tint(0xffffff, alpha)
 }
 
+/// The page background (`--bg`), bottom of the app gradient.
 pub fn bg() -> Hsla {
-    hex(0x0d0d0f)
+    tint(0x0d0d0f, shell_alpha())
 }
 
+/// `#050505`: top of the app gradient.
 pub fn bg_deep() -> Hsla {
-    hex(0x050505)
+    tint(0x050505, shell_alpha())
 }
 
+/// The titlebar strip, painted over the page gradient. Translucent modes use
+/// a black wash instead of a second opaque layer, which would stack with the
+/// page and end up fully opaque (page 0.84 + wash 0.35 = 0.90 overall).
+pub fn titlebar() -> Hsla {
+    match backdrop() {
+        Backdrop::Opaque => hex(0x050505),
+        Backdrop::Translucent => tint(0x000000, 0.30),
+        Backdrop::Blurred => tint(0x000000, 0.35),
+    }
+}
+
+/// `.panel` fill: `white(0.055)` over the page.
 pub fn panel() -> Hsla {
-    white(0.055)
+    if is_translucent() {
+        tint(0x1a1a1c, card_alpha())
+    } else {
+        white(0.055)
+    }
 }
 
+/// Buttons: `white(0.08)` over the page.
 pub fn panel_strong() -> Hsla {
-    white(0.08)
+    if is_translucent() {
+        tint(0x202022, card_alpha())
+    } else {
+        white(0.08)
+    }
 }
 
+/// Input wells: `black(0.26)` over a panel.
 pub fn field() -> Hsla {
-    tint(0x000000, 0.26)
+    if is_translucent() {
+        tint(0x131314, (card_alpha() + 0.03).min(1.))
+    } else {
+        tint(0x000000, 0.26)
+    }
+}
+
+/// The activity log's well (`--bg-deep` at 50% over its panel).
+pub fn log_surface() -> Hsla {
+    if is_translucent() {
+        tint(0x050505, 0.9)
+    } else {
+        tint(0x050505, 0.5)
+    }
+}
+
+/// The 1px frame drawn around a client-decorated window.
+pub fn window_edge() -> Hsla {
+    white(0.16)
 }
 
 pub fn border() -> Hsla {
@@ -174,7 +278,11 @@ pub fn apply(cx: &mut App) {
     theme.radius_lg = radius();
     theme.shadow = false;
     let colors = &mut theme.colors;
-    colors.background = bg();
+    // `Root` paints `background` (and a square `window_border`) under the
+    // view; the app paints its own rounded, possibly translucent fill, so
+    // both must stay clear.
+    colors.background = gpui::transparent_black();
+    colors.window_border = gpui::transparent_black();
     colors.foreground = text();
     colors.border = border();
     colors.input = border();

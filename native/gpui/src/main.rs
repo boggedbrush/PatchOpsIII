@@ -7,8 +7,27 @@ use gpui_component::{Root, Theme, ThemeMode};
 
 fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
-    let service = backend::BackendService::launch()?;
-    let backend = backend::Backend::start(service.url().to_owned())?;
+    let backend = backend::Backend::start()?;
+    // Read-only diagnostic used by archive smoke checks, without opening a window.
+    if std::env::args().any(|argument| argument == "--smoke-status") {
+        backend.requests.send(backend::Request {
+            path: "/api/status".into(),
+            body: None,
+        })?;
+        let reply = backend
+            .replies
+            .recv_timeout(std::time::Duration::from_secs(30))?;
+        if reply.failed {
+            anyhow::bail!("{}", reply.message);
+        }
+        println!(
+            "{}",
+            reply
+                .state
+                .ok_or_else(|| anyhow::anyhow!("Missing status document"))?
+        );
+        return Ok(());
+    }
     let app = Application::new().with_assets(ui::Assets);
     app.run(move |cx: &mut App| {
         gpui_component::init(cx);
@@ -36,16 +55,11 @@ fn main() -> Result<()> {
         })
         .detach();
         let bounds = Bounds::centered(None, size(px(1150.), px(820.)), cx);
+        ui::log_session();
         cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                window_min_size: Some(size(px(800.), px(600.))),
-                titlebar: Some(TitlebarOptions {
-                    title: Some("PatchOpsIII".into()),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
+            // Custom titlebar, client-side decorations and a translucent
+            // backdrop where the platform supports them; see `ui/chrome.rs`.
+            ui::window_options(bounds),
             move |window, cx| {
                 let view = cx.new(|cx| ui::ControlCenter::new(backend, window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
@@ -54,6 +68,5 @@ fn main() -> Result<()> {
         .expect("Unable to open the GPUI window");
         cx.activate(true);
     });
-    drop(service);
     Ok(())
 }

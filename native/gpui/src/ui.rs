@@ -1,17 +1,22 @@
 //! The PatchOpsIII desktop UI. The layout mirrors the Electron renderer
 //! (`src/renderer/main.tsx` + `styles/app.css`); each page lives in its own module.
 mod assets;
+mod chrome;
 mod components;
 mod dashboard;
 mod enhanced;
 mod exe;
 mod graphics;
 mod modals;
+mod progress;
 mod t7;
 mod theme;
 mod tools;
 
 pub use assets::Assets;
+pub use chrome::{log_session, window_options};
+// The backend's event hook builds these; see `ControlCenter::on_progress`.
+pub use progress::{Operation, ProgressEvent};
 
 use crate::backend::{Backend, Reply, Request};
 use components::{Btn, Glyph, icon};
@@ -22,13 +27,21 @@ use gpui_component::{
     scroll::ScrollableElement,
     slider::{SliderEvent, SliderState},
 };
+use progress::OperationProgress;
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, VecDeque},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-const POLL_INTERVAL: Duration = Duration::from_secs(5);
+/// How often the UI asks the backend for a fresh status document while idle.
+/// Actions refresh explicitly (see `request_refresh`), so this is only the
+/// safety net for changes made outside the app; raise it freely.
+const STATUS_POLL_INTERVAL: Duration = Duration::from_secs(5);
+/// How often the Steam depot prompt re-checks whether the depot has arrived.
+const DEPOT_POLL_INTERVAL: Duration = Duration::from_secs(5);
+/// How often the UI loop drains backend replies and events.
+const UI_TICK: Duration = Duration::from_millis(100);
 const DEPOT_COMMAND_MARKER: &str = "Steam console command: ";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -143,6 +156,18 @@ pub struct ControlCenter {
     content_scroll: ScrollHandle,
     log_scroll: ScrollHandle,
     log_count: usize,
+    /// The long operation in flight (or just finished); see `progress.rs`.
+    progress: Option<OperationProgress>,
+    /// The operation behind `inflight`, when it gets a progress strip.
+    inflight_op: Option<Operation>,
+    /// Log lines streamed through `on_progress` since the last snapshot.
+    live_logs: Vec<Value>,
+    /// A status refresh is wanted as soon as the backend is idle.
+    refresh_pending: bool,
+    /// Titlebar drag in progress; see `chrome::drag_region`.
+    title_drag: chrome::DragArmed,
+    /// Whether the first presented frame has been reported; see `render`.
+    first_frame: bool,
 }
 
 fn dxvk_recommended() -> Value {
@@ -253,11 +278,21 @@ impl ControlCenter {
             cx.subscribe_in(slider, window, |_, _, _: &SliderEvent, _, cx| cx.notify())
                 .detach();
         }
+        // Developer knob for screenshots: PATCHOPSIII_GPUI_PAGE=t7|exe|enhanced|graphics|dxvk|tools.
+        let (page, graphics_tab) = match std::env::var("PATCHOPSIII_GPUI_PAGE").as_deref() {
+            Ok("t7") => (Page::T7, GraphicsTab::Settings),
+            Ok("exe") => (Page::Exe, GraphicsTab::Settings),
+            Ok("enhanced") => (Page::Enhanced, GraphicsTab::Settings),
+            Ok("graphics") => (Page::Graphics, GraphicsTab::Settings),
+            Ok("dxvk") => (Page::Graphics, GraphicsTab::Dxvk),
+            Ok("tools") => (Page::Tools, GraphicsTab::Settings),
+            _ => (Page::Dashboard, GraphicsTab::Settings),
+        };
         let mut view = Self {
             backend,
             state: Value::Null,
-            page: Page::Dashboard,
-            graphics_tab: GraphicsTab::Settings,
+            page,
+            graphics_tab,
             busy: false,
             connected: false,
             message: "Connecting to the local service…".into(),
@@ -284,15 +319,32 @@ impl ControlCenter {
             content_scroll: ScrollHandle::new(),
             log_scroll: ScrollHandle::new(),
             log_count: 0,
+            progress: None,
+            inflight_op: None,
+            live_logs: Vec::new(),
+            refresh_pending: false,
+            title_drag: Default::default(),
+            first_frame: false,
         };
+        // Pick the backdrop for the decorations the platform granted, and redo
+        // it if they change later; repaint when the frame (tiling, maximise)
+        // changes shape.
+        // GPUI only forwards `TitlebarOptions::title` on X11/Windows/macOS.
+        window.set_window_title("PatchOpsIII");
+        chrome::settle(window);
+        cx.observe_window_appearance(window, |_, window, cx| {
+            chrome::settle(window);
+            cx.notify();
+        })
+        .detach();
+        cx.observe_window_bounds(window, |_, _, cx| cx.notify())
+            .detach();
         view.send("/api/status", None, cx);
         // Drain replies and periodically refresh on GPUI's foreground executor.
         // The only blocking work lives on the dedicated HTTP worker.
         cx.spawn_in(window, async move |entity, cx| {
             loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(100))
-                    .await;
+                cx.background_executor().timer(UI_TICK).await;
                 if entity
                     .update_in(cx, |view, window, cx| {
                         while let Ok(reply) = view.backend.replies.try_recv() {
@@ -313,6 +365,20 @@ impl ControlCenter {
     fn handle_reply(&mut self, reply: Reply, window: &mut Window, cx: &mut Context<Self>) {
         self.busy = false;
         let path = std::mem::take(&mut self.inflight);
+        let (is_status, carried_state) = (reply.is_status, reply.state.is_some());
+        // A depot prompt is a question for the user, not a failed operation.
+        let failed = reply.failed && !reply.message.contains(DEPOT_COMMAND_MARKER);
+        if let Some(op) = self.inflight_op.take() {
+            let message = reply.message.lines().next().unwrap_or_default().to_owned();
+            self.on_progress(
+                ProgressEvent::Finished {
+                    op,
+                    ok: !failed,
+                    message,
+                },
+                cx,
+            );
+        }
         if reply.failed {
             self.queue.clear();
             self.failed = true;
@@ -340,15 +406,41 @@ impl ControlCenter {
             }
         }
         self.last_refresh = Instant::now();
+        if carried_state {
+            self.prune_live_logs();
+        }
+        self.refresh_after(is_status, failed, carried_state);
+        self.follow_log();
+        if let Some(next) = self.queue.pop_front() {
+            self.send(&next.path, next.body, cx);
+        }
+        cx.notify();
+    }
+
+    /// Keep the Activity Log pinned to its newest line when entries arrive.
+    fn follow_log(&mut self) {
         let entries = self.visible_logs().len();
         if entries != self.log_count {
             self.log_count = entries;
             self.log_scroll.scroll_to_bottom();
         }
-        if let Some(next) = self.queue.pop_front() {
-            self.send(&next.path, next.body, cx);
+    }
+
+    /// Refresh-after-action policy, in one place. A successful action normally
+    /// answers with the new state document, so nothing more is needed. One that
+    /// answers without it, or fails (the backend may have changed state and
+    /// logged before failing), asks for a status refresh right away instead of
+    /// waiting out `STATUS_POLL_INTERVAL`.
+    fn refresh_after(&mut self, is_status: bool, failed: bool, carried_state: bool) {
+        if !is_status && (failed || !carried_state) {
+            self.request_refresh();
         }
-        cx.notify();
+    }
+
+    /// Ask for a status refresh as soon as the backend is idle. Backend events
+    /// that mean "state changed outside a request" can call this too.
+    pub fn request_refresh(&mut self) {
+        self.refresh_pending = true;
     }
 
     /// Per-endpoint bookkeeping for a failed request.
@@ -400,6 +492,7 @@ impl ControlCenter {
                 };
             }
             "/api/exe-swap/compatible" => self.depot = None,
+            "/api/logs/clear" => self.live_logs.clear(),
             "/api/t7-config" => {
                 self.t7_password_touched = false;
                 self.load_t7(window, cx);
@@ -410,19 +503,20 @@ impl ControlCenter {
 
     /// Background work: status refresh and depot watching.
     fn poll(&mut self, cx: &mut Context<Self>) {
+        self.expire_progress(cx);
         if self.busy || self.pending.is_some() {
             return;
         }
-        let watching = self
-            .depot
-            .as_ref()
-            .is_some_and(|depot| depot.watching && depot.last_poll.elapsed() >= POLL_INTERVAL);
+        let watching = self.depot.as_ref().is_some_and(|depot| {
+            depot.watching && depot.last_poll.elapsed() >= DEPOT_POLL_INTERVAL
+        });
         if watching {
             if let Some(depot) = self.depot.as_mut() {
                 depot.last_poll = Instant::now();
             }
             self.send("/api/exe-swap/compatible", Some(json!({})), cx);
-        } else if self.last_refresh.elapsed() >= POLL_INTERVAL {
+        } else if self.refresh_pending || self.last_refresh.elapsed() >= STATUS_POLL_INTERVAL {
+            self.refresh_pending = false;
             self.send("/api/status", None, cx);
         }
     }
@@ -439,6 +533,14 @@ impl ControlCenter {
                 self.busy = true;
                 self.inflight = path.to_owned();
                 self.last_refresh = Instant::now();
+                // The depot watcher re-sends the same request every few
+                // seconds; that is polling, not an operation to announce.
+                let watching = self.depot.as_ref().is_some_and(|depot| depot.watching);
+                self.inflight_op = Operation::from_path(path)
+                    .filter(|op| !(watching && *op == Operation::ExeCompatible));
+                if let Some(op) = self.inflight_op {
+                    self.on_progress(ProgressEvent::Started(op), cx);
+                }
             }
             Err(_) => {
                 self.failed = true;
@@ -736,19 +838,35 @@ impl ControlCenter {
     }
 
     /// Latest log lines, oldest first, without the service start-up notice.
+    fn log_key(entry: &Value) -> String {
+        format!(
+            "{}|{}|{}",
+            entry["line"], entry["category"], entry["message"]
+        )
+    }
+
+    /// Streamed lines the status snapshot now contains no longer need keeping.
+    fn prune_live_logs(&mut self) {
+        let known: std::collections::HashSet<String> = self.state["logs"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(Self::log_key)
+            .collect();
+        self.live_logs
+            .retain(|entry| !known.contains(&Self::log_key(entry)));
+    }
+
+    /// Snapshot entries followed by lines streamed since (`on_progress`).
     fn visible_logs(&self) -> Vec<(String, String)> {
         let mut seen = std::collections::HashSet::new();
         let mut entries: Vec<(String, String)> = self.state["logs"]
             .as_array()
             .into_iter()
             .flatten()
+            .chain(&self.live_logs)
             .filter(|entry| entry["message"] != "PatchOpsIII local API started.")
-            .filter(|entry| {
-                seen.insert(format!(
-                    "{}|{}|{}",
-                    entry["line"], entry["category"], entry["message"]
-                ))
-            })
+            .filter(|entry| seen.insert(Self::log_key(entry)))
             .map(|entry| {
                 (
                     entry["category"].as_str().unwrap_or("Info").to_owned(),
@@ -773,9 +891,15 @@ impl ControlCenter {
         }
     }
 
-    /// `.titlebar`: logo, name, version (click to check for updates) and
-    /// the connection state.
-    fn header(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// `.titlebar`: logo, name, version (click to check for updates), the
+    /// connection state and the caption buttons. The whole strip is the
+    /// window's titlebar; everything except the buttons drags the window.
+    fn header(
+        &self,
+        frame: chrome::Frame,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let version = self.string("/appVersion");
         let version = if version.to_lowercase().starts_with('v') || version.is_empty() {
             version
@@ -783,23 +907,25 @@ impl ControlCenter {
             format!("v{version}")
         };
         let can_act = self.can_act();
-        div()
-            .flex()
-            .items_center()
-            .flex_none()
-            .h(px(32.))
-            .px(px(10.))
-            .gap(px(8.))
-            .bg(theme::bg_deep())
-            .border_b_1()
-            .border_color(theme::white(0.08))
+        let drag = &self.title_drag;
+        chrome::titlebar(frame)
             .child(
-                img("images/logo.png")
-                    .size(px(18.))
+                chrome::drag_region("titlebar-brand", drag, frame)
+                    .flex()
+                    .items_center()
                     .flex_none()
-                    .rounded(px(4.)),
+                    .h_full()
+                    .pl(px(10.))
+                    .pr(px(8.))
+                    .gap(px(8.))
+                    .child(
+                        img("images/logo.png")
+                            .size(px(18.))
+                            .flex_none()
+                            .rounded(px(4.)),
+                    )
+                    .child(div().text_size(px(theme::FONT_SM)).child("PatchOpsIII")),
             )
-            .child(div().text_size(px(theme::FONT_SM)).child("PatchOpsIII"))
             .child(
                 div()
                     .id("check-updates")
@@ -826,8 +952,19 @@ impl ControlCenter {
                     .child(version)
                     .child(icon(Glyph::Refresh, 12., theme::muted())),
             )
-            .child(div().flex_1())
-            .child(self.connection_badge())
+            .child(
+                chrome::drag_region("titlebar-spacer", drag, frame)
+                    .flex_1()
+                    .h_full(),
+            )
+            .child(
+                chrome::drag_region("titlebar-status", drag, frame)
+                    .flex()
+                    .items_center()
+                    .h_full()
+                    .px(px(8.))
+                    .child(self.connection_badge()),
+            )
             .child(
                 Btn::new("reload-values", "Reload Values")
                     .tiny()
@@ -837,6 +974,7 @@ impl ControlCenter {
                         cx.notify();
                     })),
             )
+            .child(div().w(px(8.)).h_full().flex_none())
             .child(
                 Btn::new("refresh", if self.busy { "Working…" } else { "Refresh" })
                     .tiny()
@@ -847,6 +985,13 @@ impl ControlCenter {
                         view.send("/api/status", None, cx);
                     })),
             )
+            .child(
+                chrome::drag_region("titlebar-end", drag, frame)
+                    .flex_none()
+                    .h_full()
+                    .w(px(10.)),
+            )
+            .children(chrome::caption_buttons(frame, window))
     }
 
     fn connection_badge(&self) -> impl IntoElement {
@@ -1006,7 +1151,7 @@ impl ControlCenter {
     }
 
     /// `.log-panel`: the last lines of the backend's activity log.
-    fn log_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn log_panel(&self, height: Pixels, cx: &mut Context<Self>) -> impl IntoElement {
         let entries = self.visible_logs();
         let status_color = if self.failed {
             theme::warning()
@@ -1017,7 +1162,7 @@ impl ControlCenter {
             .flex()
             .flex_col()
             .flex_none()
-            .h(px(180.))
+            .h(height)
             .child(
                 div()
                     .flex()
@@ -1037,7 +1182,7 @@ impl ControlCenter {
                             .truncate()
                             .text_size(px(theme::FONT_XS))
                             .text_color(status_color)
-                            .child(self.message.clone()),
+                            .child(self.status_line()),
                     ),
             )
             .child(
@@ -1056,7 +1201,7 @@ impl ControlCenter {
                             .border_1()
                             .border_color(theme::white(0.))
                             .rounded(px(9.))
-                            .bg(theme::bg_deep().alpha(0.5))
+                            .bg(theme::log_surface())
                             .child(
                                 div()
                                     .id("log-scroll")
@@ -1166,8 +1311,15 @@ impl ControlCenter {
 }
 
 impl Render for ControlCenter {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if !self.first_frame {
+            self.first_frame = true;
+            chrome::first_frame(window, cx);
+        }
         let ready = !self.state.is_null();
+        // `.log-panel` is 180px tall with a 140px floor; give the pages the
+        // difference on short windows so the default 820px layout fits.
+        let log_height = px((f32::from(window.viewport_size().height) * 0.19).clamp(140., 180.));
         let body = if ready {
             div()
                 .flex()
@@ -1206,12 +1358,21 @@ impl Render for ControlCenter {
                                                 .flex_col()
                                                 .gap(px(theme::PANEL_GAP))
                                                 .pr(px(8.))
-                                                .child(self.page_view(cx)),
+                                                // Content must keep its natural height (flex-shrink
+                                                // would squash it into the viewport and clip the
+                                                // cards instead of scrolling).
+                                                .child(
+                                                    div()
+                                                        .flex()
+                                                        .flex_col()
+                                                        .flex_none()
+                                                        .child(self.page_view(cx)),
+                                                ),
                                         )
                                         .vertical_scrollbar(&self.content_scroll),
                                 ),
                         )
-                        .child(self.log_panel(cx)),
+                        .child(self.log_panel(log_height, cx)),
                 )
         } else {
             div()
@@ -1221,7 +1382,8 @@ impl Render for ControlCenter {
                 .min_h_0()
                 .child(self.startup_screen(cx))
         };
-        div()
+        let frame = chrome::Frame::read(window);
+        let root = div()
             .relative()
             .flex()
             .flex_col()
@@ -1234,7 +1396,7 @@ impl Render for ControlCenter {
             .font(theme::ui_font())
             .text_color(theme::text())
             .text_size(px(theme::FONT_MD))
-            .child(self.header(cx))
+            .child(self.header(frame, window, cx))
             .child(
                 div()
                     .flex()
@@ -1244,7 +1406,12 @@ impl Render for ControlCenter {
                     .p(px(theme::APP_PAD))
                     .child(body),
             )
-            .children(self.confirm_modal(cx))
-            .children(self.depot_modal(cx))
+            .children(
+                self.confirm_modal(cx)
+                    .map(|modal| frame.round_overlay(modal)),
+            )
+            .children(self.depot_modal(cx).map(|modal| frame.round_overlay(modal)));
+        // Rounded corners and the 1px outline of a client-decorated window.
+        frame.frame(root)
     }
 }

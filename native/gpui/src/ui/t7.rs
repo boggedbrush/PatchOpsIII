@@ -3,6 +3,7 @@ use super::components::{
     Btn, Glyph, boxed_metric, chip, column, columns, field_label, icon_button, inline_pill,
     module_row, panel, switch, text_xs,
 };
+use super::progress::Operation;
 use super::{ControlCenter, theme};
 use gpui::{prelude::*, *};
 use serde_json::json;
@@ -122,6 +123,10 @@ impl ControlCenter {
                             .disabled(!self.can_act() || !installed)
                             .grow(),
                         ),
+                )
+                .children(
+                    self.progress_strip(&[Operation::T7Install, Operation::T7Uninstall])
+                        .map(|strip| div().w_full().px(px(10.)).pb(px(10.)).child(strip)),
                 ),
         )
     }
@@ -185,15 +190,16 @@ impl ControlCenter {
                         .child(field_label("Name"))
                         .child(self.field("gamertag").disabled(!enabled)),
                 )
-                .child(div().flex().flex_col().gap(px(7.)).children(
-                    GAMERTAG_COLORS.chunks(5).enumerate().map(|(row, colors)| {
-                        div()
-                            .flex()
-                            .gap(px(7.))
-                            .children(colors.iter().enumerate().map(|(col, (code, label, hex))| {
+                // `.color-grid`: auto-fit columns of at least 92px.
+                .child(
+                    div().flex().flex_wrap().gap(px(7.)).children(
+                        GAMERTAG_COLORS
+                            .iter()
+                            .enumerate()
+                            .map(|(index, (code, label, hex))| {
                                 let code = (*code).to_owned();
                                 chip(
-                                    ("color", row * 5 + col),
+                                    ("color", index),
                                     *label,
                                     Some(rgb(*hex).into()),
                                     self.t7_color == code,
@@ -204,10 +210,11 @@ impl ControlCenter {
                                     }),
                                 )
                                 .flex_1()
+                                .min_w(px(92.))
                                 .text_size(px(11.))
-                            }))
-                    }),
-                ))
+                            }),
+                    ),
+                )
                 .child(
                     div()
                         .flex()
@@ -273,7 +280,9 @@ impl ControlCenter {
                                     theme::ok()
                                 },
                             )
-                            .flex_none()
+                            // `metric` is flex_1 (basis 0%); reset the basis or
+                            // the fixed width is ignored and the box collapses.
+                            .flex_initial()
                             .w(px(120.)),
                         ),
                 )

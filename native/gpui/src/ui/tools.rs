@@ -2,6 +2,7 @@
 use super::components::{
     Btn, Glyph, bare_panel, card, card_title, columns, handler, segmented, tool_metric,
 };
+use super::progress::Operation;
 use super::{ControlCenter, theme};
 use gpui::{prelude::*, *};
 use serde_json::json;
@@ -100,7 +101,8 @@ impl ControlCenter {
                 )
                 .compact()
                 .icon(Glyph::Refresh),
-            );
+            )
+            .children(self.progress_strip(&[Operation::UpdateCheck]));
         let cache = self
             .tool_card(Glyph::Download, "Mod Cache")
             .child(tool_metric(
@@ -121,38 +123,41 @@ impl ControlCenter {
                 },
                 !mod_files.is_empty(),
             ));
-        let cache_actions = self.tool_card(Glyph::Trash, "Cache Actions").child(
-            div()
-                .flex()
-                .flex_wrap()
-                .gap(px(8.))
-                .child(
-                    self.action(
-                        cx,
-                        "clear-mod-files",
-                        "Clear Mod Files",
-                        "/api/mod-files/clear",
-                        json!({}),
+        let cache_actions = self
+            .tool_card(Glyph::Trash, "Cache Actions")
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap(px(8.))
+                    .child(
+                        self.action(
+                            cx,
+                            "clear-mod-files",
+                            "Clear Mod Files",
+                            "/api/mod-files/clear",
+                            json!({}),
+                        )
+                        .compact()
+                        .icon(Glyph::Trash)
+                        .grow(),
                     )
-                    .compact()
-                    .icon(Glyph::Trash)
-                    .grow(),
-                )
-                .child(
-                    self.action(
-                        cx,
-                        "reset-stock",
-                        "Reset to Stock",
-                        "/api/reset-stock",
-                        json!({}),
-                    )
-                    .compact()
-                    .icon(Glyph::Rotate)
-                    .danger()
-                    .grow()
-                    .disabled(!can_act || !self.flag("/gameDetected")),
-                ),
-        );
+                    .child(
+                        self.action(
+                            cx,
+                            "reset-stock",
+                            "Reset to Stock",
+                            "/api/reset-stock",
+                            json!({}),
+                        )
+                        .compact()
+                        .icon(Glyph::Rotate)
+                        .danger()
+                        .grow()
+                        .disabled(!can_act || !self.flag("/gameDetected")),
+                    ),
+            )
+            .children(self.progress_strip(&[Operation::ClearModFiles, Operation::ResetStock]));
         let logs = self
             .tool_card(Glyph::Clipboard, "Logs")
             .child(tool_metric(

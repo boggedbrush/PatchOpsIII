@@ -4,6 +4,7 @@ use super::components::{
     Btn, Glyph, bare_panel, chip, column, columns, handler, icon, inline_pill, segmented, switch,
     text_xs,
 };
+use super::progress::Operation;
 use super::{ControlCenter, GraphicsTab, dxvk_recommended, theme};
 use gpui::{prelude::*, *};
 use gpui_component::slider::Slider;
@@ -776,6 +777,7 @@ impl ControlCenter {
                 .flex_col()
                 .gap(px(theme::PANEL_GAP))
                 .child(control_bar)
+                .children(self.progress_strip(&[Operation::DxvkInstall, Operation::DxvkUninstall]))
                 .child(
                     columns()
                         .child(quick_row("Preset", presets))

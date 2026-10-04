@@ -5,6 +5,22 @@ use std::borrow::Cow;
 
 const ASSETS: &[(&str, &[u8])] = &[
     (
+        "caption/close.svg",
+        include_bytes!("../../assets/caption/close.svg"),
+    ),
+    (
+        "caption/maximize.svg",
+        include_bytes!("../../assets/caption/maximize.svg"),
+    ),
+    (
+        "caption/minimize.svg",
+        include_bytes!("../../assets/caption/minimize.svg"),
+    ),
+    (
+        "caption/restore.svg",
+        include_bytes!("../../assets/caption/restore.svg"),
+    ),
+    (
         "icons/check.svg",
         include_bytes!("../../assets/icons/check.svg"),
     ),

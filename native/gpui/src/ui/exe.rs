@@ -1,5 +1,6 @@
 //! EXE Swapper: the three selectable executables and their trade-offs.
 use super::components::{Btn, Glyph, bare_panel, columns, icon, status_pill, text_xs};
+use super::progress::Operation;
 use super::{ControlCenter, theme};
 use gpui::{prelude::*, *};
 use serde_json::json;
@@ -17,26 +18,21 @@ fn verdict_line(verdict: Verdict, topic: &str, detail: &str) -> Div {
         Verdict::Warn => (Glyph::Alert, theme::caution()),
         Verdict::Con => (Glyph::Close, theme::accent()),
     };
+    // One run of text with a bold lead-in so long details wrap inside the card.
+    let lead = format!("{topic}:");
+    let bold = HighlightStyle {
+        font_weight: Some(FontWeight::BOLD),
+        ..Default::default()
+    };
+    let text = StyledText::new(format!("{lead} {detail}")).with_highlights([(0..lead.len(), bold)]);
     div()
         .flex()
-        .items_center()
+        .items_start()
         .gap(px(8.))
         .min_w_0()
         .text_size(px(theme::FONT_SM))
-        .child(icon(glyph, 15., color))
-        .child(
-            div().flex_1().min_w_0().child(
-                div()
-                    .flex()
-                    .gap(px(4.))
-                    .child(
-                        div()
-                            .font_weight(FontWeight::BOLD)
-                            .child(format!("{topic}:")),
-                    )
-                    .child(detail.to_owned()),
-            ),
-        )
+        .child(div().pt(px(2.)).child(icon(glyph, 15., color)))
+        .child(div().flex_1().min_w_0().child(text))
 }
 
 struct ExeOption<'a> {
@@ -327,6 +323,11 @@ impl ControlCenter {
                 .flex_col()
                 .gap(px(theme::PANEL_GAP))
                 .child(hero)
+                .children(self.progress_strip(&[
+                    Operation::ExeCompatible,
+                    Operation::ExeCurrent,
+                    Operation::ExeEnhanced,
+                ]))
                 .child(options)
                 .child(details),
         )
