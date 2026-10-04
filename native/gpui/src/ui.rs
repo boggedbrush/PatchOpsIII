@@ -829,11 +829,30 @@ impl ControlCenter {
     }
 
     fn choose_directory(&mut self, input: &'static str, window: &Window, cx: &mut Context<Self>) {
+        self.choose_path(input, false, window, cx);
+    }
+
+    /// Native picker for a folder or, with `file`, a single file. Platform
+    /// pickers can't offer both at once, so callers expose one per action.
+    fn choose_path(
+        &mut self,
+        input: &'static str,
+        file: bool,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
         let paths = cx.prompt_for_paths(PathPromptOptions {
-            files: false,
-            directories: true,
+            files: file,
+            directories: !file,
             multiple: false,
-            prompt: Some("Select a folder".into()),
+            prompt: Some(
+                if file {
+                    "Select a file"
+                } else {
+                    "Select a folder"
+                }
+                .into(),
+            ),
         });
         cx.spawn_in(window, async move |entity, cx| match paths.await {
             Ok(Ok(Some(paths))) => {
@@ -848,7 +867,7 @@ impl ControlCenter {
             Ok(Ok(None)) => {}
             _ => {
                 let _ = entity.update(cx, |view, cx| {
-                    view.reject("Folder picker unavailable. Enter the path directly.", cx);
+                    view.reject("File picker unavailable. Enter the path directly.", cx);
                 });
             }
         })

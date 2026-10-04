@@ -148,26 +148,37 @@ impl ControlCenter {
                     .flex()
                     .gap(px(10.))
                     .child(
-                        Btn::new("browse-dump", "Browse")
+                        Btn::new("browse-dump", "Browse Folder")
                             .icon(Glyph::FolderOpen)
                             .grow()
                             .disabled(self.busy)
                             .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
-                                view.choose_directory("dump", window, cx)
+                                view.choose_path("dump", false, window, cx)
                             })),
                     )
                     .child(
-                        self.action(
-                            cx,
-                            "validate-dump",
-                            "Validate Source",
-                            "/api/enhanced-validate",
-                            json!({"dumpSource": source}),
-                        )
-                        .icon(Glyph::CheckCircle)
-                        .grow()
-                        .disabled(!can_act || source.is_empty()),
+                        Btn::new("browse-dump-zip", "Browse DUMP.zip")
+                            .icon(Glyph::FolderOpen)
+                            .grow()
+                            .disabled(self.busy)
+                            .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
+                                view.choose_path("dump", true, window, cx)
+                            })),
                     ),
+            )
+            .child(
+                div().flex().child(
+                    self.action(
+                        cx,
+                        "validate-dump",
+                        "Validate Source",
+                        "/api/enhanced-validate",
+                        json!({"dumpSource": source}),
+                    )
+                    .icon(Glyph::CheckCircle)
+                    .grow()
+                    .disabled(!can_act || source.is_empty()),
+                ),
             )
             .child(
                 div()

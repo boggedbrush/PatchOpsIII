@@ -307,7 +307,7 @@ impl ControlCenter {
             ))
             .child(quick_row(
                 "Refresh Rate",
-                self.number_control(cx, "refresh", "RefreshRate", 1, 1000),
+                self.number_control(cx, "refresh", "RefreshRate", 1, 240),
             ))
     }
 
