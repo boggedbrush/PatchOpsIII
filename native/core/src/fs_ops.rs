@@ -83,6 +83,22 @@ impl Snapshot {
     }
 }
 
+/// Whether two paths name the same directory. Both sides are canonicalized
+/// (resolving symlinks and, on Windows, 8.3 short names and the `\\?\`
+/// prefix); Windows comparisons ignore ASCII case like the filesystem does.
+pub fn same_directory(left: &Path, right: &Path) -> bool {
+    fn key(path: &Path) -> String {
+        let resolved = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let key = resolved.to_string_lossy().into_owned();
+        if cfg!(windows) {
+            key.to_ascii_lowercase()
+        } else {
+            key
+        }
+    }
+    left == right || key(left) == key(right)
+}
+
 pub fn sha256_file(path: &Path) -> Result<String, String> {
     let mut file = File::open(path).map_err(|error| format!("{}: {error}", path.display()))?;
     let mut digest = Sha256::new();

@@ -512,7 +512,7 @@ fn validate_managed_manifest(
     if manifest.version != MANAGED_STATE_VERSION {
         return Err("unsupported DXVK managed manifest version".into());
     }
-    if manifest.game_dir != game_dir {
+    if !fs_ops::same_directory(&manifest.game_dir, game_dir) {
         return Err(format!(
             "DXVK is managed for {}, not {}",
             manifest.game_dir.display(),
