@@ -23,6 +23,7 @@ node_modules/
 # text files:
 *.txt
 !requirements.txt
+!native/gpui/assets/icons/LICENSE-lucide.txt
 
 # vdf files:
 *.vdf
