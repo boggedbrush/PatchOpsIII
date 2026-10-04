@@ -1,0 +1,31 @@
+{
+  "mismatchCount": 135,
+  "rustSourcesAtReport": {
+    "native/core/src/app.rs": "d9349229ac31f1a1d14e5d7bd391cc610b88bab8f3f0e1d9122f3e3ff084eb29",
+    "native/core/src/dxvk.rs": "d47cb3d23491daf4519bdb84d90e71ea5c5e10318db98ed0660e6d2e390aaa93",
+    "native/core/src/engine.rs": "962fb6557c6045502a2c0a86691bdc2c953dc5861b6f816393695e399c0345f7",
+    "native/core/src/enhanced.rs": "b1b424b2515068204b640adf1776484b881ceb1ed51a8653b3236e0365cb0a55",
+    "native/core/src/exe.rs": "1d9579e324edfcc2c7c54771aa2c2092f41ae94bd75bb9a51ca78ae029af0384",
+    "native/core/src/fs_ops.rs": "5d588d9fa973ce64291f7ceb7b3b6295510876bf32acb58678fc4cb1d170a4e5",
+    "native/core/src/lib.rs": "5a2f5cd5035d166bdfc2d70e661b7f4a00ce413f79a86e49e35425ada9edfdb5",
+    "native/core/src/models.rs": "4cb649a262fd8d7f59d6c35b3c8ed1b206f37691310a785c594163a543665121",
+    "native/core/src/steam.rs": "9a5a993c86b2909c1d1b870bad0eebb5d61e4c4611b54b69551aa13c1e145c45",
+    "native/core/src/t7.rs": "688d0a0652a036d8df49891a7be6b68ebc23ce727db4e5df76106455cf74e38d"
+  },
+  "rustSourcesBeforeLaunch": {
+    "native/core/src/app.rs": "d9349229ac31f1a1d14e5d7bd391cc610b88bab8f3f0e1d9122f3e3ff084eb29",
+    "native/core/src/dxvk.rs": "d47cb3d23491daf4519bdb84d90e71ea5c5e10318db98ed0660e6d2e390aaa93",
+    "native/core/src/engine.rs": "962fb6557c6045502a2c0a86691bdc2c953dc5861b6f816393695e399c0345f7",
+    "native/core/src/enhanced.rs": "b1b424b2515068204b640adf1776484b881ceb1ed51a8653b3236e0365cb0a55",
+    "native/core/src/exe.rs": "1d9579e324edfcc2c7c54771aa2c2092f41ae94bd75bb9a51ca78ae029af0384",
+    "native/core/src/fs_ops.rs": "5d588d9fa973ce64291f7ceb7b3b6295510876bf32acb58678fc4cb1d170a4e5",
+    "native/core/src/lib.rs": "5a2f5cd5035d166bdfc2d70e661b7f4a00ce413f79a86e49e35425ada9edfdb5",
+    "native/core/src/models.rs": "4cb649a262fd8d7f59d6c35b3c8ed1b206f37691310a785c594163a543665121",
+    "native/core/src/steam.rs": "9a5a993c86b2909c1d1b870bad0eebb5d61e4c4611b54b69551aa13c1e145c45",
+    "native/core/src/t7.rs": "688d0a0652a036d8df49891a7be6b68ebc23ce727db4e5df76106455cf74e38d"
+  },
+  "rustSourcesChangedBetweenLaunchAndReport": [],
+  "summary": "test result: FAILED. 17 passed; 11 failed; 3 ignored; 0 measured; 0 filtered out; finished in 10.53s",
+  "testBinary": "native/target/debug/deps/parity-4cab83e5679c2c93",
+  "testBinarySha256": "21c8aebfb1d99126ce863b2675b43f38420313d58b07eacf3b179608e0074182"
+}
