@@ -193,7 +193,6 @@ pub enum ProgressEvent {
     /// An operation began. The UI raises this itself from `send`.
     Started(Operation),
     /// A new stage and, when the core can measure it, how far along it is.
-    #[allow(dead_code)]
     Stage {
         op: Operation,
         stage: String,
@@ -218,7 +217,6 @@ pub enum ProgressEvent {
 
 impl ProgressEvent {
     /// Shorthand for the `patchops-log` mapping.
-    #[allow(dead_code)]
     pub fn log(
         category: impl Into<String>,
         message: impl Into<String>,

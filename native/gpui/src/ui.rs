@@ -18,7 +18,7 @@ pub use chrome::{log_session, window_options};
 // The backend's event hook builds these; see `ControlCenter::on_progress`.
 pub use progress::{Operation, ProgressEvent};
 
-use crate::backend::{Backend, Reply, Request};
+use crate::backend::{Backend, BackendEvent, Reply, Request};
 use components::{Btn, Glyph, icon};
 use gpui::{prelude::*, *};
 use gpui_component::{
@@ -347,6 +347,10 @@ impl ControlCenter {
                 cx.background_executor().timer(UI_TICK).await;
                 if entity
                     .update_in(cx, |view, window, cx| {
+                        // Events precede their operation's reply on the worker.
+                        while let Ok(event) = view.backend.events.try_recv() {
+                            view.handle_backend_event(event, cx);
+                        }
                         while let Ok(reply) = view.backend.replies.try_recv() {
                             view.handle_reply(reply, window, cx);
                         }
@@ -360,6 +364,32 @@ impl ControlCenter {
         })
         .detach();
         view
+    }
+
+    /// Maps worker events onto `on_progress`. Started/finished are raised by
+    /// the UI from the request and its reply, so only intermediate stages pass.
+    fn handle_backend_event(&mut self, event: BackendEvent, cx: &mut Context<Self>) {
+        match event {
+            BackendEvent::Log(entry) => self.on_progress(
+                ProgressEvent::log(entry.category, entry.message, Some(entry.line)),
+                cx,
+            ),
+            BackendEvent::Progress(progress) => {
+                if matches!(progress.stage.as_str(), "started" | "completed" | "failed") {
+                    return;
+                }
+                if let Some(op) = Operation::from_path(&progress.op) {
+                    self.on_progress(
+                        ProgressEvent::Stage {
+                            op,
+                            stage: progress.stage,
+                            fraction: progress.fraction,
+                        },
+                        cx,
+                    );
+                }
+            }
+        }
     }
 
     fn handle_reply(&mut self, reply: Reply, window: &mut Window, cx: &mut Context<Self>) {

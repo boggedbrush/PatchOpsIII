@@ -24,7 +24,6 @@ pub struct Reply {
 /// The current UI obtains the same entries in the next state response. A UI
 /// can subscribe to Backend::events to render logs/progress immediately.
 #[derive(Clone, Debug)]
-#[allow(dead_code)] // UI event drain is wired separately from the backend port.
 pub enum BackendEvent {
     Log(LogEntry),
     Progress(OperationProgress),
@@ -33,7 +32,6 @@ pub enum BackendEvent {
 pub struct Backend {
     pub requests: mpsc::Sender<Request>,
     pub replies: mpsc::Receiver<Reply>,
-    #[allow(dead_code)] // Public subscription hook for the UI.
     pub events: mpsc::Receiver<BackendEvent>,
 }
 
