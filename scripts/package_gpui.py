@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ARCHIVE_ROOT = PurePosixPath("PatchOpsIII")
 
 
-def archive_manifest(executable: Path, backend: Path) -> list[tuple[Path, PurePosixPath]]:
+def archive_manifest(executable: Path) -> list[tuple[Path, PurePosixPath]]:
     required = [
         ROOT / "LICENSE",
         ROOT / "README.md",
@@ -22,14 +22,13 @@ def archive_manifest(executable: Path, backend: Path) -> list[tuple[Path, PurePo
         ROOT / "native" / "gpui" / "README.md",
         ROOT / "docs" / "gpui-architecture.md",
     ]
-    missing = [path for path in [executable, backend, *required] if not path.is_file()]
+    missing = [path for path in [executable, *required] if not path.is_file()]
     if missing:
         names = ", ".join(str(path) for path in missing)
         raise FileNotFoundError(f"Required packaging input missing: {names}")
 
     return [
         (executable, ARCHIVE_ROOT / executable.name),
-        (backend, ARCHIVE_ROOT / "resources" / "backend-bin" / backend.name),
         (ROOT / "presets.json", ARCHIVE_ROOT / "resources" / "presets.json"),
         (ROOT / "package.json", ARCHIVE_ROOT / "resources" / "package.json"),
         (ROOT / "PatchOpsIII.ico", ARCHIVE_ROOT / "resources" / "PatchOpsIII.ico"),
@@ -51,10 +50,10 @@ def archive_manifest(executable: Path, backend: Path) -> list[tuple[Path, PurePo
     ]
 
 
-def create_archive(executable: Path, backend: Path, output: Path) -> Path:
+def create_archive(executable: Path, output: Path) -> Path:
     output.parent.mkdir(parents=True, exist_ok=True)
     with ZipFile(output, "w", ZIP_DEFLATED) as archive:
-        for source, destination in archive_manifest(executable, backend):
+        for source, destination in archive_manifest(executable):
             archive.write(source, destination.as_posix())
     return output
 
@@ -62,11 +61,10 @@ def create_archive(executable: Path, backend: Path, output: Path) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--executable", type=Path, required=True)
-    parser.add_argument("--backend", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
-        output = create_archive(args.executable, args.backend, args.output)
+        output = create_archive(args.executable, args.output)
     except FileNotFoundError as error:
         parser.error(str(error))
     print(output)

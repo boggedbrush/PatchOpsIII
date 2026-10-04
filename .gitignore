@@ -30,5 +30,6 @@ node_modules/
 # codex:
 .codex/
 
-# Standalone GPUI build output (Cargo.lock is committed)
+# Rust native workspace build output (Cargo.lock is committed)
+native/target/
 native/gpui/target/

@@ -24,18 +24,16 @@ avoids adopting an evolving Git revision or silently upgrading the toolkit.
 The optional WebView feature is not enabled. Both dependencies use Apache-2.0;
 distribution still needs an audit of notices for the complete dependency tree.
 
-Reusing the current Python API provided a controlled first comparison of desktop
-renderers and remains the production architecture today. It retains the existing download, install, backup, hash, Steam, UAC,
-and config semantics. It also retains Python startup, packaging cost, and HTTP
-serialization; removing Chromium does not prove a smaller or faster complete
-application. A later in-process Rust port should use a toolkit-independent core
-so Tauri and GPUI can exercise identical business logic. This PR does not import
-the unmerged Rust rewrite or duplicate delicate game-file operations in Rust.
+The original GPUI baseline reused Python to compare desktop renderers. The
+native client now imports PR #40's Rust operations into `native/core`, a library
+with no Tauri/webview dependency. GPUI and operations run in one Rust process;
+legacy Electron retains its existing Python service. There is no local HTTP
+server or Python supervision in the native binary or its archives.
 
-The promotion decision changes product ownership, not the evidence: GPUI is now
-the primary client, native archives bundle the Python service, and Electron stays
-buildable as a fallback. The hardware, accessibility, updater, and richer UX gaps
-listed below remain follow-up work rather than being treated as completed parity.
+The core retains verified downloads, ownership manifests, transactional backup
+and rollback logic, Steam/VDF handling, and platform launch helpers from PR #40.
+UI, hardware, accessibility and installer/updater validation remain separate
+from this backend migration. No comparative performance improvement is claimed.
 
 Sources inspected:
 
@@ -47,36 +45,113 @@ Sources inspected:
 
 ## Implemented architecture
 
-1. Add an isolated Cargo application and compatible native controls. Preserve the
-   app's dark charcoal/red control-center visual language and use native window
-   chrome, seven navigation sections, scrollable settings, and a log panel.
-2. Launch a supervised Python service on an ephemeral loopback port. Packaged
-   binaries locate the PyInstaller service in `resources/backend-bin`; source
-   binaries fall back to `backend/api.py`. Wait for health before opening GPUI
-   and always reap owned processes on normal/error exits.
-3. Execute API calls on one HTTP worker. Reflect backend-reported state, preserve
-   unsuccessful HTTP-200 responses and depot instructions, disable overlapping
-   actions, and require an explicit operation confirmation.
-4. Implement representative real workflows throughout the app, using existing
-   payloads and config value mappings. Keep input drafts intact during refresh;
-   provide an explicit button to load current values.
-5. Add meaningful protocol/lifecycle checks, Windows/Linux build CI,
-   self-contained archives, a common process-tree sampler, and a parity/manual
-   review checklist. Stable and beta releases attach native archives alongside
-   the unchanged legacy Electron deliverables.
+`native/` is a Cargo workspace with `patchops-core` and `patchopsiii-gpui`, a
+committed workspace lockfile, and Rust 1.99.0. GPUI/Component stay pinned to
+0.2.2/0.5.0. Presets and package.json version are embedded at build time, so
+stable/beta release preparation applies to both Electron and GPUI.
+
+`Backend::start()` creates a `patchops-gpui-core` worker. Public `requests:
+Sender<Request>` and `replies: Receiver<Reply>` retain the existing UI contract.
+`Request { path: String, body: Option<serde_json::Value> }` uses the existing
+`/api/...` identifiers without making HTTP requests. `Reply { state:
+Option<Value>, message: String, failed: bool, is_status: bool }` retains status,
+operation messages, and the Steam depot command marker used by the UI.
+Long operations and status assembly run sequentially on the worker; neither
+blocks the UI thread. Closing a window does not cancel or join active operations.
+
+`patchops_core::Engine::dispatch(path, body)` returns the same status keys and
+`{ok, state}`, `{ok, error}`, validation, update and depot response envelopes as
+the Python API. The Python flag is `ok`, rather than `success`. Internal Rust
+errors become failed operation results/replies. Built-in launch profiles omit
+`path`; Workshop profiles include it. The UI uses its native folder picker, so
+Python's `/api/browse` endpoint is intentionally not implemented.
+
+Update metadata retains `available`, `channel`, `currentVersion`,
+`latestVersion`, `name`, `body`, `pageUrl`, and `asset {name, url, size,
+contentType}`. Asset selection now chooses `PatchOpsIII-native-{linux,windows}-x64.zip`;
+it does not point the GPUI user to legacy installers. Checks do not install an
+update automatically. Draft and stable/prerelease checks are preserved.
+
+Status hashing is cached by executable path, file size and modification time,
+including preserved EXE availability probes. The bounded cache is display-only:
+mutation validation always rereads bytes, verifies staging, and checks the active
+target after replacement. Files without modification times are not cache hits.
+
+### Progress and log hook
+
+PR #40 emits `patchops-log` entries. `AppState::new(data_dir, resource_dir,
+on_log)` replaces its AppHandle with an optional `EventCallback = Arc<dyn
+Fn(LogEntry) + Send + Sync + 'static>`. `resource_dir: Option<PathBuf>` replaces
+the Steam module's Tauri resource-path lookup. `set_progress_callback` adds
+`ProgressCallback = Arc<dyn Fn(OperationProgress) + Send + Sync + 'static>`.
+Callbacks run on the worker and must forward data to the UI thread.
+
+The GPUI bridge exposes `events: Receiver<BackendEvent>`, with:
+
+```rust
+pub enum BackendEvent {
+    Log(patchops_core::models::LogEntry), // category, message, line: String
+    Progress(OperationProgress),
+}
+pub struct OperationProgress {
+    pub op: String,                  // full request path, e.g. /api/t7-install
+    pub stage: String,               // started/running/download/verify/completed/failed
+    pub fraction: Option<f32>,       // stage-local [0,1], None = indeterminate
+    pub message: String,
+}
+```
+
+`OperationProgress` is re-exported from `backend`; it also derives Serialize and
+Deserialize in core. Logs stream as they occur. Operations emit started and
+terminal events; downloads emit throttled byte fractions when Content-Length is
+known and SHA-256 verification stages. Status/depot polls emit no operation
+progress. The UI agent's `on_progress(ProgressEvent, cx)` can map `op` through
+`Operation::from_path`, forward Log entries, and map stages/fractions; wiring
+that receiver belongs to the UI integration. Existing `send(path, body)` call
+sites need no changes. Errors and validation failures are still failed replies;
+compatible-depot failures retain `Steam console command: ...` in their message.
+
+### Main-branch changes reconciled
+
+- `aadb32d` (#43): September 10, 2026 BuildID 24784313 and SHA-256 are recognized;
+  T7 uses the current profile. Unit tests cover the constants and hash classification.
+- `20e1dbe` (#46), `ca9af04` (#47): prefer exact/versioned T7 release archives,
+  then unambiguous platform/universal renamed packages with GitHub SHA-256
+  digests. Tests cover discovery and ambiguity; unsigned candidates are rejected.
+- `8888db6` (#50), `2503485` (#51): Electron AppImage tooling, SquashFS directory
+  permissions, Firejail validation, UI compact layout, and update metadata do
+  not apply to native ZIP archives. Their legacy workflows remain untouched.
+- `c582a62`, `58f7ba3` and versions from #50/#51: package.json is the embedded
+  runtime release version; no duplicate hard-coded desktop version is introduced.
+
+Core intentionally keeps PR #40's stronger archive/path validation and ownership
+rules. It may refuse uninstall/adoption of files Python would modify without
+proof of ownership. Config validation also limits unsupported keys/values.
+Rust config writes retain CRLF line endings and explicitly reject read-only files;
+Python normalizes line endings and exposes platform permission errors.
+Steam writes retain the first original backup and create the PR #40 sibling backup;
+VDF formatting and logs differ from Python. Enhanced status does not adopt
+legacy timestamps/file counts without matching game-directory provenance.
+Exact log text and filesystem behavior are tracked by the concurrently maintained
+Python-oracle parity suite; passing core unit tests alone is not full parity.
+
+Native archives contain the Rust binary, resources and docs only. The optional
+Python scripts use the standard library as build/package/smoke helpers. Native CI
+runs core and GPUI tests, formatting, Clippy, archive checks and a fake-game
+window/status smoke. Stable/beta workflows retain native artifact names.
 
 ## Stack comparison
 
 | Criterion | Legacy Electron | Tauri #36 / #40 | Primary GPUI client |
 |---|---|---|---|
 | UI technology | React/CSS + Chromium | React/CSS + OS WebView | Native Rust controls + GPU rendering |
-| Backend | Python child + HTTP/WS | #36 Python + small Rust core; #40 in-process Rust | Same Python + HTTP |
+| Backend | Python child + HTTP/WS | #36 Python + small Rust core; #40 in-process Rust | In-process patchops-core + worker channels |
 | Renderer reuse | Baseline | High | Rewrite required |
 | Platform work | Existing Windows/Linux packages | WebView availability and new Rust packaging | GPU/driver compatibility, native UI/input and new packaging |
 | Accessibility | Browser infrastructure; app still needs testing | WebView infrastructure; app still needs testing | Must validate controls and screen readers on target OSes |
-| Delivery | Existing MSI/NSIS/AppImage fallback | Independent open PRs | Self-contained Windows/Linux ZIPs with a bundled PyInstaller backend |
+| Delivery | Existing MSI/NSIS/AppImage fallback | Independent open PRs | Self-contained Windows/Linux ZIPs with one Rust executable |
 | Startup/RAM/package size | Measure | Measure each PR separately | Measure complete stack; no claimed improvement |
-| Migration cost | Existing maintenance | Shell changes; #40 also ports operations | Entire UI rewrite; later backend port optional |
+| Migration cost | Existing maintenance | Shell changes; #40 also ports operations | UI rewrite plus shared Rust operations |
 
 ## Workflow coverage
 
@@ -93,30 +168,28 @@ Sources inspected:
 | Logs/maintenance | Up to 80 recent lines, five-second refresh, clear logs/cache, reset stock, update check/channel | Streaming WS logs, copy/export UX and platform updater integration |
 | Delivery | Windows/Linux CI and self-contained release archives | Signed native installers, updater, dependency notices and broader release testing |
 
-Status refresh uses the complete existing status endpoint, including executable
-hashing. Polling every five seconds can cost more idle CPU than Electron's event
-driven updates; include that cost in measurements. No new background game scans
-or fabricated installation states are introduced. Actions preserve backend
-validation and require confirmation; all game-modifying smoke tests must use
-an installation whose backups can be inspected and restored.
+Status refresh polls the worker every five seconds. Executable hashes are reused
+while size/mtime remain unchanged. Other status work (Steam config, mod state and
+small config files) still runs on each poll; measure its idle CPU cost. All
+game-modifying validation must use disposable installations and inspect backups.
 
 ## Measurement protocol retained from the selection process
 
 Use the same Windows PC and Steam Deck/Linux PC for all three candidates. Record
 OS, GPU/driver, display scale, power profile, game-directory state, and commit
 SHA. Build optimized release artifacts. Exclude compilation, debugger and dev
-servers. Compare Electron, #36, #40 and GPUI separately; a Python-backed GPUI
-versus #40 compares both renderer and backend changes.
+servers. Compare Electron, #36, #40 and GPUI separately; the original Python-backed GPUI baseline and the current Rust-backed client
+must be measured separately.
 
 For regression tracking and any future comparison, collect ten cold launches and
 ten warm launches per candidate. Record
-process start to first painted interactive window **and** service-ready status
+process start to first painted interactive window **and** first loaded status
 with screen recording or platform tracing. Include backend startup. Report
 median and p95, retaining raw observations. Do not label cargo build time as app
 startup time, or GPUI entity creation as first paint.
 
 Measure idle for 60 seconds after settling, then the same navigation/config and
-log workload. Use the supervisor PID that owns both UI and backend processes:
+log workload. Use the native executable PID (Electron still has a process tree):
 
 ```sh
 python -m pip install psutil
@@ -127,15 +200,16 @@ python scripts/measure_desktop.py --pid 12345 --label gpui-release \
 
 The sampler captures RSS and CPU for the process tree, including children; RSS
 can double-count shared pages and excludes GPU memory. Collect GPU usage with
-platform tools. Native archives include the PyInstaller backend, so measure the
-complete extracted deliverable. Elevated/detached children must be measured
+platform tools. Measure the complete extracted native deliverable. Elevated/detached children must be measured
 separately. Evaluate input latency, scrolling, text entry/IME, scaling, keyboard
 focus, screen readers, offline/error behavior, and update/install/uninstall
 reliability when comparing future changes. GPUI is the selected product client;
 that decision does not substitute for collecting hardware measurements.
 
-## Validation history and current gates
+## Historical baseline validation and current gates
 
+The following results describe the original Python-backed baseline, before the
+in-process backend migration; they are not current Rust-core parity evidence.
 On the supplied Linux cloud environment:
 
 - Debug and optimized release builds completed with the locked dependency tree.
@@ -169,8 +243,8 @@ is configured in this PR; its hosted results are separate from these local check
 ## Reviewer smoke checklist
 
 - Build with the pinned lockfile; open the native window on Windows and Linux.
-- Start Electron simultaneously; confirm distinct ports/processes. Close GPUI
-  and confirm its service exits while Electron stays alive.
+- Start Electron simultaneously; confirm GPUI has no Python child or HTTP
+  listener. Close GPUI while idle and confirm Electron stays alive.
 - With no game directory, verify status/errors and manual folder input. Browse
   to a disposable BO3 install, confirm selection, refresh, and relaunch.
 - Navigate every section with mouse and keyboard. Edit a field while refresh
@@ -181,7 +255,7 @@ is configured in this PR; its hosted results are separate from these local check
   logs, including readonly error handling and special CPU/hidden-option values.
 - On a test install verify each mod install/uninstall and EXE restore preserves
   expected backups. Exercise compatible-depot-required and UAC cancellation.
-- Verify API startup failure, disconnect, download errors, and clean shutdown.
+- Verify core initialization failure, download errors, and clean shutdown.
   Wait for active file operations before closing; cancellation is not implemented.
 - Test X11, Wayland, actual Steam Deck, high DPI, IME and screen-reader behavior.
 - Measure optimized complete stacks and record results as native delivery evolves.

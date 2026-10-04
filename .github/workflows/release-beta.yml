@@ -310,6 +310,7 @@ jobs:
     secrets: inherit
 
   build-native:
+    # GPUI + patchops-core archives; no Python backend bundle in native assets.
     needs:
       - prepare
     uses: ./.github/workflows/gpui-build.yml

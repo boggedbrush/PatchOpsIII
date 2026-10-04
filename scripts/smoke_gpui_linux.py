@@ -1,37 +1,17 @@
 #!/usr/bin/env python3
-"""Render a native window and close it through X11 against a safe local API.
+"""Check in-process status and native X11 window close against a disposable game.
 
-Requires an X11 DISPLAY, xdotool, and a compositor/window manager. CI uses
-xvfb-run with --start-session. By default a read-only fake API is injected;
---use-owned-backend exercises the packaged backend. No mutations are requested.
+Requires DISPLAY, xdotool, and a window manager for the window check. Use
+--status-only to verify the same archive binary without desktop automation.
+No game mutations or external backend service are requested.
 """
 import argparse
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
 import subprocess
-import threading
+import tempfile
 import time
-
-
-class ReadOnlyStatus(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path != "/api/status":
-            self.send_error(404)
-            return
-        payload = json.dumps({"appVersion": "GPUI smoke", "platform": "Linux", "gameDetected": False, "gameDir": None, "launchProfiles": [], "logs": []}).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
-
-    def do_POST(self):
-        self.send_error(405, "Smoke service is read-only")
-
-    def log_message(self, *_):
-        pass
 
 
 def stop(process):
@@ -48,21 +28,34 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--executable", type=Path, required=True)
     parser.add_argument("--start-session", action="store_true")
-    parser.add_argument("--use-owned-backend", action="store_true")
+    parser.add_argument("--status-only", action="store_true")
     args = parser.parse_args()
     owned = []
-    with ThreadingHTTPServer(("127.0.0.1", 0), ReadOnlyStatus) as server:
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
+    with tempfile.TemporaryDirectory(prefix="patchops-native-smoke-") as directory:
+        temporary = Path(directory)
+        game = temporary / "game"
+        (game / "players").mkdir(parents=True)
+        (game / "BlackOps3.exe").write_bytes(b"disposable smoke executable")
+        (game / "players" / "config.ini").write_text('FOV = "90"\n', encoding="utf-8")
+        data = temporary / "data"
+        data.mkdir()
+        (data / "electron-settings.json").write_text(json.dumps({"game_dir": str(game)}), encoding="utf-8")
+        env = {**os.environ, "PATCHOPSIII_DATA_DIR": str(data)}
+        # A native status request needs neither Python nor an HTTP listener.
+        executable = str(args.executable.resolve())
+        status_result = subprocess.run([executable, "--smoke-status"], env=env, capture_output=True, text=True, check=True, timeout=30)
+        status = json.loads(status_result.stdout)
+        if not status.get("gameDetected") or Path(status["gameDir"]) != game or status["graphics"]["fov"] != 90:
+            raise RuntimeError(f"Native core failed to load disposable game status: {status}")
+        print("GPUI in-process Rust status loaded from disposable game")
+        if args.status_only:
+            return
         try:
             if args.start_session:
                 owned.append(subprocess.Popen(["openbox", "--sm-disable"]))
                 owned.append(subprocess.Popen(["xcompmgr"]))
                 time.sleep(1)
-            env = dict(os.environ)
-            if not args.use_owned_backend:
-                env["PATCHOPSIII_GPUI_BACKEND_URL"] = f"http://127.0.0.1:{server.server_port}"
-            app = subprocess.Popen([str(args.executable.resolve())], env=env)
+            app = subprocess.Popen([executable], env=env)
             owned.append(app)
             deadline = time.monotonic() + 30
             window = None
@@ -77,9 +70,7 @@ def main():
             if window is None:
                 raise RuntimeError("GPUI did not map its native window")
             time.sleep(1)
-            # Close this exact owned window through its WM keyboard shortcut.
-            # This reproduces the platform callback path that TestAppContext
-            # cannot exercise; direct XDestroyWindow is not normal app closure.
+            # Normal window close exercises the real platform callback.
             subprocess.run(["xdotool", "windowactivate", "--sync", window, "key", "alt+F4"], check=True, timeout=5)
             result = app.wait(timeout=10)
             if result != 0:
@@ -88,8 +79,6 @@ def main():
         finally:
             for process in reversed(owned):
                 stop(process)
-            server.shutdown()
-            thread.join(timeout=5)
 
 
 if __name__ == "__main__":

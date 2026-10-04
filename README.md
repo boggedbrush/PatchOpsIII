@@ -34,7 +34,7 @@
 - [Star History](#star-history)
 
 ## Overview
-PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popular community tools and quality-of-life tweaks in a native Rust/GPUI desktop interface backed by a local Python API. Whether you are securing your game with T7 Patch, smoothing shader compilation stutter with DXVK, or fine-tuning launch options, PatchOpsIII consolidates every workflow into one cohesive experience. The previous Electron/React client remains available in this repository as a legacy fallback.
+PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popular community tools and quality-of-life tweaks in a native Rust/GPUI desktop interface with in-process Rust operations. Whether you are securing your game with T7 Patch, smoothing shader compilation stutter with DXVK, or fine-tuning launch options, PatchOpsIII consolidates every workflow into one cohesive experience. The previous Electron/React client remains available in this repository as a legacy fallback.
 
 ## Key Features
 
@@ -63,35 +63,41 @@ PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popul
 1. **Download:** Grab the latest release from the [Releases page](https://github.com/boggedbrush/PatchOpsIII/releases).
 2. **Windows:** Download `PatchOpsIII-native-windows-x64.zip`, extract the entire `PatchOpsIII` folder, and run `patchopsiii-gpui.exe` from that folder.
 3. **Linux & Steam Deck:** Download `PatchOpsIII-native-linux-x64.zip`, extract it, run `chmod +x PatchOpsIII/patchopsiii-gpui`, then launch that executable from a desktop session.
-4. **Dependencies:** Keep the executable and its `resources` directory together. The archive bundles the Python backend, presets, and icons; Python is not required on the destination system. Linux still requires a supported X11/Wayland session, system fonts, and working graphics drivers.
+4. **Dependencies:** Keep the executable and its `resources` directory together. The archive bundles one Rust executable, presets, metadata, and icons; Python is not required on the destination system. Linux still requires a supported X11/Wayland session, system fonts, and working graphics drivers.
 
 The existing `PatchOpsIII.msi`, `PatchOpsIII.exe`, and `PatchOpsIII.AppImage` release assets are the legacy Electron fallback while native installer/updater work remains open.
 
 ### Developer Setup
 
-The primary desktop app uses Rust 1.99.0, GPUI 0.2.2, and GPUI Component 0.5.0. Python runs the existing local operations API.
+The primary desktop app uses Rust 1.99.0, GPUI 0.2.2, GPUI Component 0.5.0,
+and the `patchops-core` library in the `native/` Cargo workspace. Install Rust
+through rustup and the platform build packages listed in the native README.
 
 ```bash
-# install Python service dependencies
-python -m venv .venv
-source .venv/bin/activate  # On Windows use: .venv\Scripts\activate
-pip install -r requirements.txt
-
-# build and run the native app with the source backend
+cargo +1.99.0 build --locked --manifest-path native/Cargo.toml -p patchopsiii-gpui
+./native/target/debug/patchopsiii-gpui
+# Optional Python standard-library launchers (no backend dependencies):
 python scripts/gpui.py build
 python scripts/gpui.py run
 # Equivalent package scripts: bun run gpui:build / bun run gpui:run
 ```
 
-See [native/gpui/README.md](native/gpui/README.md) for platform build packages, release packaging, validation commands, and known parity gaps. The development launcher gives its Python API an OS-assigned loopback port. A packaged native binary locates and owns the bundled backend itself.
+See [native/gpui/README.md](native/gpui/README.md) for release packaging,
+validation commands, and remaining hardware checks. Rust operations run on a
+worker thread within the native app; no Python service or HTTP listener starts.
 
 ## Native desktop architecture
 
-The primary Rust/GPUI client lives in [native/gpui](native/gpui/README.md). It uses native controls without Chromium, React, a WebView, or Tauri, and supervises the packaged Python operations service on an ephemeral loopback port. See [the native desktop architecture and migration record](docs/gpui-architecture.md) for the original research, comparison data, supported workflows, and remaining parity work.
+The primary Rust/GPUI client lives in [native/gpui](native/gpui/README.md) and
+shares toolkit-independent operations from [native/core](native/core).
+The worker dispatches existing `/api/...` action identifiers directly to Rust,
+preserving the JSON shapes consumed by the UI. Downloads use outbound HTTPS.
+See [the architecture and migration record](docs/gpui-architecture.md) for the
+progress callback contract, migration details, and remaining validation work.
 
 ## Legacy Electron app
 
-The Electron/React application in `src/` remains buildable as a fallback. To work on it, install Bun dependencies with `bun install`, then use `bun run dev:desktop`; `bun run dist:linux` and `bun run dist:win` retain the established AppImage/MSI/NSIS builds. The browser development server remains available through `bun run dev`. Electron and GPUI share backend settings, logs, caches, and game files, so do not perform overlapping game mutations in both clients.
+The Electron/React application in `src/` remains buildable as a fallback. To work on it, install Python 3.12 dependencies with `python -m pip install -r requirements.txt` and Bun dependencies with `bun install`, then use `bun run dev:desktop`; `bun run dist:linux` and `bun run dist:win` retain the established AppImage/MSI/NSIS builds. The browser development server remains available through `bun run dev`. Electron and GPUI share backend settings, logs, caches, and game files, so do not perform overlapping game mutations in both clients.
 
 ## Forked Components
 
