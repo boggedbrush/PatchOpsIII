@@ -1,5 +1,5 @@
 //! Window chrome: the custom titlebar, caption buttons, the rounded client-side
-//! frame and the choice of translucent backdrop.
+//! frame.
 //!
 //! The Electron app is frameless and draws its own titlebar (`TitleBar` in
 //! `src/renderer/main.tsx`, `.titlebar`/`.window-controls` in `app.css`).
@@ -18,7 +18,7 @@
 //!   when maximised/tiled and when the compositor insists on server-side
 //!   decorations (then the caption buttons are hidden too).
 //! * **macOS**: traffic lights (`appears_transparent`), no caption buttons.
-use super::theme::{self, Backdrop};
+use super::theme;
 use gpui::{prelude::*, *};
 use std::{cell::Cell, rc::Rc, sync::OnceLock};
 
@@ -28,10 +28,6 @@ const CAPTION_WIDTH: f32 = 46.;
 /// Corner radius of a client-decorated window.
 const FRAME_RADIUS: f32 = 10.;
 
-/// Set to `1` to force fully opaque surfaces.
-const OPAQUE_ENV: &str = "PATCHOPSIII_GPUI_OPAQUE";
-/// Test hook: `opaque`, `translucent` or `blurred` overrides detection.
-const BACKDROP_ENV: &str = "PATCHOPSIII_GPUI_BACKDROP";
 /// Test hook: `server` asks for compositor-drawn decorations (the fallback
 /// path), `client` is the default on Linux.
 const DECORATIONS_ENV: &str = "PATCHOPSIII_GPUI_DECORATIONS";
@@ -83,66 +79,20 @@ fn env_flag(name: &str) -> bool {
     std::env::var(name).is_ok_and(|value| matches!(value.trim(), "1" | "true" | "yes" | "on"))
 }
 
-/// `XDG_CURRENT_DESKTOP`, lower-cased (e.g. `kde`, `gnome`, `ubuntu:gnome`).
-fn desktop() -> String {
-    std::env::var("XDG_CURRENT_DESKTOP")
-        .unwrap_or_default()
-        .to_lowercase()
-}
-
-/// What to expect from the compositor before the window exists. X11's
-/// compositor is only known once the window is open; `settle` corrects it.
-pub fn preferred_backdrop(session: Session) -> Backdrop {
-    if env_flag(OPAQUE_ENV) {
-        return Backdrop::Opaque;
-    }
-    match std::env::var(BACKDROP_ENV).as_deref() {
-        Ok("opaque") => return Backdrop::Opaque,
-        Ok("translucent") => return Backdrop::Translucent,
-        Ok("blurred") => return Backdrop::Blurred,
-        _ => {}
-    }
-    match session {
-        // Acrylic on Windows 10/11, vibrancy on macOS.
-        Session::Windows | Session::MacOs => Backdrop::Blurred,
-        Session::Other => Backdrop::Opaque,
-        Session::Wayland | Session::X11 => {
-            let desktop = desktop();
-            let see_through_is_ugly = ["gnome", "unity", "pantheon", "budgie", "cinnamon"]
-                .iter()
-                .any(|name| desktop.contains(name));
-            if see_through_is_ugly {
-                // Mutter and friends composite alpha but never blur it.
-                Backdrop::Opaque
-            } else if session == Session::Wayland && desktop.contains("kde") {
-                // GPUI binds org_kde_kwin_blur for `Blurred` on Wayland.
-                Backdrop::Blurred
-            } else {
-                // Other compositors: alpha only (GPUI has no X11 blur, and
-                // wlroots-style compositors blur on their own, if at all).
-                Backdrop::Translucent
-            }
-        }
-    }
-}
-
-fn background_for(backdrop: Backdrop, session: Session, csd: bool) -> WindowBackgroundAppearance {
-    match backdrop {
-        Backdrop::Blurred => WindowBackgroundAppearance::Blurred,
-        Backdrop::Translucent => WindowBackgroundAppearance::Transparent,
-        // Wayland makes client-decorated surfaces transparent by itself; X11
-        // needs the flag for the rounded corners and shadow.
-        Backdrop::Opaque if session == Session::X11 && csd => {
-            WindowBackgroundAppearance::Transparent
-        }
-        Backdrop::Opaque => WindowBackgroundAppearance::Opaque,
+/// The app paints every pixel opaquely. Wayland makes client-decorated
+/// surfaces transparent by itself; X11 needs the flag so the rounded corners
+/// and shadow are cut out instead of rendering black.
+fn background_for(session: Session, csd: bool) -> WindowBackgroundAppearance {
+    if session == Session::X11 && csd {
+        WindowBackgroundAppearance::Transparent
+    } else {
+        WindowBackgroundAppearance::Opaque
     }
 }
 
 /// The options for the main window.
 pub fn window_options(bounds: Bounds<Pixels>) -> WindowOptions {
     let session = session();
-    let backdrop = preferred_backdrop(session);
     let linux = matches!(session, Session::Wayland | Session::X11);
     WindowOptions {
         window_bounds: Some(if env_flag(MAXIMIZED_ENV) {
@@ -167,7 +117,7 @@ pub fn window_options(bounds: Bounds<Pixels>) -> WindowOptions {
                 WindowDecorations::Client
             },
         ),
-        window_background: background_for(backdrop, session, true),
+        window_background: background_for(session, true),
         ..Default::default()
     }
 }
@@ -254,30 +204,22 @@ impl Frame {
     }
 }
 
-/// Apply the backdrop for the decorations the platform actually granted, and
-/// re-apply it when they change (e.g. a compositor answering a
+/// Apply the window background for the decorations the platform actually
+/// granted, and re-apply it when they change (e.g. a compositor answering a
 /// client-side-decoration request with server-side).
 pub fn settle(window: &mut Window) {
     thread_local! {
-        static APPLIED: Cell<Option<(Backdrop, WindowBackgroundAppearance)>> =
-            const { Cell::new(None) };
+        static APPLIED: Cell<Option<WindowBackgroundAppearance>> = const { Cell::new(None) };
     }
-    let session = session();
     let frame = Frame::read(window);
-    let mut backdrop = preferred_backdrop(session);
-    if session == Session::X11 && !frame.csd {
-        // No compositor: a transparent X11 window would render black.
-        backdrop = Backdrop::Opaque;
-    }
-    let background = background_for(backdrop, session, frame.csd);
-    if APPLIED.get() == Some((backdrop, background)) {
+    let background = background_for(session(), frame.csd);
+    if APPLIED.get() == Some(background) {
         return;
     }
-    APPLIED.set(Some((backdrop, background)));
-    theme::set_backdrop(backdrop);
+    APPLIED.set(Some(background));
     window.set_background_appearance(background);
     info(format_args!(
-        "window frame: {} decorations, {backdrop:?} backdrop ({background:?})",
+        "window frame: {} decorations ({background:?})",
         if frame.csd {
             "client-side"
         } else {
@@ -306,14 +248,13 @@ pub fn info(message: std::fmt::Arguments) {
 pub fn log_session() {
     let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
     info(format_args!(
-        "compositor: {} (desktop: {}; backdrop preference: {:?})",
+        "compositor: {} (desktop: {})",
         session().name(),
         if desktop.is_empty() {
             "unknown"
         } else {
             &desktop
         },
-        preferred_backdrop(session()),
     ));
 }
 

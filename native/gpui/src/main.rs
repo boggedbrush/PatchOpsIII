@@ -57,8 +57,8 @@ fn main() -> Result<()> {
         let bounds = Bounds::centered(None, size(px(1150.), px(820.)), cx);
         ui::log_session();
         cx.open_window(
-            // Custom titlebar, client-side decorations and a translucent
-            // backdrop where the platform supports them; see `ui/chrome.rs`.
+            // Custom titlebar and client-side decorations where the platform
+            // supports them; see `ui/chrome.rs`.
             ui::window_options(bounds),
             move |window, cx| {
                 let view = cx.new(|cx| ui::ControlCenter::new(backend, window, cx));

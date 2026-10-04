@@ -326,7 +326,7 @@ impl ControlCenter {
             title_drag: Default::default(),
             first_frame: false,
         };
-        // Pick the backdrop for the decorations the platform granted, and redo
+        // Pick the window background for the decorations the platform granted, and redo
         // it if they change later; repaint when the frame (tiling, maximise)
         // changes shape.
         // GPUI only forwards `TitlebarOptions::title` on X11/Windows/macOS.
