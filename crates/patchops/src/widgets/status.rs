@@ -186,6 +186,7 @@ impl RenderOnce for StatusPill {
                 .child(
                     div()
                         .min_w_0()
+                        .whitespace_nowrap()
                         .text_right()
                         .text_size(px(t.font_md))
                         .font_weight(FontWeight::BOLD)

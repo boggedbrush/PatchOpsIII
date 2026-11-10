@@ -22,7 +22,7 @@ use crate::actions::{Action, ReplyData};
 use crate::controller::{BrowseTarget, Controller, ControllerEvent};
 use crate::theme::{ActiveTheme, Theme};
 use crate::views::{self, PANEL_GAP};
-use crate::widgets::{icon, Button, Card, Collapsible, DropZone, Icon, ProgressBar, ScrollArea, Tone};
+use crate::widgets::{icon, Button, ButtonKind, Card, Collapsible, DropZone, Icon, ProgressBar, ScrollArea, Tone};
 
 const GUIDE_URL: &str = "https://youtu.be/rBZZTcSJ9_s?si=41p0r_Enten3h5AQ";
 
@@ -254,7 +254,7 @@ impl Render for EnhancedView {
             div()
                 .grid()
                 .grid_cols(cols)
-                .gap(px(14.))
+                .gap(px(11.))
                 .child(stat(&t, "Status", if e.installed { "Installed" } else { "Not installed" }, Tone::from_ok(e.installed)))
                 .child(stat(
                     &t,
@@ -316,9 +316,9 @@ impl Render for EnhancedView {
         let meta = div()
             .flex()
             .flex_wrap()
-            .gap(px(12.))
-            .child(div().flex_1().min_w(px(150.)).child(stat(&t, "Source", source_label, Tone::Neutral)))
-            .child(div().flex_1().min_w(px(150.)).child(stat(
+            .gap(px(11.))
+            .child(views::fr(div(), 1.0).min_w(px(150.)).child(stat(&t, "Source", source_label, Tone::Neutral)))
+            .child(views::fr(div(), 0.48).min_w(px(120.)).child(stat(
                 &t,
                 "Validation",
                 self.validation.display(),
@@ -326,7 +326,7 @@ impl Render for EnhancedView {
             )));
 
         let install = Button::new("enhanced-install", "Install / Update BO3 Enhanced")
-            .primary()
+            .kind(ButtonKind::Subtle)
             .icon(Icon::Download)
             .full_width()
             .disabled(!has_source || !valid)
@@ -339,13 +339,13 @@ impl Render for EnhancedView {
         let controls = div()
             .flex()
             .flex_col()
-            .gap(px(10.))
+            .gap(px(9.))
             .min_w_0()
             .child(
                 div()
                     .flex()
                     .flex_wrap()
-                    .gap(px(10.))
+                    .gap(px(9.))
                     .child(div().flex_1().min_w(px(150.)).child(browse.full_width()))
                     .child(div().flex_1().min_w(px(170.)).child(validate.full_width())),
             )
@@ -370,7 +370,7 @@ impl Render for EnhancedView {
                 .flex()
                 .flex_wrap()
                 .gap(px(12.))
-                .child(div().flex_1().min_w(px(240.)).child(drop))
+                .child(div().flex_1().min_w(px(240.)).flex().flex_col().child(drop))
                 .child(div().flex_1().min_w(px(340.)).child(controls)),
         );
 
@@ -407,8 +407,8 @@ impl Render for EnhancedView {
             .flex_wrap()
             .items_start()
             .gap(px(PANEL_GAP))
-            .child(div().flex_1().min_w(px(420.)).child(source_card))
-            .child(div().flex_none().when(narrow, |d| d.w_full()).when(!narrow, |d| d.w(px(300.))).child(help));
+            .child(views::fr(div(), 1.35).min_w(px(420.)).child(source_card))
+            .child(views::fr(div(), 0.65).min_w(px(300.)).when(narrow, |d| d.w_full().flex_none()).child(help));
 
         // ---- Install Details / Diagnostics ------------------------------------------------
         let install_path = match state.game_dir.as_deref().filter(|s| !s.is_empty()) {
@@ -419,7 +419,7 @@ impl Render for EnhancedView {
             div()
                 .grid()
                 .grid_cols(cols)
-                .gap(px(14.))
+                .gap(px(11.))
                 .child(stat(&t, "Last install", local_display(e.detected_at.as_deref()), Tone::Neutral))
                 .child(stat(
                     &t,
@@ -467,8 +467,9 @@ impl Render for EnhancedView {
                 ),
             );
 
+        // Legacy `.enhanced-layout`: 10px inset around the cards, 9px between them.
         ScrollArea::new("enhanced-scroll")
-            .gap(px(PANEL_GAP))
+            .gap(px(0.))
             .child(
                 div()
                     .flex_none()
@@ -477,10 +478,18 @@ impl Render for EnhancedView {
                     .text_color(t.text)
                     .child("Enhanced"),
             )
-            .child(div().flex_none().child(status))
-            .child(div().flex_none().child(main))
-            .child(div().flex_none().child(details))
-            .child(div().flex_none().child(danger))
+            .child(
+                div()
+                    .flex()
+                    .flex_none()
+                    .flex_col()
+                    .gap(px(9.))
+                    .p(px(10.))
+                    .child(div().flex_none().child(status))
+                    .child(div().flex_none().child(main))
+                    .child(div().flex_none().child(details))
+                    .child(div().flex_none().child(danger)),
+            )
             .into_any_element()
     }
 }

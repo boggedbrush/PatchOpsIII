@@ -162,8 +162,7 @@ fn state_tile(label: &str, value: impl IntoElement, cx: &Context<T7View>) -> gpu
         .flex()
         .flex_col()
         .gap(px(4.))
-        .px(px(12.))
-        .py(px(9.))
+        .p(px(8.))
         .border_1()
         .border_color(t.border)
         .rounded(px(t.radius - 5.))
@@ -193,9 +192,9 @@ fn labelled(label: &str, body: impl IntoElement, cx: &Context<T7View>) -> gpui::
     let t = *cx.theme();
     div().flex_1().min_w(px(200.)).flex().flex_col().gap(px(6.)).child(
         div()
-            .text_size(px(t.font_sm))
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(t.text_strong)
+            .text_size(px(t.font_xs))
+            .font_weight(FontWeight::BOLD)
+            .text_color(t.text_muted)
             .child(SharedString::from(label.to_string())),
     )
     .child(body)
@@ -248,18 +247,13 @@ impl Render for T7View {
 
         // ---- Overview ---------------------------------------------------------------------
         let installing = busy("t7-install");
-        let module = div()
-            .flex_1()
-            .min_w(px(255.))
-            .min_h(px(56.))
+        let module = views::fr(div(), 0.7)
+            .min_w(px(205.))
+            .min_h(px(42.))
             .flex()
             .items_center()
-            .gap(px(10.))
-            .px(px(14.))
-            .border_1()
-            .border_color(t.border)
-            .rounded(px(t.radius - 3.))
-            .bg(gpui::white().opacity(0.035))
+            .gap(px(9.))
+            .px(px(10.))
             .child(icon(Icon::ShieldCheck).size(px(22.)).text_color(t.text_strong))
             .child(div().flex_1().min_w_0().truncate().text_color(t.text_strong).child("T7 Patch"))
             .child(
@@ -269,7 +263,7 @@ impl Render for T7View {
                     .text_color(if t7.installed { t.ok } else { t.text_muted })
                     .child(if t7.installed { "Configured" } else { "Not configured" }),
             );
-        let pill = |p: StatusPill| div().flex_1().min_w(px(150.)).child(p);
+        let pill = |p: StatusPill| views::fr(div(), 1.0).min_w(px(192.)).child(p.inline(false).min_h(42.));
         let install = Button::new("t7-install", "Install / Update T7 Patch")
             .primary()
             .icon(Icon::Download)
@@ -284,20 +278,20 @@ impl Render for T7View {
             .on_click(views::run_confirmed(&c, Action::T7Uninstall));
         // Wide: the legacy fixed 400px actions column. Narrow (legacy `.t7-actions` -> 1 column):
         // the buttons get their own full-width line and wrap again when even that is too tight.
-        let wide = cw >= 1040.;
-        let mut actions = div()
+        let mut actions = views::fr(div(), 1.4)
+            .min_w(px(456.))
             .flex()
             .flex_col()
             .justify_center()
             .gap(px(6.))
-            .map(|d| if wide { d.flex_none().w(px(400.)) } else { d.w_full().flex_none() })
+            .p(px(9.))
             .child(
                 div()
                     .flex()
-                    .flex_wrap()
+                    .when(cw < 1070., |d| d.flex_wrap())
                     .gap(px(10.))
-                    .child(div().flex_1().min_w(px(190.)).child(install))
-                    .child(div().flex_1().min_w(px(190.)).child(uninstall)),
+                    .child(div().flex_1().min_w(px(200.)).child(install))
+                    .child(div().flex_1().min_w(px(200.)).child(uninstall)),
             );
         if installing {
             actions = actions.child(
@@ -317,11 +311,11 @@ impl Render for T7View {
                     ),
             );
         }
-        let overview = Panel::new("T7 Patch").child(
+        let overview = Panel::new("T7 Patch").flush().child(
             div()
                 .flex()
-                .flex_wrap()
-                .gap(px(10.))
+                .when(cw < 1070., |d| d.flex_wrap())
+                .items_center()
                 .child(module)
                 .child(pill(StatusPill::new(
                     "Config",
@@ -334,7 +328,7 @@ impl Render for T7View {
 
         // ---- Gamertag ---------------------------------------------------------------------
         let preview = div()
-            .h(px(72.))
+            .h(px(82.))
             .flex()
             .items_center()
             .justify_center()
@@ -348,7 +342,7 @@ impl Render for T7View {
                 div()
                     .max_w_full()
                     .truncate()
-                    .text_size(px(32.))
+                    .text_size(px(34.))
                     .font_weight(FontWeight::EXTRA_BOLD)
                     .text_color(sel_color)
                     .child(SharedString::from(preview_name)),
@@ -358,6 +352,7 @@ impl Render for T7View {
             let this = cx.entity();
             div().flex_1().min_w_0().child(
                 Chip::new(("t7-color", i), label)
+                    .height(38.)
                     .swatch(Hsla::from(rgb(hex)))
                     .active(self.color == code)
                     .disabled(!conf)
@@ -380,14 +375,13 @@ impl Render for T7View {
                     .step_by(per_row)
                     .map(|start| div().flex().gap(px(8.)).children((start..(start + per_row).min(10)).map(chip))),
             );
-        let saved_tile = div()
-            .flex_1()
+        let saved_tile = views::fr(div(), 2.0)
             .min_w_0()
             .flex()
             .items_center()
             .gap(px(12.))
-            .px(px(12.))
-            .py(px(9.))
+            .min_h(px(38.))
+            .p(px(8.))
             .border_1()
             .border_color(t.border)
             .rounded(px(t.radius - 5.))
@@ -441,10 +435,28 @@ impl Render for T7View {
                 cx,
             )
         };
+        // Legacy `.t7-state-grid > .inline-state`: "Status" and its value on one line.
+        let inline_status = |pending: bool| {
+            views::fr(div(), 1.0)
+                .min_w_0()
+                .flex()
+                .items_center()
+                .gap(px(10.))
+                .min_h(px(38.))
+                .p(px(8.))
+                .border_1()
+                .border_color(t.border)
+                .rounded(px(t.radius - 5.))
+                .bg(gpui::white().opacity(0.026))
+                .child(
+                    div().flex_none().text_size(px(t.font_xs)).font_weight(FontWeight::BOLD).text_color(t.text_muted).child("Status"),
+                )
+                .child(state_value(if pending { "Unsaved" } else { "Saved" }, if pending { t.warning } else { t.ok }, cx))
+        };
         let gamertag_actions = div()
             .flex()
             .gap(px(10.))
-            .child(div().flex_1().min_w_0().child(
+            .child(views::fr(div(), 0.7).min_w(px(120.)).child(
                 Button::new("t7-gt-reset", "Reset Edits")
                     .small()
                     .full_width()
@@ -456,11 +468,10 @@ impl Render for T7View {
                         }
                     })),
             ))
-            .child(div().flex_1().min_w_0().child(
+            .child(views::fr(div(), 1.0).min_w(px(160.)).child(
                 // Reads the form at click time (a same-frame click can follow the last keystroke).
                 Button::new("t7-gt-save", "Update Gamertag")
                     .small()
-                    .primary()
                     .icon(Icon::Save)
                     .full_width()
                     .disabled(!conf)
@@ -479,21 +490,26 @@ impl Render for T7View {
                 .child(preview)
                 .child(labelled("Name", self.name.clone(), cx).min_w(px(0.)))
                 .child(colors)
-                .child(div().flex().gap(px(10.)).child(saved_tile).child(div().w(px(130.)).child(status_tile(gamertag_pending))))
+                .child(div().flex().gap(px(8.)).child(saved_tile).child(inline_status(gamertag_pending)))
                 .child(gamertag_actions),
         );
 
         // ---- Security ---------------------------------------------------------------------
         let fo_this = c.clone();
-        let friends_row = div()
-            .min_h(px(40.))
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap(px(12.))
-            .px(px(12.))
-            .border_b_1()
-            .border_color(t.border)
+        let compact = || {
+            div()
+                .min_h(px(44.))
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap(px(12.))
+                .px(px(13.))
+                .border_1()
+                .border_color(t.border)
+                .rounded(px(t.radius - 4.))
+                .bg(gpui::white().opacity(0.032))
+        };
+        let friends_row = compact()
             .child(div().text_color(t.text_strong).child("Friends Only Mode"))
             .child(Toggle::new("t7-friends", t7.friends_only).disabled(!conf).on_change(move |v, _, cx| {
                 fo_this.update(cx, |c, cx| c.run(Action::T7FriendsOnly(v), cx))
@@ -501,16 +517,8 @@ impl Render for T7View {
         let pw_toggle_disabled = !conf || busy("t7-password-toggle");
         let row_this = cx.entity();
         let pw_enabled = self.pw_enabled;
-        let password_row = div()
+        let password_row = compact()
             .id("t7-pw-row")
-            .min_h(px(40.))
-            .flex()
-            .items_center()
-            .justify_between()
-            .gap(px(12.))
-            .px(px(12.))
-            .border_b_1()
-            .border_color(t.border)
             .map(|d| {
                 if pw_toggle_disabled {
                     d
@@ -590,7 +598,7 @@ impl Render for T7View {
         let security_actions = div()
             .flex()
             .gap(px(10.))
-            .child(div().flex_1().min_w_0().child(
+            .child(views::fr(div(), 0.7).min_w(px(120.)).child(
                 Button::new("t7-sec-reset", "Reset Edits")
                     .small()
                     .full_width()
@@ -603,10 +611,9 @@ impl Render for T7View {
                         }
                     })),
             ))
-            .child(div().flex_1().min_w_0().child(
+            .child(views::fr(div(), 1.0).min_w(px(160.)).child(
                 Button::new("t7-sec-save", "Update Security")
                     .small()
-                    .primary()
                     .icon(Icon::Save)
                     .full_width()
                     .disabled(!conf || !self.pw_enabled)
@@ -621,17 +628,8 @@ impl Render for T7View {
                 .flex()
                 .flex_col()
                 .gap(px(12.))
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .border_1()
-                        .border_color(t.border)
-                        .rounded(px(t.radius - 4.))
-                        .overflow_hidden()
-                        .child(friends_row)
-                        .child(password_row.border_b_0()),
-                )
+                .child(friends_row)
+                .child(password_row)
                 .child(pw_fields)
                 .child(states)
                 .child(security_actions),
@@ -647,8 +645,8 @@ impl Render for T7View {
                     .flex_wrap()
                     .items_start()
                     .gap(px(PANEL_GAP))
-                    .child(div().flex_1().min_w(px(360.)).child(gamertag))
-                    .child(div().flex_1().min_w(px(360.)).child(security)),
+                    .child(views::fr(div(), 1.05).min_w(px(360.)).child(gamertag))
+                    .child(views::fr(div(), 1.0).min_w(px(360.)).child(security)),
             )
             .into_any_element()
     }

@@ -51,6 +51,8 @@ impl DashboardView {
 /// Legacy `StatusRow`: value is the detail (default "Configured") when ok, else "Not configured".
 fn status_row(label: &str, ok: bool, detail: Option<String>) -> StatusRow {
     StatusRow::new(label.to_string(), Tone::from_ok(ok))
+        .min_h(38.)
+        .grow()
         .value(if ok { detail.unwrap_or_else(|| "Configured".into()) } else { "Not configured".into() })
 }
 
@@ -72,7 +74,11 @@ impl Render for DashboardView {
             id => state.launch_profiles.iter().find(|p| p.id == id).map(|p| p.label.clone()),
         };
         let qol = &state.qol;
+        // Legacy `.content-panel > .status-panel { flex: 1 }`: stretches over the free height of the
+        // page (rows share it equally) but never below its natural height, so a short window scrolls.
         let status = Panel::new("Status Overview")
+            .padding(18., 14.)
+            .fill(206.)
             .child(status_row("T7 Patch", state.mods.t7_patch, None))
             .child(status_row("DXVK-GPLAsync", state.mods.dxvk, None))
             .child(status_row("BO3 Enhanced", state.mods.enhanced, None))
@@ -86,9 +92,17 @@ impl Render for DashboardView {
                 Checkbox::new(id, on).label(label).on_change(views::run_bool(&c, make)),
             )
         };
+        // Legacy `.apply-all-row`: bold, muted-strong, hairline below, 4px extra gap.
+        let apply_all = div()
+            .min_h(px(34.))
+            .flex()
+            .items_center()
+            .mb(px(4.))
+            .border_b_1()
+            .border_color(t.border)
+            .child(Checkbox::new("qol-all", all_on).label("Apply All").strong().on_change(views::run_bool(&c, Action::QolAll)));
         let qol_panel = Panel::new("Quality of Life")
-            .child(check_row("qol-all", all_on, "Apply All", Action::QolAll))
-            .child(check_row(
+            .child(div().flex().flex_col().gap(px(5.)).child(apply_all).child(check_row(
                 "qol-d3d",
                 qol.d3dcompiler,
                 "Use latest d3dcompiler (d3dcompiler_46.dll)",
@@ -105,7 +119,7 @@ impl Render for DashboardView {
                 qol.all_intros,
                 "Skip All Intros (Campaign, Zombies, etc.)",
                 Action::AllIntrosSkip,
-            ));
+            )));
 
         // ---- Launch Options ---------------------------------------------------------------
         let selected = state.launch_profiles.iter().find(|p| p.id == self.selected);
@@ -137,7 +151,7 @@ impl Render for DashboardView {
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .min_h(px(32.))
+                .min_h(px(31.))
                 .when(i + 1 < n, |d| d.border_b_1().border_color(t.border))
                 .child(
                     div().flex_1().min_w_0().child(
@@ -153,16 +167,17 @@ impl Render for DashboardView {
                 )
                 .children(tag)
         });
-        let btn = |b: Button| div().flex_1().min_w(px(110.)).child(b.small().full_width());
+        // Equal-ish columns that never squeeze a label: each takes its natural width plus an equal share.
+        let btn = |b: Button| div().flex_grow().flex_shrink_0().child(b.small().full_width());
         // Handlers read the selection (and its launch option) at click time, not render time.
         let launch_panel = Panel::new("Launch Options")
-            .child(div().flex().flex_col().children(rows))
+            .child(div().flex().flex_col().gap(px(3.)).children(rows))
             .child(
                 div()
                     .flex()
                     .flex_wrap()
-                    .gap(px(10.))
-                    .pt(px(12.))
+                    .gap(px(9.5))
+                    .pt(px(10.))
                     .child(btn(
                         Button::new("profile-install", "Install Selected Mod")
                             .disabled(!installable)
@@ -196,7 +211,7 @@ impl Render for DashboardView {
             );
 
         ScrollArea::new("dashboard-scroll").gap(px(PANEL_GAP))
-            .child(div().flex_none().min_h(px(190.)).child(status))
+            .child(div().flex().flex_col().flex_grow().flex_shrink_0().min_h(px(206. + 24.)).child(status))
             .child(
                 div()
                     .flex()

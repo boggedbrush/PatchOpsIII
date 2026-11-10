@@ -93,7 +93,7 @@ impl OptionCard {
                 div()
                     .flex_1()
                     .min_w(px(150.))
-                    .child(div().text_size(px(t.font_lg)).font_weight(FontWeight::BOLD).text_color(t.text).child(self.title))
+                    .child(div().text_size(px(t.font_lg)).text_color(t.text).child(self.title))
                     .child(
                         div()
                             .min_w_0()
@@ -116,11 +116,11 @@ impl OptionCard {
         div()
             .flex()
             .flex_col()
-            .gap(px(16.))
+            .gap(px(12.))
             .min_w_0()
             .when(self.stacked, |d| d.w_full().flex_none())
             .when(!self.stacked, |d| d.flex_basis(relative(self.basis)))
-            .p(px(18.))
+            .p(px(14.))
             .when(!self.last && !self.stacked, |d| d.border_r_1().border_color(t.border))
             .when(!self.last && self.stacked, |d| d.border_b_1().border_color(t.border))
             .when(self.active, |d| d.border_t(px(4.)).border_color(t.ok).bg(t.ok.opacity(0.045)))
@@ -164,7 +164,8 @@ impl Render for ExeSwapView {
             .items_center()
             .gap(px(14.))
             .min_w_0()
-            .p(px(14.))
+            .flex_grow()
+            .p(px(12.))
             .border_1()
             .border_color(t.border)
             .rounded(px(t.radius - 4.))
@@ -187,13 +188,14 @@ impl Render for ExeSwapView {
 
         // Pills wrap rather than shrink: a pill never gets narrower than its text.
         let pill = |label: String, value: String, ok: bool| {
-            div().flex_1().min_w(px(190.)).child(StatusPill::new(label, value, Tone::from_ok(ok)))
+            div().flex_1().min_w(px(190.)).flex().flex_col().child(StatusPill::new(label, value, Tone::from_ok(ok)))
         };
         let pills = div()
             .flex()
             .flex_wrap()
             .gap(px(8.))
             .min_w_0()
+            .flex_grow()
             .child(pill(
                 format!("Latest - {}", exe.current_build_date),
                 exe.current_build_id.clone(),
@@ -220,15 +222,15 @@ impl Render for ExeSwapView {
             div()
                 .flex()
                 .flex_col()
-                .gap(px(12.))
+                .gap(px(10.))
                 .child(div().min_w_0().child(title_box))
                 .child(div().min_w_0().child(pills))
         } else {
             div()
                 .flex()
-                .gap(px(12.))
-                .child(div().flex_basis(relative(0.35)).flex_shrink().min_w(px(280.)).child(title_box))
-                .child(div().flex_basis(relative(0.65)).flex_shrink().min_w_0().child(pills))
+                .gap(px(10.))
+                .child(div().flex_basis(relative(0.35)).flex_shrink().min_w(px(280.)).flex().flex_col().child(title_box))
+                .child(div().flex_basis(relative(0.65)).flex_shrink().min_w_0().flex().flex_col().child(pills))
         };
 
         // ---- Option cards -----------------------------------------------------------------
@@ -327,9 +329,8 @@ impl Render for ExeSwapView {
                     .flex()
                     .flex_none()
                     .flex_col()
-                    .gap(px(12.))
                     .child(views::heading(cx, "EXE Swapper"))
-                    .child(hero)
+                    .child(div().flex_none().mb(px(12.)).child(hero))
                     .child(options),
             )
             .into_any_element()
