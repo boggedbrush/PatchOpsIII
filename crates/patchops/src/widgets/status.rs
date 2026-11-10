@@ -136,6 +136,7 @@ impl RenderOnce for StatusPill {
             .min_w_0()
             .min_h(px(56.))
             .px(px(14.))
+            .py(px(6.))
             .border_1()
             .border_color(t.border)
             .rounded(px(t.radius - 3.))
@@ -148,8 +149,8 @@ impl RenderOnce for StatusPill {
                     .child(self.label),
             )
             .child(
+                // Wraps by word at narrow widths (no truncation).
                 div()
-                    .truncate()
                     .text_size(px(t.font_sm))
                     .font_weight(FontWeight::BOLD)
                     .text_color(if self.tone == Tone::Neutral {
@@ -168,6 +169,7 @@ impl RenderOnce for StatusPill {
 /// Metric::new("Steam ID", "Not found", Tone::Neutral)
 /// ```
 #[derive(IntoElement)]
+#[allow(dead_code)] // kit API
 pub struct Metric {
     label: SharedString,
     value: SharedString,
@@ -175,6 +177,7 @@ pub struct Metric {
 }
 
 impl Metric {
+    #[allow(dead_code)] // kit API
     pub fn new(label: impl Into<SharedString>, value: impl Into<SharedString>, tone: Tone) -> Self {
         Self {
             label: label.into(),
@@ -201,9 +204,10 @@ impl RenderOnce for Metric {
                     .child(self.label),
             )
             .child(
+                // Wraps by word at narrow widths (no truncation).
                 div()
                     .min_w_0()
-                    .truncate()
+                    .text_right()
                     .text_size(px(t.font_sm))
                     .font_weight(FontWeight::BOLD)
                     .text_color(if self.tone == Tone::Neutral {
@@ -285,6 +289,7 @@ impl Alert {
             on_dismiss: None,
         }
     }
+    #[allow(dead_code)] // kit API
     pub fn warning(message: impl Into<SharedString>) -> Self {
         Self {
             message: message.into(),
@@ -442,6 +447,7 @@ impl RenderOnce for Chip {
 /// ```ignore
 /// requirement("Game detected", detected)
 /// ```
+#[allow(dead_code)] // kit API
 pub fn requirement(label: impl Into<SharedString>, ok: bool, cx: &App) -> AnyElement {
     let t = *cx.theme();
     let color = if ok { t.ok } else { t.warning };

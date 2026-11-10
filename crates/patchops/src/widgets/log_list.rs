@@ -16,6 +16,8 @@ use crate::theme::{ActiveTheme, Theme};
 actions!(patchops_log, [CopyLine]);
 const CONTEXT: &str = "PatchOpsLog";
 const ROW_H: f32 = 18.0;
+/// Messages longer than this (bytes) get a tooltip with the full text.
+const LONG_LINE: usize = 90;
 
 pub fn bind_keys(cx: &mut App) {
     #[cfg(target_os = "macos")]
@@ -115,10 +117,12 @@ impl LogList {
         self.lines.len()
     }
 
+    #[allow(dead_code)] // kit API
     pub fn is_empty(&self) -> bool {
         self.lines.is_empty()
     }
 
+    #[allow(dead_code)] // kit API
     pub fn push(
         &mut self,
         level: LogLevel,
@@ -272,9 +276,15 @@ impl Render for LogList {
                                     )
                                     .child(
                                         div()
+                                            .id(("msg", ix))
                                             .flex_1()
                                             .min_w_0()
                                             .truncate()
+                                            // Rows are fixed-height (virtualised) so a long line is
+                                            // cut with an ellipsis; the tooltip has the whole line.
+                                            .when(l.message.len() > LONG_LINE, |d| {
+                                                d.tooltip(super::tooltip::tooltip(l.message.clone()))
+                                            })
                                             .child(l.message.clone()),
                                     )
                             })

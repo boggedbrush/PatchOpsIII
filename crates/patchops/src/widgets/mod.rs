@@ -3,8 +3,6 @@
 //! `DirBrowser`, `ToastHost`) are `Entity<T>` that emit events (subscribe with `cx.subscribe`).
 //! See `GPUI_NOTES.md` ("Widget kit") for one snippet per widget.
 
-#![allow(unused_imports, dead_code)]
-
 pub mod assets;
 pub mod button;
 pub mod dir_browser;
@@ -27,19 +25,26 @@ pub mod toggle;
 pub mod tooltip;
 
 pub use assets::Assets;
+#[allow(unused_imports)] // kit surface (gallery / views)
 pub use button::{Button, ButtonKind, IconButton};
 pub use dir_browser::{BrowseData, BrowseEntry, BrowseLocation, DirBrowser, DirBrowserEvent};
+#[allow(unused_imports)]
 pub use form::{Field, FormRow, SettingRow};
 pub use icon::{icon, Icon};
+#[allow(unused_imports)]
 pub use log_list::{LogLevel, LogList};
 pub use modal::{confirm_dialog, Dialog};
 pub use nav::NavItem;
 pub use number_input::{NumberInput, NumberInputEvent};
+#[allow(unused_imports)]
 pub use panel::{divider, Card, Collapsible, DropZone, Group, Panel};
 pub use progress::{ProgressBar, Spinner};
+#[allow(unused_imports)]
 pub use scroll::{ScrollArea, Scrollbar};
+#[allow(unused_imports)]
 pub use select::{Select, SelectEvent, SelectOption};
 pub use slider::{Slider, SliderEvent};
+#[allow(unused_imports)]
 pub use status::{requirement, Alert, Badge, Chip, Metric, StatusPill, StatusRow, Tone};
 pub use tabs::{Segmented, SubTabs};
 pub use text_input::{TextInput, TextInputEvent};

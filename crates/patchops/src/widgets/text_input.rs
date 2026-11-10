@@ -96,10 +96,60 @@ pub fn bind_keys(cx: &mut App) {
     ]);
 }
 
+
+/// UTF-16 code-unit offset -> UTF-8 byte offset in `s` (clamped to `s.len()`, rounded up to the
+/// next char boundary when `offset` falls inside a surrogate pair). Always a char boundary.
+fn utf16_to_byte(s: &str, offset: usize) -> usize {
+    let mut byte = 0;
+    let mut units = 0;
+    for ch in s.chars() {
+        if units >= offset {
+            break;
+        }
+        units += ch.len_utf16();
+        byte += ch.len_utf8();
+    }
+    byte
+}
+
+/// UTF-8 byte offset -> UTF-16 code-unit offset in `s` (a non-boundary offset rounds up).
+fn byte_to_utf16(s: &str, offset: usize) -> usize {
+    let mut units = 0;
+    let mut bytes = 0;
+    for ch in s.chars() {
+        if bytes >= offset {
+            break;
+        }
+        bytes += ch.len_utf8();
+        units += ch.len_utf16();
+    }
+    units
+}
+
+/// New selection (absolute byte range in the content) after the IME marked `inserted`, which now
+/// starts at byte `at`. The IME reports `selected_utf16` relative to the start of the inserted
+/// text, in UTF-16 units; without one the cursor goes to the end of the inserted text.
+fn selection_after_mark(at: usize, inserted: &str, selected_utf16: Option<&Range<usize>>) -> Range<usize> {
+    match selected_utf16 {
+        Some(r) => {
+            let a = utf16_to_byte(inserted, r.start);
+            let b = utf16_to_byte(inserted, r.end);
+            at + a.min(b)..at + a.max(b)
+        }
+        None => at + inserted.len()..at + inserted.len(),
+    }
+}
+
+/// Order a range the platform may have reported backwards.
+fn ordered(r: Range<usize>) -> Range<usize> {
+    if r.start <= r.end { r } else { r.end..r.start }
+}
+
 pub enum TextInputEvent {
     Changed(SharedString),
     Submit(SharedString),
     /// Focus left the input (emitted even if unchanged).
+    #[allow(dead_code)] // payload not read by current owners
     Blurred(SharedString),
 }
 
@@ -133,7 +183,7 @@ impl Focusable for TextInput {
 impl TextInput {
     pub fn new(placeholder: impl Into<SharedString>, cx: &mut Context<Self>) -> Self {
         Self {
-            focus_handle: cx.focus_handle(),
+            focus_handle: cx.focus_handle().tab_stop(true),
             content: "".into(),
             placeholder: placeholder.into(),
             selected_range: 0..0,
@@ -182,6 +232,7 @@ impl TextInput {
         self.char_filter = Some(f);
     }
 
+    #[allow(dead_code)] // kit API
     pub fn set_placeholder(&mut self, p: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.placeholder = p.into();
         cx.notify();
@@ -256,6 +307,7 @@ impl TextInput {
         let end = self.content.len();
         self.selected_range = end..end;
         self.marked_range = None;
+        self.debug_check();
         cx.notify();
     }
 
@@ -288,6 +340,27 @@ impl TextInput {
             new_text.into()
         } else {
             new_text.chars().take(room).collect::<String>().into()
+        }
+    }
+
+    /// Invariant: the selection and marked ranges lie inside the content on char boundaries
+    /// (slicing anywhere else panics). Checked in debug builds only.
+    fn debug_check(&self) {
+        debug_assert!(
+            self.selected_range.start <= self.selected_range.end
+                && self.content.is_char_boundary(self.selected_range.start)
+                && self.content.is_char_boundary(self.selected_range.end),
+            "selection {:?} not on char boundaries of {:?}",
+            self.selected_range,
+            self.content
+        );
+        if let Some(m) = &self.marked_range {
+            debug_assert!(
+                m.start <= m.end && self.content.is_char_boundary(m.start) && self.content.is_char_boundary(m.end),
+                "marked range {:?} not on char boundaries of {:?}",
+                m,
+                self.content
+            );
         }
     }
 
@@ -478,6 +551,7 @@ impl TextInput {
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         self.selected_range = offset..offset;
         self.selection_reversed = false;
+        self.debug_check();
         cx.notify()
     }
 
@@ -512,33 +586,16 @@ impl TextInput {
             self.selection_reversed = !self.selection_reversed;
             self.selected_range = self.selected_range.end..self.selected_range.start;
         }
+        self.debug_check();
         cx.notify()
     }
 
     fn offset_from_utf16(&self, offset: usize) -> usize {
-        let mut utf8_offset = 0;
-        let mut utf16_count = 0;
-        for ch in self.content.chars() {
-            if utf16_count >= offset {
-                break;
-            }
-            utf16_count += ch.len_utf16();
-            utf8_offset += ch.len_utf8();
-        }
-        utf8_offset
+        utf16_to_byte(&self.content, offset)
     }
 
     fn offset_to_utf16(&self, offset: usize) -> usize {
-        let mut utf16_offset = 0;
-        let mut utf8_count = 0;
-        for ch in self.content.chars() {
-            if utf8_count >= offset {
-                break;
-            }
-            utf8_count += ch.len_utf8();
-            utf16_offset += ch.len_utf16();
-        }
-        utf16_offset
+        byte_to_utf16(&self.content, offset)
     }
 
     fn range_to_utf16(&self, range: &Range<usize>) -> Range<usize> {
@@ -608,11 +665,13 @@ impl EntityInputHandler for TextInput {
         if !self.editable() {
             return;
         }
-        let range = range_utf16
-            .as_ref()
-            .map(|r| self.range_from_utf16(r))
-            .or(self.marked_range.clone())
-            .unwrap_or(self.selected_range.clone());
+        let range = ordered(
+            range_utf16
+                .as_ref()
+                .map(|r| self.range_from_utf16(r))
+                .or(self.marked_range.clone())
+                .unwrap_or(self.selected_range.clone()),
+        );
         let new_text = self.clamp_insert(&range, new_text);
         let new_text = new_text.as_ref();
         self.content =
@@ -621,6 +680,7 @@ impl EntityInputHandler for TextInput {
         self.selected_range = range.start + new_text.len()..range.start + new_text.len();
         self.selection_reversed = false;
         self.marked_range.take();
+        self.debug_check();
         self.changed(cx);
         cx.notify();
     }
@@ -636,11 +696,13 @@ impl EntityInputHandler for TextInput {
         if !self.editable() {
             return;
         }
-        let range = range_utf16
-            .as_ref()
-            .map(|r| self.range_from_utf16(r))
-            .or(self.marked_range.clone())
-            .unwrap_or(self.selected_range.clone());
+        let range = ordered(
+            range_utf16
+                .as_ref()
+                .map(|r| self.range_from_utf16(r))
+                .or(self.marked_range.clone())
+                .unwrap_or(self.selected_range.clone()),
+        );
         let new_text = self.clamp_insert(&range, new_text);
         let new_text = new_text.as_ref();
         self.content =
@@ -648,11 +710,10 @@ impl EntityInputHandler for TextInput {
                 .into();
         self.marked_range =
             (!new_text.is_empty()).then(|| range.start..range.start + new_text.len());
-        self.selected_range = new_selected_range_utf16
-            .as_ref()
-            .map(|r| self.range_from_utf16(r))
-            .map(|r| r.start + range.start..r.end + range.end)
-            .unwrap_or_else(|| range.start + new_text.len()..range.start + new_text.len());
+        // The IME's selection is relative to the inserted text (not to the whole content).
+        self.selected_range = selection_after_mark(range.start, new_text, new_selected_range_utf16.as_ref());
+        self.selection_reversed = false;
+        self.debug_check();
         self.changed(cx);
         cx.notify();
     }
@@ -907,9 +968,11 @@ impl gpui::Render for TextInput {
                 );
         }
         let focused = self.focus_handle.is_focused(window);
+        let disabled = self.disabled;
         div()
             .key_context(CONTEXT)
-            .track_focus(&self.focus_handle)
+            // A disabled input must not take focus (click or Tab).
+            .when(!disabled, |d| d.track_focus(&self.focus_handle))
             .cursor(if self.disabled {
                 CursorStyle::OperationNotAllowed
             } else {
@@ -964,5 +1027,66 @@ impl gpui::Render for TextInput {
                     .overflow_hidden()
                     .child(TextElement { input: cx.entity() }),
             )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MIXED: &str = "a\u{306B}\u{307B}b\u{1F600}c"; // a, ni, ho, b, emoji (2 UTF-16 units), c
+
+    #[test]
+    fn utf16_byte_round_trip_on_every_boundary() {
+        for (byte, _) in MIXED.char_indices().chain(std::iter::once((MIXED.len(), ' '))) {
+            let u = byte_to_utf16(MIXED, byte);
+            assert_eq!(utf16_to_byte(MIXED, u), byte, "byte {byte} -> utf16 {u}");
+            assert!(MIXED.is_char_boundary(utf16_to_byte(MIXED, u)));
+        }
+    }
+
+    #[test]
+    fn utf16_offsets_inside_a_surrogate_pair_round_up_to_a_boundary() {
+        // units: a=0..1, ni=1..2, ho=2..3, b=3..4, emoji=4..6, c=6..7
+        assert_eq!(utf16_to_byte(MIXED, 5), "a\u{306B}\u{307B}b\u{1F600}".len());
+        for u in 0..12 {
+            assert!(MIXED.is_char_boundary(utf16_to_byte(MIXED, u)), "utf16 offset {u}");
+        }
+        assert_eq!(utf16_to_byte(MIXED, 100), MIXED.len());
+        assert_eq!(byte_to_utf16(MIXED, 1000), 7);
+    }
+
+    #[test]
+    fn ascii_is_identity() {
+        assert_eq!(utf16_to_byte("hello", 3), 3);
+        assert_eq!(byte_to_utf16("hello", 3), 3);
+    }
+
+    #[test]
+    #[allow(clippy::reversed_empty_ranges)]
+    fn ime_selection_is_relative_to_the_inserted_text() {
+        // Existing "ab", composing "にほ" at byte 2; the IME puts the cursor after the first
+        // kana, i.e. UTF-16 offset 1 inside the inserted text. The old code converted this
+        // against the whole content (and landed inside a 3-byte char).
+        let content = format!("ab{}", "\u{306B}\u{307B}");
+        let sel = selection_after_mark(2, "\u{306B}\u{307B}", Some(&(1..1)));
+        assert_eq!(sel, 5..5);
+        assert!(content.is_char_boundary(sel.start) && content.is_char_boundary(sel.end));
+        // Whole inserted text selected.
+        assert_eq!(selection_after_mark(2, "\u{306B}\u{307B}", Some(&(0..2))), 2..8);
+        // No selection reported: cursor after the inserted text.
+        assert_eq!(selection_after_mark(2, "\u{306B}\u{307B}", None), 8..8);
+        // Emoji (2 UTF-16 units) then ASCII; offsets past the end clamp.
+        assert_eq!(selection_after_mark(1, "\u{1F600}x", Some(&(2..3))), 5..6);
+        assert_eq!(selection_after_mark(1, "\u{1F600}x", Some(&(0..50))), 1..6);
+        // A backwards range is normalised.
+        assert_eq!(selection_after_mark(0, "abc", Some(&(2..1))), 1..2);
+    }
+
+    #[test]
+    #[allow(clippy::reversed_empty_ranges)]
+    fn ordered_swaps_reversed_ranges() {
+        assert_eq!(ordered(3..1), 1..3);
+        assert_eq!(ordered(1..3), 1..3);
     }
 }

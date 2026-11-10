@@ -2,6 +2,9 @@
 //! hairline below); `FormRow` adds help text and a fixed label column; `Field` is a label
 //! stacked over a control (Name / Password fields on the T7 view).
 
+// Kit file: FormRow / Field are documented widget-kit API used by the gallery, not yet by a tab.
+#![allow(dead_code)]
+
 use gpui::{
     div, prelude::*, px, AnyElement, App, FontWeight, IntoElement, ParentElement, SharedString,
     Window,
@@ -132,6 +135,7 @@ impl FormRow {
         self.control = Some(c.into_any_element());
         self
     }
+    #[allow(dead_code)] // kit API
     pub fn label_width(mut self, w: f32) -> Self {
         self.label_w = w;
         self

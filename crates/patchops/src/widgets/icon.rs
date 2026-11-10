@@ -13,6 +13,7 @@ macro_rules! icons {
     ($($variant:ident => $file:literal),+ $(,)?) => {
         /// Embedded icon set. Add a glyph: drop the SVG in `assets/icons/` and add a line here.
         #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+        #[allow(dead_code)] // the full lucide subset is kept; not every glyph is used yet
         pub enum Icon { $($variant),+ }
 
         impl Icon {
@@ -64,6 +65,7 @@ icons! {
     Search => "search",
     Settings => "settings",
     ShieldCheck => "shield-check",
+    Square => "square",
     SquarePlay => "square-play",
     Trash2 => "trash-2",
     TriangleAlert => "triangle-alert",

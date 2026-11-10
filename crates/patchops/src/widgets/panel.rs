@@ -34,6 +34,7 @@ impl Panel {
         }
     }
     /// No heading, just the bordered body.
+    #[allow(dead_code)] // kit API
     pub fn untitled() -> Self {
         Self {
             title: None,
@@ -42,6 +43,7 @@ impl Panel {
         }
     }
     /// Remove the body padding (for lists that want to run edge to edge).
+    #[allow(dead_code)] // kit API
     pub fn flush(mut self) -> Self {
         self.pad = false;
         self
@@ -214,6 +216,7 @@ impl RenderOnce for Group {
 }
 
 /// 1px horizontal rule.
+#[allow(dead_code)] // kit API
 pub fn divider(cx: &App) -> impl IntoElement {
     div().h(px(1.)).w_full().flex_none().bg(cx.theme().border)
 }

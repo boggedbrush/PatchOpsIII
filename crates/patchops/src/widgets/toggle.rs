@@ -145,6 +145,7 @@ impl Checkbox {
         self.label = Some(label.into());
         self
     }
+    #[allow(dead_code)] // kit API
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
@@ -216,6 +217,7 @@ impl Radio {
         self.label = Some(label.into());
         self
     }
+    #[allow(dead_code)] // kit API
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self

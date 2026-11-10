@@ -20,6 +20,7 @@ pub enum ButtonKind {
     /// Red-tinted destructive action.
     Danger,
     /// Transparent until hovered.
+    #[allow(dead_code)]
     Ghost,
 }
 
@@ -67,6 +68,7 @@ impl Button {
     pub fn danger(self) -> Self {
         self.kind(ButtonKind::Danger)
     }
+    #[allow(dead_code)] // kit API
     pub fn ghost(self) -> Self {
         self.kind(ButtonKind::Ghost)
     }
@@ -126,7 +128,8 @@ impl RenderOnce for Button {
             .text_size(px(if self.small { t.font_sm } else { t.font_md }))
             .font_weight(FontWeight::BOLD)
             .whitespace_nowrap()
-            .tab_index(0)
+            // Inert buttons are not tab stops (nothing to activate).
+            .when(!inert, |d| d.tab_index(0))
             .focus(move |s| {
                 s.border_color(if self.kind == ButtonKind::Primary {
                     t.text
@@ -134,7 +137,7 @@ impl RenderOnce for Button {
                     t.focus_ring
                 })
             })
-            .when(self.full, |d| d.w_full().flex_1())
+            .when(self.full, |d| d.w_full())
             .map(|d| match self.kind {
                 ButtonKind::Primary => d.bg(linear_gradient(
                     135.,

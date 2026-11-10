@@ -141,6 +141,7 @@ impl Select {
         }
     }
 
+    #[allow(dead_code)] // kit API
     pub fn set_disabled(&mut self, disabled: bool, cx: &mut Context<Self>) {
         if self.disabled != disabled {
             self.disabled = disabled;

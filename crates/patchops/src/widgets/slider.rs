@@ -56,6 +56,9 @@ pub struct Slider {
     disabled: bool,
     bounds: Bounds<Pixels>,
     dragging: bool,
+    /// Key steps made since the last `Committed` (committed on key-up / blur, not per repeat).
+    pending: bool,
+    _blur_sub: Option<gpui::Subscription>,
 }
 
 impl EventEmitter<SliderEvent> for Slider {}
@@ -79,6 +82,8 @@ impl Slider {
             disabled: false,
             bounds: Bounds::default(),
             dragging: false,
+            pending: false,
+            _blur_sub: None,
         }
     }
 
@@ -95,28 +100,32 @@ impl Slider {
     }
 
     /// Hide the numeric label.
+    #[allow(dead_code)] // kit API
     pub fn no_label(mut self) -> Self {
         self.show_label = false;
         self
     }
 
+    #[allow(dead_code)] // kit API
     pub fn value(&self) -> f32 {
         self.value
     }
 
     /// Set without emitting an event (use when syncing from external state).
     pub fn set_value_silent(&mut self, v: f32) {
-        if !self.dragging {
+        if !self.dragging && !self.pending {
             self.value = self.snap(v);
         }
     }
 
+    #[allow(dead_code)] // kit API
     pub fn set_range(&mut self, min: f32, max: f32) {
         self.min = min;
         self.max = max;
         self.value = self.value.clamp(min, max);
     }
 
+    #[allow(dead_code)] // kit API
     pub fn set_disabled(&mut self, disabled: bool, cx: &mut Context<Self>) {
         if self.disabled != disabled {
             self.disabled = disabled;
@@ -149,7 +158,15 @@ impl Slider {
             return;
         }
         self.set(self.value + delta, cx);
-        cx.emit(SliderEvent::Committed(self.value));
+        // `Changed` fires per step; the (persisting) `Committed` waits for key-up so holding an
+        // arrow key is one config write, not one per repeat.
+        self.pending = true;
+    }
+
+    fn commit_pending(&mut self, cx: &mut Context<Self>) {
+        if std::mem::take(&mut self.pending) {
+            cx.emit(SliderEvent::Committed(self.value));
+        }
     }
 
     fn label(&self) -> SharedString {
@@ -168,9 +185,14 @@ impl Render for Slider {
         let this = cx.entity();
         let focused = self.focus_handle.is_focused(window);
         let page = self.step * 10.;
+        if self._blur_sub.is_none() {
+            // Focus moved away mid-hold (key-up goes elsewhere): still persist the value.
+            self._blur_sub = Some(cx.on_focus_out(&self.focus_handle, window, |s, _, _, cx| s.commit_pending(cx)));
+        }
         div()
             .key_context(CONTEXT)
             .track_focus(&self.focus_handle)
+            .on_key_up(cx.listener(|s, _: &gpui::KeyUpEvent, _, cx| s.commit_pending(cx)))
             .on_action(cx.listener(move |s, _: &StepDown, _, cx| s.key_step(-s.step, cx)))
             .on_action(cx.listener(move |s, _: &StepUp, _, cx| s.key_step(s.step, cx)))
             .on_action(cx.listener(move |s, _: &PageDown, _, cx| s.key_step(-page, cx)))

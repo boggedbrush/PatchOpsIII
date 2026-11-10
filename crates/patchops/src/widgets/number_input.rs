@@ -45,6 +45,8 @@ pub struct NumberInput {
     disabled: bool,
     /// The user has typed since the last commit; external `set_value` is ignored meanwhile.
     editing: bool,
+    /// Arrow-key steps not yet committed (committed on key-up, not per key repeat).
+    pending: bool,
     _sub: Subscription,
 }
 
@@ -89,20 +91,24 @@ impl NumberInput {
             step: 1.0,
             disabled: false,
             editing: false,
+            pending: false,
             _sub: sub,
         }
     }
 
+    #[allow(dead_code)] // kit API
     pub fn set_step(&mut self, step: f64) -> &mut Self {
         self.step = step;
         self
     }
 
+    #[allow(dead_code)] // kit API
     pub fn set_range(&mut self, min: f64, max: f64) {
         self.min = min;
         self.max = max;
     }
 
+    #[allow(dead_code)] // kit API
     pub fn value(&self) -> f64 {
         self.value
     }
@@ -115,7 +121,7 @@ impl NumberInput {
 
     /// Mirror external state (no event). Ignored while the user is typing in it.
     pub fn set_value(&mut self, v: f64, cx: &mut Context<Self>) {
-        if (v - self.value).abs() > f64::EPSILON && !self.editing {
+        if (v - self.value).abs() > f64::EPSILON && !self.editing && !self.pending {
             self.value = v;
             self.input.update(cx, |i, cx| i.set_text(fmt(v), cx));
         }
@@ -141,11 +147,21 @@ impl NumberInput {
         let v = parsed.clamp(self.min, self.max);
         self.value = v;
         self.editing = false;
+        self.pending = false;
         self.input.update(cx, |i, cx| i.set_text(fmt(v), cx));
         cx.emit(NumberInputEvent::Committed(v));
     }
 
-    fn step_by(&mut self, dir: f64, cx: &mut Context<Self>) {
+    /// Persist the keyboard steps made since the last commit (key-up).
+    fn commit_pending(&mut self, cx: &mut Context<Self>) {
+        if std::mem::take(&mut self.pending) {
+            cx.emit(NumberInputEvent::Committed(self.value));
+        }
+    }
+
+    /// `commit_now`: arrow-button clicks commit at once; key presses wait for key-up so a held
+    /// key is one write (the value still changes, and `Changed` fires, per step).
+    fn step_by(&mut self, dir: f64, commit_now: bool, cx: &mut Context<Self>) {
         if self.disabled {
             return;
         }
@@ -159,7 +175,12 @@ impl NumberInput {
         self.value = v;
         self.input.update(cx, |i, cx| i.set_text(fmt(v), cx));
         cx.emit(NumberInputEvent::Changed(v));
-        cx.emit(NumberInputEvent::Committed(v));
+        if commit_now {
+            self.pending = false;
+            cx.emit(NumberInputEvent::Committed(v));
+        } else {
+            self.pending = true;
+        }
     }
 }
 
@@ -177,12 +198,13 @@ impl Render for NumberInput {
                 .cursor_pointer()
                 .hover(move |s| s.bg(t.hover_strong))
                 .child(icon(ic).size(px(12.)).text_color(t.text_muted))
-                .on_click(cx.listener(move |this, _, _, cx| this.step_by(dir, cx)))
+                .on_click(cx.listener(move |this, _, _, cx| this.step_by(dir, true, cx)))
         };
         div()
             .key_context(CONTEXT)
-            .on_action(cx.listener(|this, _: &Increment, _, cx| this.step_by(1., cx)))
-            .on_action(cx.listener(|this, _: &Decrement, _, cx| this.step_by(-1., cx)))
+            .on_key_up(cx.listener(|this, _: &gpui::KeyUpEvent, _, cx| this.commit_pending(cx)))
+            .on_action(cx.listener(|this, _: &Increment, _, cx| this.step_by(1., false, cx)))
+            .on_action(cx.listener(|this, _: &Decrement, _, cx| this.step_by(-1., false, cx)))
             .relative()
             .w_full()
             .child(self.input.clone())

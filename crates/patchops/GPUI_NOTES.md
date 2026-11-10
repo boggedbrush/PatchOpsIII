@@ -192,7 +192,7 @@ dispatch to the focused element's ancestors, so the root must have a focus handl
 
 ## Modal / second window
 
-In-window modal: `widgets::modal::modal(title, body, on_close, cx)` returns a `deferred(div().absolute().inset_0().occlude()...)`
+In-window modal: `widgets::Dialog` (see "Overlays") is a `deferred(div().absolute().inset_0().occlude()...)`
 backdrop; add it as the last child of a `relative()` parent while a flag is set. Wrap the card with
 `on_mouse_down(.., |_,_,cx| cx.stop_propagation())` so clicks in the card don't close it. `deferred(..).with_priority(n)` paints above siblings.
 
@@ -243,7 +243,7 @@ and registered by `widgets::init(cx)`; `Theme::font_ui` = "Inter", `font_mono` =
 # Widget kit (`src/widgets/`, theme in `src/theme.rs`)
 
 Everything below is exported from `crate::widgets::*` and visible in the gallery
-(`PATCHOPS_GALLERY=1 patchops`; env `PATCHOPS_GALLERY_TAB=0..3` picks the tab, `PATCHOPS_GALLERY_DIALOG=1` / `_BROWSER=1`
+(debug builds only: `PATCHOPS_GALLERY=1 patchops`; env `PATCHOPS_GALLERY_TAB=0..3` picks the tab, `PATCHOPS_GALLERY_DIALOG=1` / `_BROWSER=1`
 open overlays at start). Source for every snippet: `src/views/gallery.rs`.
 
 ## Setup (already wired in `app.rs`; new windows/bins need the same)
@@ -263,7 +263,7 @@ Colours (all `Hsla`, many are white/black + alpha like the CSS): `bg bg_deep sid
 border border_strong text text_muted text_strong accent accent_dark accent_hover accent_bg accent_border ok ok_bg ok_border
 warning danger danger_bg danger_border hover hover_strong selection focus_ring scroll_*`. Metrics (f32 px, use `px(t.x)`):
 `radius(10) radius_sm(7) radius_xs(5) control_h(36) row_h(38) nav_w(190) font_xs(12) font_sm(13) font_md(14) font_lg(16) font_xl(24)`;
-spacing consts `theme::space::{XS 4, SM 8, MD 12, LG 16, XL 24}`. Page gutter in legacy: 14px, gap between panels 12px.
+Page gutter in legacy: 14px, gap between panels 12px.
 Always set `.text_size(px(t.font_md))` on a view root (or rely on the app root's `.text_sm()` = 14px).
 
 ## Icons
@@ -359,7 +359,9 @@ root.when(open, |d| d.child(b.clone()));                        // last child of
 
 ```rust
 Dialog::new("id").title("Copy this").description("..").width(px(480.)).child(body).footer(Button::new(..)).footer(Button::new(..).primary())
-    .on_close(|w, cx| ..)             // Esc, backdrop click, X; .no_close_button()
+    .on_close(|w, cx| ..)             // Esc, backdrop click, X; .no_close_button(); .backdrop_closes(false); .initial_focus(n)
+// Dialogs trap Tab/Shift-Tab inside themselves (modal::trap_tab) and focus tab stop `initial_focus` on open (confirm_dialog: Cancel when destructive).
+// The shell remembers the focused control when the first dialog opens and restores it on close (else the root), so shortcuts keep working.
 confirm_dialog("id", "Reset to stock?", "message", "Reset", /*destructive*/ true, on_confirm, on_cancel)   // returns a Dialog
 // Dialogs/DirBrowser/ToastHost: add as the LAST child of a `.relative()` root so they paint on top (deferred, priority 10/20).
 ScrollArea::new("id").gap(px(12.)).child(..)       // scrolling column + visible draggable scrollbar; give it a bounded height (flex_1().min_h_0())
@@ -506,3 +508,22 @@ in the re-seed callback.
 * New op or new busy key: add the `Action` variant + `busy_key` + `exec` arm in `actions.rs` (one place).
 * Env aids for screenshots: `PATCHOPS_BOOT_DELAY_MS`, `PATCHOPS_BOOT_FAIL=1` (startup screens), `PATCHOPS_TRACE_STARTUP=1`.
 * Keyboard: Tab / Shift-Tab focus, Ctrl-Tab / Ctrl-Shift-Tab and Ctrl-1..6 switch tabs, F5 refreshes, Ctrl-Q quits.
+
+
+---
+
+# Known upstream issues
+
+* **gpui 0.2.2 X11 backend keeps a ~16 ms timer armed while idle** (about 64 wakeups/s, ~0.5% CPU on software
+  rendering, no redraws are produced). Nothing in this crate can switch it off; it needs an upstream patch.
+* gpui 0.2.2 has no fallible platform init (see `check_display` in `main.rs`) and no runtime window-icon API.
+
+# Behaviour notes (review fixes)
+
+* Release profile is `panic = "abort"` (unwind measured +1.72 MB). A panic ends the process; `main.rs` installs a panic
+  hook (GUI and `--rpc-stdio`) that first appends message + location to `PatchOpsIII.log`. There is no `catch_unwind`.
+* Mutating actions run strictly serially; `Action::is_independent()` ones (open URL, launch, copy logs, refresh) start
+  at once. Replies carry a sequence stamp and the controller drops a state older than the one it holds.
+* Client-side decorations (GNOME/Wayland): when `window.window_decorations()` is `Client`, the shell header draws
+  minimise / maximise / close buttons, drags the window and adds resize edge zones. Untested on a real Mutter session.
+* Slider and NumberInput emit `Committed` on key-up/blur for keyboard steps (not once per key repeat).

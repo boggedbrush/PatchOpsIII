@@ -70,6 +70,9 @@ pub struct DirBrowser {
     require_exe: bool,
     path_input: Entity<TextInput>,
     data: Option<BrowseData>,
+    /// Current folder for the header (start-truncated) and its tooltip (full), built in `set_data`.
+    path_short: SharedString,
+    path_full: SharedString,
     error: Option<SharedString>,
     loading: bool,
     scroll: UniformListScrollHandle,
@@ -78,6 +81,21 @@ pub struct DirBrowser {
 }
 
 impl EventEmitter<DirBrowserEvent> for DirBrowser {}
+
+/// Longest path (in chars) shown in the header before the start is replaced by an ellipsis.
+const HEADER_CHARS: usize = 56;
+
+/// `path` shortened to its last `max` chars with a leading ellipsis (on a char boundary).
+fn shorten_start(path: &str, max: usize) -> String {
+    let n = path.chars().count();
+    if n <= max {
+        return path.to_string();
+    }
+    let skip = n - (max - 1);
+    let start = path.char_indices().nth(skip).map(|(i, _)| i).unwrap_or(0);
+    format!("\u{2026}{}", &path[start..])
+}
+
 
 impl Focusable for DirBrowser {
     fn focus_handle(&self, _: &App) -> FocusHandle {
@@ -106,6 +124,8 @@ impl DirBrowser {
             require_exe: false,
             path_input,
             data: None,
+            path_short: SharedString::default(),
+            path_full: SharedString::default(),
             error: None,
             loading: false,
             scroll: UniformListScrollHandle::new(),
@@ -132,6 +152,8 @@ impl DirBrowser {
         self.loading = false;
         self.error = None;
         let p = data.path.clone();
+        self.path_short = shorten_start(&p, HEADER_CHARS).into();
+        self.path_full = p.clone().into();
         self.path_input.update(cx, |i, cx| i.set_text(p, cx));
         self.data = Some(data);
         self.scroll.scroll_to_item(0, gpui::ScrollStrategy::Top);
@@ -148,20 +170,14 @@ impl DirBrowser {
 impl Render for DirBrowser {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = *cx.theme();
-        let (path, can_confirm, n_rows) = match &self.data {
+        let (can_confirm, n_rows) = match &self.data {
             Some(d) => (
-                d.path.clone(),
                 !self.require_exe || d.has_game_executable,
                 d.entries.len() + usize::from(d.parent.is_some()),
             ),
-            None => (String::new(), false, 0),
+            None => (false, 0),
         };
         let bar_handle = self.scroll.0.borrow().base_handle.clone();
-        let locations: Vec<BrowseLocation> = self
-            .data
-            .as_ref()
-            .map(|d| d.roots.iter().chain(d.shortcuts.iter()).cloned().collect())
-            .unwrap_or_default();
 
         let row = move |id: usize,
                         ic: Icon,
@@ -211,7 +227,8 @@ impl Render for DirBrowser {
                 "browse-rows",
                 n_rows,
                 cx.processor(move |this, range: std::ops::Range<usize>, _w, cx| {
-                    let Some(d) = this.data.clone() else {
+                    // Borrow the listing; only the visible rows' strings are cloned below.
+                    let Some(d) = this.data.as_ref() else {
                         return Vec::new();
                     };
                     let up = usize::from(d.parent.is_some());
@@ -294,7 +311,7 @@ impl Render for DirBrowser {
                                     .text_size(px(t.font_sm))
                                     .child("Locations"),
                             )
-                            .children(locations.into_iter().enumerate().map(|(i, l)| {
+                            .children(self.data.iter().flat_map(|d| d.roots.iter().chain(d.shortcuts.iter())).enumerate().map(|(i, l)| {
                                 let target = l.path.clone();
                                 div()
                                     .id(("loc", i))
@@ -309,7 +326,7 @@ impl Render for DirBrowser {
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         this.navigate(target.clone(), cx)
                                     }))
-                                    .child(div().truncate().child(l.label))
+                                    .child(div().truncate().child(SharedString::from(l.label.clone())))
                             })),
                     )
                     .child(
@@ -334,11 +351,29 @@ impl Render for DirBrowser {
                                     .border_b_1()
                                     .border_color(t.border)
                                     .text_color(t.text_strong)
-                                    .child(div().min_w_0().truncate().child(if path.is_empty() {
-                                        "Loading...".to_string()
-                                    } else {
-                                        path
-                                    }))
+                                    // The tail of a long path is what matters: the path is shortened from
+                                    // the start (see `shorten_start`) and, should it still be too wide, right
+                                    // aligned in a clipping box so the overflow is cut off at the start.
+                                    // Full path in the tooltip.
+                                    .child(
+                                        div()
+                                            .id("browse-path")
+                                            .flex_1()
+                                            .min_w_0()
+                                            .overflow_hidden()
+                                            .flex()
+                                            .justify_end()
+                                            .when(!self.path_full.is_empty(), |d| {
+                                                d.tooltip(super::tooltip::tooltip(self.path_full.clone()))
+                                            })
+                                            .child(div().flex_none().whitespace_nowrap().child(
+                                                if self.path_short.is_empty() {
+                                                    SharedString::from("Loading...")
+                                                } else {
+                                                    self.path_short.clone()
+                                                },
+                                            )),
+                                    )
                                     .when(
                                         self.data.as_ref().is_some_and(|d| d.has_game_executable),
                                         |d| {
@@ -377,5 +412,32 @@ impl Render for DirBrowser {
                         }
                     })),
             )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shorten_start;
+
+    #[test]
+    fn short_paths_are_untouched() {
+        assert_eq!(shorten_start("/home/user", 72), "/home/user");
+    }
+
+    #[test]
+    fn long_paths_keep_the_tail() {
+        let p = "/very/long/path/to/a/steam/library/steamapps/common/Call of Duty Black Ops III";
+        let s = shorten_start(p, 30);
+        assert_eq!(s.chars().count(), 30);
+        assert!(s.starts_with('\u{2026}') && s.ends_with("Black Ops III"));
+    }
+
+    #[test]
+    fn multibyte_paths_cut_on_char_boundaries() {
+        let p = "/\u{30db}\u{30fc}\u{30e0}/\u{30b2}\u{30fc}\u{30e0}/\u{1F600}/BlackOps3";
+        for max in 2..p.chars().count() + 2 {
+            let s = shorten_start(p, max);
+            assert!(s.chars().count() <= max);
+        }
     }
 }

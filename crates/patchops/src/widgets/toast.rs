@@ -93,15 +93,19 @@ impl ToastHost {
         cx.notify();
     }
 
+    #[allow(dead_code)] // kit API
     pub fn info(&mut self, m: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.push(ToastKind::Info, m, cx);
     }
+    #[allow(dead_code)] // kit API
     pub fn success(&mut self, m: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.push(ToastKind::Success, m, cx);
     }
+    #[allow(dead_code)] // kit API
     pub fn warning(&mut self, m: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.push(ToastKind::Warning, m, cx);
     }
+    #[allow(dead_code)] // kit API
     pub fn error(&mut self, m: impl Into<SharedString>, cx: &mut Context<Self>) {
         self.push(ToastKind::Error, m, cx);
     }

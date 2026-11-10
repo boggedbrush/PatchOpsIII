@@ -1,4 +1,4 @@
-//! Modal dialogs: `Dialog` (builder) and `confirm_dialog`; the older `modal()` helper is kept.
+//! Modal dialogs: `Dialog` (builder) and `confirm_dialog`.
 //!
 //! Render a dialog as the *last* child of a `relative()` root while the owner's `open` flag is
 //! set. Esc and a click on the backdrop call `on_close`; the dialog grabs focus when shown.
@@ -10,6 +10,7 @@ use gpui::{
 
 use super::button::{Button, ButtonKind};
 use super::icon::{icon, Icon};
+use super::{FocusNext, FocusPrev};
 use crate::theme::ActiveTheme;
 
 type CloseHandler = std::rc::Rc<dyn Fn(&mut Window, &mut App)>;
@@ -34,6 +35,8 @@ pub struct Dialog {
     width: gpui::Pixels,
     show_close: bool,
     on_close: Option<CloseHandler>,
+    backdrop_closes: bool,
+    initial_focus: usize,
     children: Vec<AnyElement>,
     footer: Vec<AnyElement>,
 }
@@ -47,6 +50,8 @@ impl Dialog {
             width: px(460.),
             show_close: true,
             on_close: None,
+            backdrop_closes: true,
+            initial_focus: 0,
             children: Vec::new(),
             footer: Vec::new(),
         }
@@ -73,6 +78,18 @@ impl Dialog {
         self.on_close = Some(std::rc::Rc::new(f));
         self
     }
+    /// A click on the dimmed backdrop calls `on_close` (default). Pass `false` for prompts that
+    /// must be answered through their buttons or Esc.
+    pub fn backdrop_closes(mut self, yes: bool) -> Self {
+        self.backdrop_closes = yes;
+        self
+    }
+    /// Which tab stop inside the dialog gets the keyboard focus when it opens (0 = the first
+    /// focusable control in tree order, the X button when there is one; the footer buttons follow).
+    pub fn initial_focus(mut self, ix: usize) -> Self {
+        self.initial_focus = ix;
+        self
+    }
     /// Add a footer element (usually a `Button`), right aligned in call order.
     pub fn footer(mut self, el: impl IntoElement) -> Self {
         self.footer.push(el.into_any_element());
@@ -89,13 +106,27 @@ impl ParentElement for Dialog {
 impl RenderOnce for Dialog {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = *cx.theme();
-        let focus = window
-            .use_keyed_state("dialog-focus", cx, |_, cx| cx.focus_handle())
-            .read(cx)
-            .clone();
+        let state = window.use_keyed_state("dialog-state", cx, |_, cx| DialogState {
+            focus: cx.focus_handle(),
+            placed: false,
+        });
+        let focus = state.read(cx).focus.clone();
         grab_focus(&focus, window, cx);
+        if !state.read(cx).placed {
+            state.update(cx, |s, _| s.placed = true);
+            // Tab stops are only known once the dialog has been laid out: move the focus from the
+            // card to the requested control on the next frame.
+            let (card, n) = (focus.clone(), self.initial_focus);
+            window.on_next_frame(move |w, cx| {
+                if card.is_focused(w) {
+                    for _ in 0..=n {
+                        trap_tab(&card, true, w, cx);
+                    }
+                }
+            });
+        }
         let on_close = self.on_close;
-        let bg_close = on_close.clone();
+        let bg_close = on_close.clone().filter(|_| self.backdrop_closes);
         let key_close = on_close.clone();
         let x_close = on_close;
         let show_x = self.show_close;
@@ -134,6 +165,21 @@ impl RenderOnce for Dialog {
                         .text_size(px(t.font_md))
                         // Clicks inside the card must not reach the backdrop handler.
                         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        // Focus trap: Tab / Shift-Tab cycle through the dialog's own controls only.
+                        .on_action({
+                            let card = focus.clone();
+                            move |_: &FocusNext, w, cx| {
+                                trap_tab(&card, true, w, cx);
+                                cx.stop_propagation();
+                            }
+                        })
+                        .on_action({
+                            let card = focus.clone();
+                            move |_: &FocusPrev, w, cx| {
+                                trap_tab(&card, false, w, cx);
+                                cx.stop_propagation();
+                            }
+                        })
                         .on_key_down(move |ev, w, cx| {
                             if ev.keystroke.key == "escape" {
                                 if let Some(f) = &key_close {
@@ -207,6 +253,33 @@ impl RenderOnce for Dialog {
     }
 }
 
+struct DialogState {
+    focus: FocusHandle,
+    placed: bool,
+}
+
+/// Move focus to the next/previous tab stop *inside* the dialog (wrapping). The global tab order
+/// also contains the controls behind the backdrop; those are skipped by stepping until the focus
+/// lands in the card again. If the dialog has no tab stop the focus stays where it was.
+pub(crate) fn trap_tab(card: &FocusHandle, forward: bool, window: &mut Window, cx: &mut App) {
+    let start = window.focused(cx);
+    // A bounded walk: the global tab order is small, and a dialog without stops must not loop.
+    for _ in 0..256 {
+        if forward {
+            window.focus_next();
+        } else {
+            window.focus_prev();
+        }
+        if !card.is_focused(window) && card.contains_focused(window, cx) {
+            return;
+        }
+    }
+    match start {
+        Some(h) => window.focus(&h),
+        None => window.focus(card),
+    }
+}
+
 /// Focus the dialog's card once (and again if focus left the dialog entirely).
 fn grab_focus(focus: &FocusHandle, window: &mut Window, cx: &mut App) {
     if !focus.contains_focused(window, cx) {
@@ -237,6 +310,8 @@ pub fn confirm_dialog(
         .width(px(420.))
         .no_close_button()
         .on_close(move |w, cx| cancel(w, cx))
+        // Destructive prompts start on Cancel, the others on the confirm button.
+        .initial_focus(usize::from(!destructive))
         .footer(Button::new("confirm-cancel", "Cancel").on_click(move |_, w, cx| c2(w, cx)))
         .footer(
             Button::new("confirm-ok", confirm_label)
@@ -247,54 +322,4 @@ pub fn confirm_dialog(
                 })
                 .on_click(move |_, w, cx| on_confirm(w, cx)),
         )
-}
-
-/// Simple in-window modal (kept for the spike's placeholder views). Prefer [`Dialog`].
-pub fn modal(
-    title: impl Into<SharedString>,
-    body: impl IntoElement,
-    on_close: impl Fn(&mut Window, &mut App) + Clone + 'static,
-    cx: &App,
-) -> AnyElement {
-    let t = *cx.theme();
-    let close_bg = on_close.clone();
-    let close_btn = on_close;
-    deferred(
-        div()
-            .id("modal-backdrop")
-            .absolute()
-            .inset_0()
-            .occlude()
-            .bg(t.overlay)
-            .flex()
-            .items_center()
-            .justify_center()
-            .on_mouse_down(MouseButton::Left, move |_, w, cx| close_bg(w, cx))
-            .child(
-                div()
-                    .id("modal-card")
-                    .w(px(420.))
-                    .p_4()
-                    .gap_3()
-                    .flex()
-                    .flex_col()
-                    .rounded(px(14.))
-                    .border_1()
-                    .border_color(t.border_strong)
-                    .bg(t.modal)
-                    .text_color(t.text)
-                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .child(div().text_lg().child(title.into()))
-                    .child(body)
-                    .child(
-                        div().flex().justify_end().child(
-                            Button::new("modal-close", "Close")
-                                .primary()
-                                .on_click(move |_, w, cx| close_btn(w, cx)),
-                        ),
-                    ),
-            ),
-    )
-    .with_priority(10)
-    .into_any_element()
 }

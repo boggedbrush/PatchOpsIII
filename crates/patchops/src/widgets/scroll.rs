@@ -236,6 +236,7 @@ impl ScrollArea {
         }
     }
     /// Use your own handle (e.g. to scroll programmatically).
+    #[allow(dead_code)] // kit API
     pub fn handle(mut self, h: &ScrollHandle) -> Self {
         self.handle = Some(h.clone());
         self
