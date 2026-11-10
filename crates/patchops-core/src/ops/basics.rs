@@ -5,6 +5,7 @@
 //! `set_game_directory`, `release_channel`, `_log_payload`, `logs_clear`, `_clear_mod_files`).
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -75,11 +76,63 @@ pub fn status(core: &Core) -> State {
 #[serde(rename_all = "camelCase")]
 pub struct MaintenanceState {
     pub mod_files_dir: String,
-    pub log_payload: String,
+    pub log_payload: LogPayload,
 }
 
 pub fn maintenance_state(cx: &StateCx) -> MaintenanceState {
-    MaintenanceState { mod_files_dir: cx.core.paths.mod_files.to_string_lossy().into_owned(), log_payload: log_payload(cx.core) }
+    MaintenanceState { mod_files_dir: cx.core.paths.mod_files.to_string_lossy().into_owned(), log_payload: LogPayload::lazy(cx.core) }
+}
+
+/// `maintenance.logPayload`: computed on demand. Building a `State` only captures a handle; the
+/// text is produced (from the logger's validated cache) when something serialises it or calls
+/// [`LogPayload::get`]. The GUI never does, so its refreshes and action replies never touch the
+/// log; the JSON/RPC path serialises it and gets the same string as before.
+#[derive(Debug, Clone)]
+pub struct LogPayload(Source);
+
+#[derive(Clone)]
+enum Source {
+    Ready(Arc<str>),
+    Lazy { file: Arc<crate::log::FileLog>, version: String },
+}
+
+impl std::fmt::Debug for Source {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Source::Ready(s) => write!(f, "Ready({} bytes)", s.len()),
+            Source::Lazy { .. } => f.write_str("Lazy"),
+        }
+    }
+}
+
+impl LogPayload {
+    pub fn lazy(core: &Core) -> LogPayload {
+        LogPayload(Source::Lazy { file: core.log.file(), version: core.version.clone() })
+    }
+
+    pub fn ready(text: impl Into<Arc<str>>) -> LogPayload {
+        LogPayload(Source::Ready(text.into()))
+    }
+
+    /// The payload text (forces a lazy value).
+    pub fn get(&self) -> Arc<str> {
+        match &self.0 {
+            Source::Ready(s) => s.clone(),
+            Source::Lazy { file, version } => file.payload(|body| format_payload(version, body)),
+        }
+    }
+}
+
+impl Serialize for LogPayload {
+    fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error> {
+        ser.serialize_str(&self.get())
+    }
+}
+
+impl<'de> Deserialize<'de> for LogPayload {
+    fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        String::deserialize(de).map(LogPayload::ready)
+    }
 }
 
 // ---- browse ---------------------------------------------------------------------------------
@@ -240,16 +293,26 @@ pub struct LogsPayload {
     pub payload: String,
 }
 
-/// Markdown block users paste into bug reports.
+/// Markdown block users paste into bug reports (cached; see [`crate::log::FileLog::payload`]).
+pub fn log_payload_arc(core: &Core) -> Arc<str> {
+    let version = core.version.clone();
+    core.log.file().payload(|body| format_payload(&version, body))
+}
+
 pub fn log_payload(core: &Core) -> String {
-    let body = core.log.read_file();
+    log_payload_arc(core).to_string()
+}
+
+fn format_payload(version: &str, body: &str) -> String {
+    static LABEL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    let label = LABEL.get_or_init(|| {
+        let (release, machine) = crate::clock::uname();
+        format!("{} {} ({})", crate::paths::system_name(), release, machine).trim().to_string()
+    });
     let body = body.trim();
-    let (release, machine) = crate::clock::uname();
-    let label = format!("{} {} ({})", crate::paths::system_name(), release, machine);
-    let label = label.trim();
     format!(
         "PatchOpsIII {} - {} logs:\n```\n{}\n```",
-        core.version,
+        version,
         label,
         if body.is_empty() { "(no log entries found)" } else { body }
     )
@@ -291,3 +354,65 @@ pub fn clear_mod_files(core: &Core) -> AppResult<State> {
     Ok(State::build(core))
 }
 
+
+#[cfg(test)]
+mod log_payload_tests {
+    use super::*;
+    use crate::paths::Paths;
+    use serde_json::json;
+
+    fn core(tag: &str) -> (Core, PathBuf) {
+        let root = std::env::temp_dir().join(format!("patchops-basics-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let home = root.join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        (Core::with_paths(Paths::with_app_data(home, root.join("appdata")), "test".into()), root)
+    }
+
+    #[test]
+    fn maintenance_json_is_unchanged_for_small_logs() {
+        let (c, root) = core("json");
+        c.log.info("hello");
+        c.log.warning("wörld");
+        let (release, machine) = crate::clock::uname();
+        let label = format!("{} {} ({})", crate::paths::system_name(), release, machine);
+        let m = State::build(&c).maintenance; // building the state itself may log
+        let body = std::fs::read_to_string(&c.paths.log).unwrap();
+        // The pre-change formatting, spelled out.
+        let expected = format!("PatchOpsIII test - {} logs:\n```\n{}\n```", label.trim(), body.trim());
+        let got = serde_json::to_string(&m).unwrap();
+        let want = serde_json::to_string(&json!({"modFilesDir": c.paths.mod_files.to_string_lossy(), "logPayload": expected})).unwrap();
+        assert_eq!(got, want);
+        assert_eq!(&*m.log_payload.get(), expected.as_str());
+        assert_eq!(log_payload(&c), expected);
+        // empty log
+        assert!(c.log.clear_file());
+        assert!(log_payload(&c).contains("```\n(no log entries found)\n```"));
+        let back: MaintenanceState = serde_json::from_str(&got).unwrap();
+        assert_eq!(&*back.log_payload.get(), expected.as_str());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lazy_payload_is_not_forced_by_building_state() {
+        let (c, root) = core("lazy");
+        let m = maintenance_state(&StateCx { core: &c, game_dir: None, config: String::new(), launch_options: None });
+        c.log.info("logged after the state was built");
+        assert!(m.log_payload.get().contains("logged after the state was built"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn payload_op_on_over_cap_file_is_bounded() {
+        let (c, root) = core("cap");
+        let line = format!("2024-01-01 00:00:00 - Info: {}\n", "y".repeat(100));
+        std::fs::create_dir_all(c.paths.log.parent().unwrap()).unwrap();
+        std::fs::write(&c.paths.log, line.repeat(40_000)).unwrap(); // ~4.8 MB, written behind the logger's back
+        let p = super::super::dispatch(&c, "logs/payload", &Value::Null).unwrap();
+        let text = p["payload"].as_str().unwrap();
+        assert!(text.len() < 600 * 1024, "{}", text.len());
+        assert!(text.ends_with("yyyy\n```"));
+        assert!(c.paths.log.with_extension("log.1").exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
+}

@@ -47,3 +47,16 @@ python3 tools/parity.py --bin target/release-fast/patchops      # test the real 
 `--keep-state <keys>` compares only those top-level `state` keys (others belong to groups that may not be ported
 yet); `--ignore-log` drops the whole-log hash / `maintenance.logPayload` (they cascade from any unported op) but still
 compares the log lines each step appends. Default binary: `target/debug/patchops-rpc`. Options: `-q`, `-v`, `--keep`.
+
+## Log retention
+
+`<appdata>/PatchOpsIII.log` is size-bounded (`log::LOG_MAX_BYTES` / `LOG_KEEP_BYTES`): when it exceeds 2 MiB (checked at
+logger start-up and on append, using an in-memory size, no extra syscalls per append) the newest 512 KiB, cut forward to a
+whole line, stay in the log and the older content moves to `PatchOpsIII.log.1` (a single generation, replaced on each
+trim, never part of the copy-logs payload). Below the cap nothing is touched. If the trim cannot be done (unwritable
+directory, Windows rename against an open handle) the log is left as is and retried only after it grows another MiB; a
+single line longer than the retained size rotates out whole. `maintenance.logPayload` is a lazy value (`ops::basics::
+LogPayload`): building a `State` only captures a handle, the text is produced from a per-`Logger` cache (validated by one
+`stat` of `(len, mtime)` per use, invalidated on append/clear/trim) when something serialises it. The RPC/JSON path (and the
+GUI's in-process bench RPC) therefore still returns the full field, byte-identical to before; the GUI's typed refreshes
+never force it. Legacy's every-3rd-launch wipe (`manage_log_retention_on_launch`, never called there) was not adopted.
