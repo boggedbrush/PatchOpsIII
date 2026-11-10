@@ -228,7 +228,7 @@ pub fn first_seen_name(prefix: &str, source: &Path) -> String {
 /// Unlike the rolling `backups/` slot this is never overwritten: if the destination already
 /// holds a copy nothing happens, so it keeps the oldest content the app ever saw. The copy is made
 /// to a private temp file in the same directory and then placed with a link/rename that fails
-/// instead of clobbering ([`place_no_clobber`]); the final file is read-only (0o400 on unix) and
+/// instead of clobbering ([`place_no_clobber`]); the final file is made read-only last (0o400 on unix) and
 /// the directory is created 0o700.
 ///
 /// Silent by design: it never logs and never fails the caller. Returns `Some(path)` only when a
@@ -247,11 +247,18 @@ pub fn preserve_first_seen(core: &Core, source: &Path, name: &str) -> Option<Pat
         return None;
     }
     let tmp = dir.join(format!(".{name}.tmp-{}-{}", std::process::id(), tmp_nonce()));
-    let made = write_new_copy(source, &tmp).and_then(|()| set_read_only(&tmp)).and_then(|()| place_no_clobber(&tmp, &dest));
-    remove_temp(&tmp);
+    // Order matters on Windows: after a successful hard link the temp and the destination are one
+    // NTFS file sharing its read-only attribute, so the temp is written writable, placed, removed
+    // (plain delete, no attribute games), and only then is the destination made read-only.
+    let made = write_new_copy(source, &tmp).and_then(|()| place_no_clobber(&tmp, &dest));
+    let _ = std::fs::remove_file(&tmp);
     let exists_now = || std::fs::symlink_metadata(&dest).is_ok_and(|m| m.is_file());
     match made {
-        Ok(()) => Some(dest),
+        Ok(()) => {
+            // Hardening only: a copy that stays writable is still the first-seen content.
+            let _ = set_read_only(&dest);
+            Some(dest)
+        }
         // Another writer won the race: their copy is the first-seen one.
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && exists_now() => Some(dest),
         Err(_) => None,
@@ -260,6 +267,8 @@ pub fn preserve_first_seen(core: &Core, source: &Path, name: &str) -> Option<Pat
 
 /// Human-readable suffix for an error message: names the first-seen copy when there is one.
 pub fn first_seen_note(copy: Option<&Path>) -> String {
+    // The path depends on the environment (XDG_STATE_HOME / LOCALAPPDATA / the sandbox); never rely
+    // on this suffix in recorded goldens.
     match copy {
         Some(p) => format!(" The earliest copy PatchOpsIII saw is kept at {}.", p.display()),
         None => String::new(),
@@ -280,21 +289,6 @@ fn create_private_dir(dir: &Path) -> std::io::Result<()> {
     b.create(dir)
 }
 
-/// Remove a temp file; clears the read-only attribute first (Windows refuses to delete a
-/// read-only file on older runtimes).
-fn remove_temp(path: &Path) {
-    #[cfg(windows)]
-    if let Ok(m) = std::fs::metadata(path) {
-        let mut p = m.permissions();
-        if p.readonly() {
-            #[allow(clippy::permissions_set_readonly_false)]
-            p.set_readonly(false);
-            let _ = std::fs::set_permissions(path, p);
-        }
-    }
-    let _ = std::fs::remove_file(path);
-}
-
 /// Remove `.<name>_original.vdf.tmp-*` leftovers (a crash between copy and link) older than a
 /// minute; younger ones may belong to a copy in flight in another process.
 fn sweep_stale_temps(dir: &Path) {
@@ -306,9 +300,41 @@ fn sweep_stale_temps(dir: &Path) {
         }
         let old = e.metadata().ok().filter(|m| m.is_file()).and_then(|m| m.modified().ok()).and_then(|t| t.elapsed().ok()).is_some_and(|age| age > STALE_TMP);
         if old {
-            remove_temp(&e.path());
+            remove_stale_temp(dir, &e.path());
         }
     }
+}
+
+/// Plain `remove_file`. Temps made by this version are always writable, so that is all there is to
+/// do. Only a leftover of an older build (its temp was made read-only before it was linked) can
+/// refuse: on Windows that can be the very file a kept copy is hard-linked to, so clearing the
+/// read-only attribute on it would make the kept copy writable. The simplest correct handling (std
+/// cannot report a link count): clear it, delete, then put the read-only attribute back on every
+/// `*_original.vdf` in the directory (the kept copies are all meant to be read-only).
+fn remove_stale_temp(dir: &Path, tmp: &Path) {
+    if std::fs::remove_file(tmp).is_ok() {
+        return;
+    }
+    #[cfg(windows)]
+    if let Ok(m) = std::fs::metadata(tmp) {
+        let mut p = m.permissions();
+        if p.readonly() {
+            #[allow(clippy::permissions_set_readonly_false)]
+            p.set_readonly(false);
+            if std::fs::set_permissions(tmp, p).is_ok() && std::fs::remove_file(tmp).is_ok() {
+                if let Ok(rd) = std::fs::read_dir(dir) {
+                    for e in rd.flatten() {
+                        let n = e.file_name().to_string_lossy().into_owned();
+                        if !n.starts_with('.') && n.ends_with("_original.vdf") && e.metadata().is_ok_and(|m| m.is_file()) {
+                            let _ = set_read_only(&e.path());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = dir;
 }
 
 /// Make `tmp` appear at `dest` without ever replacing something already there: a hard link first
@@ -742,6 +768,7 @@ mod first_seen_tests {
         assert!(fresh.exists(), "fresh temp may be in flight elsewhere");
         assert!(other.exists(), "only our temp pattern is swept");
         assert_eq!(std::fs::metadata(&dest).unwrap().permissions().mode() & 0o777, 0o400);
+        assert_eq!(std::os::unix::fs::MetadataExt::nlink(&std::fs::metadata(&dest).unwrap()), 1, "temp link removed before the copy is sealed");
         // Created from scratch: private directory.
         let sb2 = Sandbox::new();
         let src2 = sb2.root.join("s.vdf");

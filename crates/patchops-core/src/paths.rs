@@ -30,9 +30,9 @@ pub struct Paths {
     pub backups: PathBuf,
     /// `PATCHOPS_PRESETS`: optional on-disk presets file replacing the embedded `presets.json`.
     pub presets_override: Option<PathBuf>,
-    /// Write-once first-seen copies of Steam files (`localconfig_<id>_original.vdf`,
-    /// `steam_config_original.vdf`). Outside `app_data` on Linux/Windows so it is never part of the
-    /// app data tree:
+    /// Write-once first-seen copies of Steam files (`<prefix>_<8hex>_original.vdf`, the hex being a
+    /// stable hash of the source path; see `steam::launch_options::first_seen_name`). Outside
+    /// `app_data` on Linux/Windows so it is never part of the app data tree:
     /// - Linux/other unix: `$XDG_STATE_HOME/PatchOpsIII/originals` (else `~/.local/state/...`)
     /// - Windows: `%LOCALAPPDATA%\PatchOpsIII\originals` (else `<home>\AppData\Local\...`)
     /// - macOS: `<app_data>/originals`
