@@ -4,7 +4,7 @@
 //! File line format (legacy `utils.write_log`): `YYYY-MM-DD HH:MM:SS - <Category>: <message>`.
 
 use std::collections::VecDeque;
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -54,12 +54,21 @@ pub type Subscriber = Arc<dyn Fn(&LogEntry) + Send + Sync>;
 /// (Legacy's unused every-3rd-launch wipe was intentionally not adopted.)
 ///
 /// Concurrency: several processes may append to the same file (the GUI, an `--rpc-stdio` helper,
-/// the elevated install child, the panic hook). Appends are `O_APPEND` single writes. A trim
-/// (a) is exclusive between processes through a `<log>.trim` lock file (stale after 60 s),
-/// (b) holds the old file open while it works and carries every line appended in the meantime into
-/// the new log (and appenders re-append a line that landed in the replaced file), so a line is never
-/// lost (one written during the final rename may end up a few lines out of order or twice), and (c) replaces `.1` only after the new log is fully prepared and the log
-/// was not truncated behind its back. The only kind of process that trims at start-up is the GUI
+/// the elevated install child, the panic hook). Appends are `O_APPEND` single writes, nothing else
+/// (no stat, no re-check). A trim
+/// (a) is exclusive between processes through an OS advisory lock on a persistent `<log>.lock`
+/// (`flock` / `LockFileEx`, non-blocking: a busy lock skips this trim, the kernel releases it if the
+/// holder dies), (b) first deletes the temps a crashed trim left behind, (c) streams the old head
+/// into `.1`'s temp (memory stays around the retained tail, whatever the log size), (d) holds the
+/// old file open while it works and carries every whole line appended in the meantime into the new
+/// log, before and for a short grace period after the renames, so a line is not lost, and (e)
+/// replaces `.1` only after the new log is fully prepared and the log was not truncated behind its
+/// back. Accepted limits: a line from ANOTHER process that is stalled for more than ~16 ms between
+/// open and write at the instant of a trim can be lost; each logger counts only its own appends
+/// toward the cap; the append that crosses the cap performs the trim inline.
+///
+/// Lock order, everywhere: the in-process [`FileLog`] mutex first, then the OS lock (a leaf: nothing
+/// is acquired while holding it). The only kind of process that trims at start-up is the GUI
 /// ([`Logger::trim_if_needed`], off the main thread); the hidden elevated child never trims
 /// ([`Logger::disable_trim`]); the panic hook uses the append-only [`append_line`].
 pub const LOG_MAX_BYTES: u64 = 2 * 1024 * 1024;
@@ -107,46 +116,167 @@ enum Trim {
     Failed(u64),
 }
 
-/// `<log>.trim`: exclusive between processes while a trim runs. Created with `create_new`; one
-/// older than a minute is a leftover of a crashed trim and is taken over.
-struct TrimLock(PathBuf);
+/// `<log>.lock`: advisory OS lock (`flock` / `LockFileEx`) held while a trim, or a Clear Logs next
+/// to a possible trim, runs. The file persists (it carries no data); the kernel drops the lock when
+/// the holder exits or crashes. Created only when a trim is actually attempted.
+struct TrimLock(std::fs::File);
+
+enum Lock {
+    Held(TrimLock),
+    /// Another handle (process, or logger instance) holds it.
+    Busy,
+    /// The lock file cannot be opened (absent when only an existing one was asked for, or the
+    /// directory is not writable).
+    Unavailable,
+}
 
 impl TrimLock {
-    fn acquire(log: &Path) -> Option<TrimLock> {
+    fn path(log: &Path) -> PathBuf {
         let mut p = log.as_os_str().to_os_string();
-        p.push(".trim");
-        let p = PathBuf::from(p);
-        for _ in 0..2 {
-            match std::fs::OpenOptions::new().write(true).create_new(true).open(&p) {
-                Ok(_) => return Some(TrimLock(p)),
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                    let stale = std::fs::metadata(&p)
-                        .and_then(|m| m.modified())
-                        .ok()
-                        .and_then(|t| t.elapsed().ok())
-                        .is_some_and(|age| age > std::time::Duration::from_secs(60));
-                    if !stale || std::fs::remove_file(&p).is_err() {
-                        return None;
-                    }
-                }
-                Err(_) => return None,
+        p.push(".lock");
+        PathBuf::from(p)
+    }
+
+    /// Try to take the lock; with `wait` keep trying (polling) for that long. `create`: make the
+    /// lock file when it does not exist yet.
+    fn acquire(log: &Path, create: bool, wait: Option<std::time::Duration>) -> Lock {
+        let mut o = std::fs::OpenOptions::new();
+        o.read(true);
+        if create {
+            o.write(true).create(true).truncate(false);
+        }
+        let Ok(f) = o.open(Self::path(log)) else { return Lock::Unavailable };
+        let deadline = wait.map(|w| std::time::Instant::now() + w);
+        loop {
+            match os_lock::try_lock(&f) {
+                Ok(true) => return Lock::Held(TrimLock(f)),
+                Ok(false) => {}
+                Err(_) => return Lock::Unavailable,
+            }
+            match deadline {
+                Some(d) if std::time::Instant::now() < d => std::thread::sleep(std::time::Duration::from_millis(5)),
+                _ => return Lock::Busy,
             }
         }
-        None
     }
 }
 
 impl Drop for TrimLock {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.0);
+        // Closing the handle releases it; unlocking first makes that immediate everywhere.
+        os_lock::unlock(&self.0);
+    }
+}
+
+#[cfg(unix)]
+mod os_lock {
+    use std::os::unix::io::AsRawFd;
+
+    /// `Ok(true)` locked, `Ok(false)` held by someone else.
+    pub fn try_lock(f: &std::fs::File) -> std::io::Result<bool> {
+        loop {
+            // SAFETY: plain syscall on a descriptor that `f` keeps open.
+            if unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+                return Ok(true);
+            }
+            let e = std::io::Error::last_os_error();
+            match e.kind() {
+                std::io::ErrorKind::WouldBlock => return Ok(false),
+                std::io::ErrorKind::Interrupted => continue,
+                _ => return Err(e),
+            }
+        }
+    }
+
+    pub fn unlock(f: &std::fs::File) {
+        // SAFETY: as above.
+        unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_UN) };
+    }
+}
+
+/// Raw `kernel32` declarations (no windows crate), like `elevate.rs`. Type-checked, not run on a
+/// Windows machine yet.
+#[cfg(windows)]
+mod os_lock {
+    use std::os::windows::io::AsRawHandle;
+
+    type Handle = *mut core::ffi::c_void;
+
+    #[repr(C)]
+    struct Overlapped {
+        internal: usize,
+        internal_high: usize,
+        offset: u32,
+        offset_high: u32,
+        event: Handle,
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn LockFileEx(file: Handle, flags: u32, reserved: u32, lo: u32, hi: u32, overlapped: *mut Overlapped) -> i32;
+        fn UnlockFileEx(file: Handle, reserved: u32, lo: u32, hi: u32, overlapped: *mut Overlapped) -> i32;
+    }
+
+    const LOCKFILE_FAIL_IMMEDIATELY: u32 = 1;
+    const LOCKFILE_EXCLUSIVE_LOCK: u32 = 2;
+    const ERROR_LOCK_VIOLATION: i32 = 33;
+
+    fn overlapped() -> Overlapped {
+        Overlapped { internal: 0, internal_high: 0, offset: 0, offset_high: 0, event: std::ptr::null_mut() }
+    }
+
+    /// Locks byte 0 of the lock file. `Ok(true)` locked, `Ok(false)` held by someone else.
+    pub fn try_lock(f: &std::fs::File) -> std::io::Result<bool> {
+        let mut ov = overlapped();
+        // SAFETY: valid handle owned by `f`; `ov` outlives the (synchronous) call.
+        let ok = unsafe { LockFileEx(f.as_raw_handle() as Handle, LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, &mut ov) };
+        if ok != 0 {
+            return Ok(true);
+        }
+        let e = std::io::Error::last_os_error();
+        if e.raw_os_error() == Some(ERROR_LOCK_VIOLATION) {
+            Ok(false)
+        } else {
+            Err(e)
+        }
+    }
+
+    pub fn unlock(f: &std::fs::File) {
+        let mut ov = overlapped();
+        // SAFETY: as above.
+        unsafe { UnlockFileEx(f.as_raw_handle() as Handle, 0, 1, 0, &mut ov) };
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+mod os_lock {
+    pub fn try_lock(_: &std::fs::File) -> std::io::Result<bool> {
+        Ok(true)
+    }
+    pub fn unlock(_: &std::fs::File) {}
+}
+
+/// Delete the `.<log>.tmp-*` / `.<log>.1.tmp-*` leftovers of a crashed trim (regular files only;
+/// exact prefix). Called with the trim lock held, so no live trim owns any of them.
+fn sweep_stale_temps(log: &Path) {
+    let (Some(dir), Some(name)) = (log.parent(), log.file_name()) else { return };
+    let name = name.to_string_lossy();
+    let prefixes = [format!(".{name}.tmp-"), format!(".{name}.1.tmp-")];
+    let Ok(rd) = std::fs::read_dir(if dir.as_os_str().is_empty() { Path::new(".") } else { dir }) else { return };
+    for e in rd.flatten() {
+        let n = e.file_name();
+        let n = n.to_string_lossy();
+        if prefixes.iter().any(|p| n.starts_with(p.as_str())) && e.file_type().is_ok_and(|t| t.is_file()) {
+            let _ = std::fs::remove_file(e.path());
+        }
     }
 }
 
 static TMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// Write `bytes` to a fresh sibling temp of `dest`, with the permission bits of `like` (the log:
+/// Fill a fresh sibling temp of `dest` through `fill`, with the permission bits of `like` (the log:
 /// a 0600 log gives a 0600 `.1`, never briefly wider), fsynced. Returns the temp path.
-fn write_like(dest: &Path, bytes: &[u8], like: &std::fs::Metadata) -> Option<PathBuf> {
+fn write_like(dest: &Path, like: &std::fs::Metadata, fill: impl FnOnce(&mut std::fs::File) -> std::io::Result<()>) -> Option<PathBuf> {
     let n = TMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let name = dest.file_name()?.to_string_lossy().into_owned();
     let tmp = dest.with_file_name(format!(".{name}.tmp-{}-{n}", std::process::id()));
@@ -159,7 +289,7 @@ fn write_like(dest: &Path, bytes: &[u8], like: &std::fs::Metadata) -> Option<Pat
             o.mode(like.permissions().mode() & 0o777);
         }
         let mut f = o.open(&tmp)?;
-        f.write_all(bytes)?;
+        fill(&mut f)?;
         f.flush()?;
         // After writing (a Windows read-only file could not be written); also exact bits despite the umask.
         std::fs::set_permissions(&tmp, like.permissions())?;
@@ -174,6 +304,18 @@ fn write_like(dest: &Path, bytes: &[u8], like: &std::fs::Metadata) -> Option<Pat
     }
 }
 
+/// Copy the first `len` bytes of `src` into `out` through a bounded buffer (own handle, so the
+/// trimmer's read position on the old file is untouched).
+fn copy_prefix(src: &Path, len: u64, out: &mut std::fs::File) -> std::io::Result<()> {
+    let input = std::fs::File::open(src)?;
+    let copied = std::io::copy(&mut input.take(len), out)?;
+    if copied == len {
+        Ok(())
+    } else {
+        Err(std::io::ErrorKind::UnexpectedEof.into())
+    }
+}
+
 /// Remove and return the part of `buf` up to and including its last `\n` (empty when there is none).
 fn take_whole_lines(buf: &mut Vec<u8>) -> Vec<u8> {
     match buf.iter().rposition(|&b| b == b'\n') {
@@ -185,33 +327,12 @@ fn take_whole_lines(buf: &mut Vec<u8>) -> Vec<u8> {
     }
 }
 
-/// After an append through `f` (opened by path): if the log was replaced by a trim in between (the
-/// path now names another file), the line went to the old, soon-gone file; append it again to the
-/// current one. A trimmer that also carries it over from the old file makes this a duplicate, never
-/// a loss. Unix only (file identity); elsewhere the trimmer's grace-period carry-over is all there is.
-fn reappend_if_replaced(f: &std::fs::File, path: &Path, buf: &[u8]) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        if let (Ok(a), Ok(b)) = (f.metadata(), std::fs::metadata(path)) {
-            if (a.dev(), a.ino()) != (b.dev(), b.ino()) {
-                if let Ok(mut n) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-                    let _ = n.write_all(buf);
-                }
-            }
-        }
-    }
-    #[cfg(not(unix))]
-    let _ = (f, path, buf);
-}
-
 /// One line in the file format of [`Logger`].
 fn format_line(category: Category, message: &str) -> String {
     format!("{} - {}: {}", crate::clock::now().format(), category.as_str(), message)
 }
 
-/// Append one line to the log at `path` and nothing else: no stat, no trim, no ring, no lock held
-/// across calls. For contexts that must not wait on or disturb anything (the panic hook, which can
+/// Append one line to the log at `path` and nothing else: no stat, no trim, no ring, no lock. For contexts that must not wait on or disturb anything (the panic hook, which can
 /// run while another thread holds the logger's mutex). Failures are ignored.
 pub fn append_line(path: &Path, category: Category, message: &str) {
     if let Some(dir) = path.parent() {
@@ -220,10 +341,14 @@ pub fn append_line(path: &Path, category: Category, message: &str) {
     let mut buf = format_line(category, message).into_bytes();
     buf.push(b'\n');
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-        if f.write_all(&buf).is_ok() {
-            reappend_if_replaced(&f, path, &buf);
-        }
+        let _ = f.write_all(&buf);
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Test hook: `stat`s of the log made by this thread (an append under the cap must make none).
+    static STAT_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 impl FileLog {
@@ -247,11 +372,13 @@ impl FileLog {
         if len <= inner.trim_floor {
             return len;
         }
-        let Some(_lock) = TrimLock::acquire(&self.path) else {
-            // Another process is trimming right now; look again later.
+        // Lock order: the `inner` mutex (held by the caller), then the OS lock.
+        let Lock::Held(_lock) = TrimLock::acquire(&self.path, true, None) else {
+            // Another process is trimming right now (or no lock file can be made); look again later.
             inner.trim_floor = len + RETRY_STEP;
             return len;
         };
+        sweep_stale_temps(&self.path);
         inner.payload = None;
         match self.trim_exclusive() {
             Trim::NotNeeded(real) => {
@@ -268,42 +395,49 @@ impl FileLog {
                 now
             }
             Trim::Failed(now) => {
-                inner.trim_floor = now + 1024 * 1024;
+                // Geometric, so a huge log on a full disk is not re-read (even partly) every MiB.
+                inner.trim_floor = now + (now / 2).max(1024 * 1024);
                 now
             }
         }
     }
 
-    /// The trim proper, holding the cross-process lock.
+    /// The trim proper, holding the cross-process lock. Memory: the retained tail (~512 KiB) and
+    /// a copy buffer, never the log.
     fn trim_exclusive(&self) -> Trim {
         let cur = || self.stat().map_or(0, |(l, _)| l);
         let mut f = match std::fs::File::open(&self.path) {
             Ok(f) => f,
             Err(_) => return Trim::Failed(cur()),
         };
-        let mut bytes = Vec::new();
-        if f.read_to_end(&mut bytes).is_err() {
-            return Trim::Failed(cur());
-        }
-        let real = bytes.len() as u64;
+        let Ok(meta) = f.metadata() else { return Trim::Failed(cur()) };
+        let real = meta.len();
         if real <= LOG_MAX_BYTES {
             return Trim::NotNeeded(real);
         }
-        let Ok(meta) = f.metadata() else { return Trim::Failed(real) };
-        let cut = (real - LOG_KEEP_BYTES) as usize;
+        // Read only the tail: from one byte before the cut (so a cut exactly on a line start keeps
+        // that line) to the end.
+        let cut = real - LOG_KEEP_BYTES;
+        let mut buf = Vec::with_capacity(LOG_KEEP_BYTES as usize + 4096);
+        if f.seek(SeekFrom::Start(cut - 1)).is_err() || f.read_to_end(&mut buf).is_err() {
+            return Trim::Failed(real);
+        }
+        let mut consumed = cut - 1 + buf.len() as u64;
         // First line start at or after `cut`; no newline at all in the tail (one giant line)
         // retains nothing: the whole content goes to `.1`.
-        let start = bytes[cut - 1..].iter().position(|&b| b == b'\n').map_or(bytes.len(), |i| cut + i);
-        let mut tail_len = (bytes.len() - start) as u64;
-        let mut consumed = real;
-        // Both files are prepared (and fsynced) before anything visible changes.
-        let head = write_like(&rotated_path(&self.path), &bytes[..start], &meta);
-        let tail = write_like(&self.path, &bytes[start..], &meta);
-        let (Some(head_tmp), Some(tail_tmp)) = (head.clone(), tail.clone()) else {
-            for x in [head, tail].into_iter().flatten() {
-                let _ = std::fs::remove_file(x);
-            }
-            return Trim::Failed(real);
+        let (start, tail_from) = match buf.iter().position(|&b| b == b'\n') {
+            Some(i) => (cut + i as u64, i + 1),
+            None => (consumed, buf.len()),
+        };
+        let mut tail_len = (buf.len() - tail_from) as u64;
+        // Both files are prepared (and fsynced) before anything visible changes. The head (the big
+        // one) first: when it cannot be written nothing else was done.
+        let Some(head_tmp) = write_like(&rotated_path(&self.path), &meta, |o| copy_prefix(&self.path, start, o)) else {
+            return Trim::Failed(cur());
+        };
+        let Some(tail_tmp) = write_like(&self.path, &meta, |o| o.write_all(&buf[tail_from..])) else {
+            let _ = std::fs::remove_file(&head_tmp);
+            return Trim::Failed(cur());
         };
         let discard = |why: Trim| {
             let _ = std::fs::remove_file(&head_tmp);
@@ -334,8 +468,9 @@ impl FileLog {
                 Err(_) => return discard(Trim::Failed(cur())),
             }
         }
-        // Truncated behind our back (Clear Logs, an external edit): our copy is stale. Nothing
-        // visible has changed yet, so just give up for now.
+        drop(buf);
+        // Truncated behind our back (an external edit; Clear Logs takes the lock, so not that):
+        // our copy is stale. Nothing visible has changed yet, so just give up for now.
         if cur() < consumed {
             return discard(Trim::Abandoned(cur()));
         }
@@ -363,7 +498,7 @@ impl FileLog {
             let mut whole = take_whole_lines(&mut pending);
             if round == 2 && !pending.is_empty() {
                 // A line still unfinished after the grace period: keep what there is as a line of
-                // its own (its writer re-appends the whole line when it sees the file was replaced).
+                // its own.
                 whole.append(&mut pending);
                 whole.push(b'\n');
             }
@@ -379,6 +514,8 @@ impl FileLog {
     }
 
     fn stat(&self) -> Option<FileKey> {
+        #[cfg(test)]
+        STAT_CALLS.with(|c| c.set(c.get() + 1));
         std::fs::metadata(&self.path).ok().map(|m| (m.len(), m.modified().ok()))
     }
 
@@ -495,7 +632,6 @@ impl Logger {
                 buf.push(b'\n');
                 match f.write_all(&buf) {
                     Ok(()) => {
-                        reappend_if_replaced(&f, &self.path, &buf);
                         drop(f);
                         inner.payload = None;
                         // While backing off after a failed trim, look at the real size (one stat) so
@@ -518,12 +654,35 @@ impl Logger {
         LogEntry { message: message.to_string(), category: category.as_str().to_string(), line }
     }
 
-    /// Truncate the log file (legacy `clear_log_file`); `false` on failure.
+    /// Truncate the log file (legacy `clear_log_file`); `false` on failure. Takes the trim lock
+    /// (mutex first, then the OS lock, like every trim), waiting briefly for a trim in flight, so a
+    /// trim of the old content can never finish after the clear and bring it back. The lock file is
+    /// only created when the log is over the cap (a trim could start); with no lock file and a
+    /// small log nothing can be trimming.
     pub fn clear_file(&self) -> bool {
         if let Some(dir) = self.path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
         let mut inner = self.file.lock();
+        let wait = Some(std::time::Duration::from_secs(10));
+        let _lock = match TrimLock::acquire(&self.path, false, wait) {
+            Lock::Held(l) => Some(l),
+            Lock::Busy => {
+                eprintln!("Failed to clear log file at {}: a trim is still running", self.path.display());
+                return false;
+            }
+            Lock::Unavailable => {
+                let over = std::fs::metadata(&self.path).is_ok_and(|m| m.len() > LOG_MAX_BYTES);
+                match if over { TrimLock::acquire(&self.path, true, wait) } else { Lock::Unavailable } {
+                    Lock::Held(l) => Some(l),
+                    Lock::Busy => {
+                        eprintln!("Failed to clear log file at {}: a trim is still running", self.path.display());
+                        return false;
+                    }
+                    Lock::Unavailable => None,
+                }
+            }
+        };
         inner.payload = None;
         inner.size = Some(0);
         inner.trim_floor = 0;
@@ -752,8 +911,12 @@ mod tests {
             assert!(rotated_path(&p).exists(), "the run crossed the cap");
             let texts = vec![fs::read_to_string(rotated_path(&p)).unwrap(), fs::read_to_string(&p).unwrap()];
             assert_eq!(ids(&texts).len(), 8000 + 4 * per, "round {round}: every line survives in .1 + the log");
+            let total: usize = texts.iter().map(|t| t.lines().count()).sum();
+            assert_eq!(total, 8000 + 4 * per, "round {round}: no duplicate line");
             assert!(texts.iter().flat_map(|t| t.lines()).all(|l| l.ends_with(&msg)), "no torn line");
-            assert!(!d.join("a.log.trim").exists(), "trim lock released");
+            assert!(matches!(TrimLock::acquire(&p, false, None), Lock::Held(_)), "trim lock released");
+            let names: Vec<_> = fs::read_dir(&d).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+            assert!(names.iter().all(|n| ["a.log", "a.log.1", "a.log.lock"].contains(&n.as_str())), "no temp left: {names:?}");
             let _ = fs::remove_dir_all(&d);
         }
     }
@@ -800,19 +963,152 @@ mod tests {
         log.log_file_only(Category::Info, "x");
         let _ = log.file().payload(|b| b.to_string());
         assert!(!rotated_path(&p).exists());
-        // Another process holds the trim lock: this one backs off, loses nothing.
+        assert!(!TrimLock::path(&p).exists(), "no lock file unless a trim is attempted");
+        // Another holder has the trim lock: this one skips, loses nothing, and retries after growth.
         let log = Logger::new(p.clone());
-        fs::write(d.join("a.log.trim"), b"").unwrap();
+        let held = match TrimLock::acquire(&p, true, None) {
+            Lock::Held(l) => l,
+            _ => panic!("lock"),
+        };
         log.trim_if_needed();
         assert!(!rotated_path(&p).exists());
         assert!(fs::metadata(&p).unwrap().len() > LOG_MAX_BYTES);
-        // A stale lock (crashed trim) is taken over.
-        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(300);
-        fs::OpenOptions::new().write(true).open(d.join("a.log.trim")).unwrap().set_modified(old).unwrap();
+        drop(held);
+        // Not retried before the file grew by the back-off step ...
+        log.log_file_only(Category::Info, "small");
+        assert!(!rotated_path(&p).exists());
+        // ... and retried (and done) once it has.
+        let msg = "z".repeat(1000);
+        for _ in 0..80 {
+            log.log_file_only(Category::Info, &msg);
+        }
+        assert!(rotated_path(&p).exists(), "trim retried after the lock came free");
+        assert!(fs::metadata(&p).unwrap().len() <= LOG_MAX_BYTES);
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn lock_file_only_exists_once_a_trim_was_attempted() {
+        let d = tmp("lockfile");
+        let p = d.join("a.log");
         let log = Logger::new(p.clone());
+        for i in 0..50 {
+            log.log_file_only(Category::Info, format!("line {i}"));
+        }
+        assert!(log.clear_file());
+        assert_eq!(fs::read_dir(&d).unwrap().count(), 1, "only the log");
+        fs::write(&p, lines(30_000, 90)).unwrap();
         log.trim_if_needed();
+        assert!(TrimLock::path(&p).exists());
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn streamed_trim_equals_the_whole_file_result() {
+        // The reference is the old read-everything algorithm: cut = len - KEEP, forward to a line start.
+        for (n, width) in [(30_000usize, 90usize), (45_017, 133), (70_000, 31)] {
+            let d = tmp(&format!("stream{n}"));
+            let p = d.join("a.log");
+            let text = lines(n, width);
+            fs::write(&p, &text).unwrap();
+            let log = Logger::new(p.clone());
+            log.trim_if_needed();
+            let bytes = text.as_bytes();
+            let cut = bytes.len() - LOG_KEEP_BYTES as usize;
+            let start = bytes[cut - 1..].iter().position(|&b| b == b'\n').map_or(bytes.len(), |i| cut + i);
+            assert_eq!(fs::read(&p).unwrap(), &bytes[start..], "n={n}");
+            assert_eq!(fs::read(rotated_path(&p)).unwrap(), &bytes[..start], "n={n}");
+            let _ = fs::remove_dir_all(&d);
+        }
+        // Cut exactly on a line start keeps that line (width 7: 8-byte lines, KEEP is a multiple of 8).
+        let d = tmp("streamedge");
+        let p = d.join("a.log");
+        let text: String = (0..(3 * 1024 * 1024 / 8)).map(|i| format!("{:06}\n", i % 1_000_000).replace('\n', "x\n")).collect();
+        fs::write(&p, &text).unwrap();
+        Logger::new(p.clone()).trim_if_needed();
+        assert_eq!(fs::metadata(&p).unwrap().len(), LOG_KEEP_BYTES);
+        assert_eq!(fs::read_to_string(rotated_path(&p)).unwrap() + &fs::read_to_string(&p).unwrap(), text);
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn stale_temps_of_a_crashed_trim_are_swept() {
+        let d = tmp("sweep");
+        let p = d.join("a.log");
+        fs::write(&p, lines(30_000, 90)).unwrap();
+        let stale = [".a.log.tmp-999-0", ".a.log.1.tmp-999-1"];
+        let keep = [".a.log.tmpx", ".a.logx.tmp-1-1", "a.log.tmp-1-1", ".other.log.tmp-1-1", ".a.log.2.tmp-1-1"];
+        for n in stale.iter().chain(keep.iter()) {
+            fs::write(d.join(n), b"junk").unwrap();
+        }
+        fs::create_dir(d.join(".a.log.tmp-dir")).unwrap(); // not a regular file
+        Logger::new(p.clone()).trim_if_needed();
+        for n in stale {
+            assert!(!d.join(n).exists(), "{n} swept");
+        }
+        for n in keep {
+            assert!(d.join(n).exists(), "{n} untouched");
+        }
+        assert!(d.join(".a.log.tmp-dir").is_dir());
         assert!(rotated_path(&p).exists());
-        assert!(!d.join("a.log.trim").exists());
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn append_under_the_cap_does_not_stat_the_file() {
+        let d = tmp("nostat");
+        let p = d.join("a.log");
+        let log = Logger::new(p.clone());
+        log.log_file_only(Category::Info, "warm-up (first append learns the size)");
+        let before = STAT_CALLS.with(|c| c.get());
+        for i in 0..20 {
+            log.log_file_only(Category::Info, format!("line {i}"));
+        }
+        append_line(&p, Category::Error, "hook");
+        assert_eq!(STAT_CALLS.with(|c| c.get()), before, "appends under the cap never stat the log");
+        assert_eq!(fs::read_to_string(&p).unwrap().lines().count(), 22);
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn clear_waits_for_a_trim_in_flight_and_is_never_undone() {
+        // A trim (lock held by another handle) is running; Clear Logs must wait for it, then clear.
+        let d = tmp("clearorder");
+        let p = d.join("a.log");
+        fs::write(&p, lines(30_000, 90)).unwrap();
+        let held = match TrimLock::acquire(&p, true, None) {
+            Lock::Held(l) => l,
+            _ => panic!("lock"),
+        };
+        let log = Arc::new(Logger::new(p.clone()));
+        let l2 = log.clone();
+        let h = std::thread::spawn(move || l2.clear_file());
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        assert!(!h.is_finished(), "clear waits for the lock");
+        assert!(fs::metadata(&p).unwrap().len() > LOG_MAX_BYTES, "log untouched while the lock is held");
+        // The "trim" finishes its renames, then releases.
+        fs::write(rotated_path(&p), b"old head\n").unwrap();
+        drop(held);
+        assert!(h.join().unwrap());
+        assert_eq!(fs::metadata(&p).unwrap().len(), 0);
+        assert!(!rotated_path(&p).exists(), "clear came after the trim and removed its result");
+        // And against real trims on a second logger: nothing resurrects.
+        for _ in 0..8 {
+            fs::write(&p, lines(30_000, 90)).unwrap();
+            let t = Logger::new(p.clone());
+            let c = Logger::new(p.clone());
+            std::thread::scope(|s| {
+                s.spawn(|| t.trim_if_needed());
+                s.spawn(|| {
+                    std::thread::sleep(std::time::Duration::from_millis(3));
+                    assert!(c.clear_file());
+                });
+            });
+            // Either the trim finished before the clear (everything gone), or the clear was first and
+            // the trim found a small file: never old content left.
+            let any = |f: &Path| fs::read_to_string(f).unwrap_or_default().contains("xxxx");
+            assert!(!any(&p) && !any(&rotated_path(&p)), "cleared content resurrected");
+        }
         let _ = fs::remove_dir_all(&d);
     }
 

@@ -56,12 +56,22 @@ on each trim, same permission bits as the log, never part of the copy-logs paylo
 nothing is touched. The cap is checked on append (in-memory size, no extra syscalls per append) and, only in the GUI process, once
 at start-up from a background thread (`Logger::trim_if_needed`; `Logger::new`/`Core::new` never touch the file, so nothing
 delays the first frame). The hidden elevated CLI child never trims (`Logger::disable_trim`) and the GUI's panic hook uses the
-append-only `log::append_line`. A trim takes a `PatchOpsIII.log.trim` lock file (so two processes never trim at once), prepares
-the new `.1` and the new log completely, and carries every line appended to the old file while it worked into the new log, so
-no line is lost (a line written during the final swap can land a few lines out of order; abandoned or failed attempts can leave
-duplicates across `.1` and the log, never gaps). If the trim cannot be done (unwritable directory, Windows rename against an
-open handle) the log is left as is and retried only after it grows another MiB (64 KiB after an abandoned attempt); the back-off
-is dropped as soon as the real size is seen at or below the cap again. A single line longer than the retained size rotates out
+append-only `log::append_line`. An append under the cap is exactly `open(O_APPEND)`, `write`, `close` (no stat of the log).
+A trim takes an OS advisory lock on a persistent `PatchOpsIII.log.lock` (`flock` / `LockFileEx`, non-blocking: if another
+process holds it this trim is skipped and retried after 64 KiB of growth; the kernel drops the lock if the holder crashes; the
+file itself is created only when a trim is attempted and may stay). While holding it a trim first deletes the `.PatchOpsIII.log.tmp-*` /
+`.PatchOpsIII.log.1.tmp-*` leftovers of a crashed trim, then reads only the retained tail and streams the old head into the `.1`
+temp through a bounded buffer (peak memory stays around the tail, ~1 MiB, even for a 500 MiB log), prepares the new log
+completely, and carries every whole line appended to the old file while it worked into the new log (before the two renames and
+for a ~16 ms grace period after them), so no line is lost. A crash between the renames leaves duplicates across `.1` and the
+log, never gaps. `Clear Logs` takes the same lock (waiting up to 10 s for a trim in flight), so a concurrent trim in another
+process can never bring cleared content back. Lock order everywhere: the in-process logger mutex, then the OS lock.
+Accepted limits: a line written by ANOTHER process that is stalled for more than ~16 ms between open and write at the instant
+of a trim can be lost; each logger counts only its own appends toward the cap, so several processes may overshoot it a little;
+the append that crosses the cap performs the trim inline (tens of ms, once per ~1.5 MiB of logging). If the trim cannot be done
+(unwritable directory, disk full, Windows rename against an open handle) the log is left as is and retried only after it grows
+by half its size, at least 1 MiB (64 KiB after an abandoned attempt or a busy lock); the back-off is dropped as soon as the
+real size is seen at or below the cap again. A single line longer than the retained size rotates out
 whole. `maintenance.logPayload` is a lazy value (`ops::basics::
 LogPayload`): building a `State` only captures a handle, the text is produced from a per-`Logger` cache (validated by one
 `stat` of `(len, mtime)` per use, invalidated on append/clear/trim) when something serialises it. The RPC/JSON path (and the
