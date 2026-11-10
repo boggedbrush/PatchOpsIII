@@ -7,13 +7,15 @@
 //! unit tests pass their own table (hashes of fake executables) to `*_with` entry points, so the
 //! success paths - which the benchmark fixture cannot reach - run against a temp directory.
 
+use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use serde_json::Value;
 
-use super::files::{copy2, rename_error_text};
+use super::files::rename_error_text;
+use crate::fsutil::copy2;
 use super::hashcache;
 use crate::backup;
 use crate::context::Core;
@@ -237,25 +239,61 @@ pub struct Swap<'a> {
     pub builds: &'a KnownBuilds,
     /// Use the signature-validated hash cache (state building) or always re-hash (operations).
     cached: bool,
+    /// Per-op memo ([`hashcache::HashScope`]) of digests: an op asks for the hash of the same unchanged file up to
+    /// three times (integrity check, `preserve_active_exe`, validation); the file is read once.
+    /// Cleared at the start of every op and whenever the op itself renames/copies a file.
+    memo: RefCell<hashcache::HashScope>,
+    /// How a replacement exe is put in place (test seam; production: [`crate::fsutil::atomic_copy`]).
+    copy_exe: fn(&Path, &Path) -> std::io::Result<()>,
 }
 
 impl<'a> Swap<'a> {
     /// For read-only state building: hashes go through the cache.
     pub fn for_state(core: &'a Core, builds: &'a KnownBuilds) -> Self {
-        Swap { core, builds, cached: true }
+        Swap { core, builds, cached: true, memo: RefCell::default(), copy_exe: crate::fsutil::atomic_copy }
     }
 
     /// For operations that rename/replace files: always re-hash.
     pub fn for_op(core: &'a Core, builds: &'a KnownBuilds) -> Self {
-        Swap { core, builds, cached: false }
+        Swap { core, builds, cached: false, memo: RefCell::default(), copy_exe: crate::fsutil::atomic_copy }
     }
 
     fn sha(&self, p: &Path) -> Option<String> {
         if self.cached {
-            hashcache::file_sha256_cached(p)
-        } else {
-            hashcache::file_sha256_fresh(p)
+            return hashcache::file_sha256_cached(p);
         }
+        self.memo.borrow().sha256(p)
+    }
+
+    /// Start a new memo scope (the op changed files, or a new op begins).
+    fn forget_hashes(&self) {
+        *self.memo.borrow_mut() = hashcache::HashScope::new();
+    }
+
+    /// Rename that also drops every remembered digest.
+    fn mv(&self, src: &Path, dst: &Path) -> Result<(), String> {
+        self.forget_hashes();
+        move_file(src, dst)
+    }
+
+    /// Run `install` (which puts a new exe at `target`) after moving the active exe aside to its
+    /// per-build backup name. If `install` fails, the preserved exe is moved back, so a failed
+    /// swap never leaves the game without its executable (and never with a truncated one: the
+    /// copy-based installs go through [`crate::fsutil::atomic_copy`]).
+    fn replace_active(&self, game_dir: &Path, target: &Path, install: impl FnOnce() -> Result<(), String>) -> Result<(), String> {
+        let preserved = if target.exists() { self.preserve_active_exe(game_dir, target, None)? } else { None };
+        let res = install();
+        self.forget_hashes();
+        let Err(e) = res else { return Ok(()) };
+        if let Some(p) = preserved {
+            // Whatever is at `target` now was put there by the failed install (the original is at `p`).
+            let _ = fs::remove_file(target);
+            match move_file(&p, target) {
+                Ok(()) => self.warn(format!("Executable swap failed; restored the previous executable from {}.", name_of(&p))),
+                Err(e2) => return Err(format!("{e} (the previous executable is preserved as {}, could not move it back: {e2})", name_of(&p))),
+            }
+        }
+        Err(e)
     }
 
     fn known(&self, game_dir: &Path) -> Vec<String> {
@@ -345,9 +383,10 @@ impl<'a> Swap<'a> {
     }
 
     /// Legacy `_preserve_active_exe`: move the active exe to its per-build backup name.
-    pub fn preserve_active_exe(&self, game_dir: &Path, target_exe: &Path, expected_profile: Option<&str>) -> Result<(), String> {
+    /// Returns the path it was moved to (`None`: there was nothing to preserve).
+    pub fn preserve_active_exe(&self, game_dir: &Path, target_exe: &Path, expected_profile: Option<&str>) -> Result<Option<PathBuf>, String> {
         if !target_exe.exists() {
-            return Ok(());
+            return Ok(None);
         }
         let integ = self.active_exe_integrity(game_dir, target_exe);
         if !integ.trusted || integ.profile.is_empty() {
@@ -361,9 +400,9 @@ impl<'a> Swap<'a> {
         if integ.profile == ENHANCED_EXE_ID {
             record_enhanced_hash(self.core, game_dir, &target_hash);
         }
-        move_file(target_exe, &preserved)?;
+        self.mv(target_exe, &preserved)?;
         self.core.log.success(format!("Preserved active executable as {}.", name_of(&preserved)));
-        Ok(())
+        Ok(Some(preserved))
     }
 
     /// Legacy `_find_valid_compatible_depot`.
@@ -413,6 +452,7 @@ impl<'a> Swap<'a> {
 
     /// Legacy `_install_compatible_exe`.
     pub fn install_compatible_exe(&self, game_dir: &Path) -> Result<(), SwapError> {
+        self.forget_hashes();
         let log = &self.core.log;
         if !game::has_game_executable(game_dir) {
             return Err(SwapError::Msg("BlackOps3.exe or BlackOpsIII.exe was not found.".into()));
@@ -427,20 +467,14 @@ impl<'a> Swap<'a> {
             return Err(SwapError::Msg(active.message));
         }
         if let Some(preserved) = self.validated_preserved_compatible_exe(&target, true) {
-            if target.exists() {
-                self.preserve_active_exe(game_dir, &target, None)?;
-            }
-            move_file(&preserved, &target)?;
+            self.replace_active(game_dir, &target, || self.mv(&preserved, &target))?;
             game::write_exe_variant(game_dir, COMPATIBLE_EXE_ID);
             log.success(format!("Reused preserved compatible executable from {}.", name_of(&preserved)));
             return Ok(());
         }
         let Some(depot) = self.find_valid_compatible_depot() else { return Err(SwapError::DepotRequired) };
-        if target.exists() {
-            self.preserve_active_exe(game_dir, &target, None)?;
-        }
         let src = depot.join("BlackOps3.exe");
-        copy2(&src, &target).map_err(|e| io_error_text(&e, Some(&target)))?;
+        self.replace_active(game_dir, &target, || (self.copy_exe)(&src, &target).map_err(|e| io_error_text(&e, Some(&target))))?;
         hashcache::invalidate(&target);
         self.copy_depot_installscript(&depot, game_dir)?;
         game::write_exe_variant(game_dir, COMPATIBLE_EXE_ID);
@@ -450,6 +484,7 @@ impl<'a> Swap<'a> {
 
     /// Legacy `_restore_current_exe`.
     pub fn restore_current_exe(&self, game_dir: &Path) -> Result<(), SwapError> {
+        self.forget_hashes();
         let log = &self.core.log;
         if game_dir.as_os_str().is_empty() || !game_dir.is_dir() {
             return Err(SwapError::Msg("Game directory is not set.".into()));
@@ -466,10 +501,7 @@ impl<'a> Swap<'a> {
         let Some(backup_path) = self.validated_latest_build_backup_path(&target, true) else {
             return Err(SwapError::Msg("No backup executable found. Cannot restore the current EXE.".into()));
         };
-        if target.exists() {
-            self.preserve_active_exe(game_dir, &target, None)?;
-        }
-        move_file(&backup_path, &target)?;
+        self.replace_active(game_dir, &target, || self.mv(&backup_path, &target))?;
         self.restore_installscript_backup(game_dir)?;
         game::write_exe_variant(game_dir, "default");
         log.success("Current executable restored from backup.");
@@ -478,6 +510,7 @@ impl<'a> Swap<'a> {
 
     /// Legacy `_restore_enhanced_exe`.
     pub fn restore_enhanced_exe(&self, game_dir: &Path) -> Result<(), SwapError> {
+        self.forget_hashes();
         let log = &self.core.log;
         if game_dir.as_os_str().is_empty() || !game_dir.is_dir() {
             return Err(SwapError::Msg("Game directory is not set.".into()));
@@ -494,10 +527,7 @@ impl<'a> Swap<'a> {
         let Some(backup_path) = self.validated_enhanced_backup_path(Some(game_dir), &target, true) else {
             return Err(SwapError::Msg("No PatchOpsIII-preserved Enhanced executable was found.".into()));
         };
-        if target.exists() {
-            self.preserve_active_exe(game_dir, &target, None)?;
-        }
-        move_file(&backup_path, &target)?;
+        self.replace_active(game_dir, &target, || self.mv(&backup_path, &target))?;
         let restored = hashcache::file_sha256_fresh(&target).unwrap_or_default().to_lowercase();
         record_enhanced_hash(self.core, game_dir, &restored);
         game::write_exe_variant(game_dir, ENHANCED_EXE_ID);
@@ -508,6 +538,7 @@ impl<'a> Swap<'a> {
     /// The active profile (`current|compatible|enhanced|""`) of the exe in `game_dir`
     /// (reset-to-stock asks `!= current` before restoring).
     pub fn active_profile(&self, game_dir: &Path) -> &'static str {
+        self.forget_hashes();
         let target = Self::target_exe(game_dir);
         self.active_exe_integrity(game_dir, &target).profile
     }
@@ -628,6 +659,69 @@ mod tests {
         assert!(sb.log().contains("Reused preserved compatible executable from BlackOps3.10650222.bak."));
         assert!(sb.log().contains("Preserved active executable as BlackOps3.24784313.bak."));
         assert!(sb.log().contains("Compatible executable installed from Steam depot 9084453472036406216."));
+    }
+
+    fn failing_copy(_src: &Path, dst: &Path) -> std::io::Result<()> {
+        // A non-atomic copier dying half way (disk full / EIO): leaves a truncated file behind.
+        fs::write(dst, b"trunc")?;
+        Err(std::io::Error::other("No space left on device"))
+    }
+
+    #[test]
+    fn failed_exe_copy_restores_the_previous_executable() {
+        let sb = Sandbox::new();
+        let b = builds();
+        let exe = sb.game.join("BlackOps3.exe");
+        fs::write(&exe, CUR).unwrap();
+        fs::write(sb.depot().join("BlackOps3.exe"), COMPAT).unwrap();
+        let mut swap = Swap::for_op(&sb.core, &b);
+        swap.copy_exe = failing_copy;
+        let err = swap.install_compatible_exe(&sb.game).unwrap_err();
+        assert!(matches!(&err, SwapError::Msg(m) if m.contains("No space left on device")), "{err:?}");
+        // The original exe is back, byte for byte, no truncated file, no stray backup.
+        assert_eq!(read(&exe), CUR);
+        assert!(!sb.game.join("BlackOps3.24784313.bak").exists());
+        assert!(sb.log().contains("Executable swap failed; restored the previous executable from BlackOps3.24784313.bak."));
+        // Not stuck: it is still trusted, and the next swap (with a working copy) succeeds.
+        assert_eq!(state(&sb, &b).profile, "current");
+        let ok = Swap::for_op(&sb.core, &b);
+        ok.install_compatible_exe(&sb.game).unwrap();
+        assert_eq!(read(&exe), COMPAT);
+    }
+
+    #[test]
+    fn real_atomic_copy_never_leaves_a_truncated_exe_and_failed_rename_rolls_back() {
+        let sb = Sandbox::new();
+        let b = builds();
+        let exe = sb.game.join("BlackOps3.exe");
+        fs::write(&exe, CUR).unwrap();
+        // Unreadable source is not reproducible as root, so use a source that vanishes before the copy.
+        fs::write(sb.depot().join("BlackOps3.exe"), COMPAT).unwrap();
+        let mut swap = Swap::for_op(&sb.core, &b);
+        fn vanished(src: &Path, dst: &Path) -> std::io::Result<()> {
+            fs::remove_file(src)?;
+            crate::fsutil::atomic_copy(src, dst)
+        }
+        swap.copy_exe = vanished;
+        assert!(swap.install_compatible_exe(&sb.game).is_err());
+        assert_eq!(read(&exe), CUR);
+        let leftovers: Vec<_> = fs::read_dir(&sb.game).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|n| n.contains(".tmp-")).collect();
+        assert!(leftovers.is_empty(), "{leftovers:?}");
+    }
+
+    #[test]
+    fn op_hashes_each_unchanged_file_once() {
+        let sb = Sandbox::new();
+        let b = builds();
+        let f = sb.game.join("x.bin");
+        fs::write(&f, CUR).unwrap();
+        let swap = Swap::for_op(&sb.core, &b);
+        let h = swap.sha(&f).unwrap();
+        // Same-size rewrite with a different content: the memo (one op) still answers, a new op does not.
+        fs::write(&f, b"current-exe-bytez").unwrap();
+        assert_eq!(swap.sha(&f).unwrap(), h);
+        swap.forget_hashes();
+        assert_ne!(swap.sha(&f).unwrap(), h);
     }
 
     #[test]
