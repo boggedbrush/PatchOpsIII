@@ -9,6 +9,9 @@ pub const LOG_FILE: &str = "PatchOpsIII.log";
 pub const MOD_FILES_DIR_NAME: &str = "BO3 Mod Files";
 pub const BACKUPS_DIR_NAME: &str = "backups";
 pub const PRESETS_FILE: &str = "presets.json";
+/// Write-once "first seen" copies of files the app is about to rewrite (see
+/// `steam::launch_options::preserve_first_seen`). Lives in the state dir, not the app data dir.
+pub const ORIGINALS_DIR_NAME: &str = "originals";
 
 /// All fixed locations of one app instance. Plain data; cheap to clone.
 #[derive(Debug, Clone)]
@@ -27,6 +30,15 @@ pub struct Paths {
     pub backups: PathBuf,
     /// `PATCHOPS_PRESETS`: optional on-disk presets file replacing the embedded `presets.json`.
     pub presets_override: Option<PathBuf>,
+    /// Write-once first-seen copies of Steam files (`localconfig_<id>_original.vdf`,
+    /// `steam_config_original.vdf`). Outside `app_data` on Linux/Windows so it is never part of the
+    /// app data tree:
+    /// - Linux/other unix: `$XDG_STATE_HOME/PatchOpsIII/originals` (else `~/.local/state/...`)
+    /// - Windows: `%LOCALAPPDATA%\PatchOpsIII\originals` (else `<home>\AppData\Local\...`)
+    /// - macOS: `<app_data>/originals`
+    /// - [`Paths::with_app_data`] (tests, portable): `<app_data>/originals`, so every temp sandbox
+    ///   stays isolated and never points into a real user directory.
+    pub originals: PathBuf,
 }
 
 /// Python's `os.path.expanduser("~")`.
@@ -93,7 +105,18 @@ impl Paths {
                 .map(PathBuf::from)
                 .unwrap_or_else(|| home.join(".local").join("share"))
         };
-        let mut p = Paths::with_app_data(home, base.join(APP_DIR_NAME));
+        let state_env = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty()).map(PathBuf::from);
+        let app_data = base.join(APP_DIR_NAME);
+        let originals = originals_dir_for(
+            cfg!(windows),
+            cfg!(target_os = "macos"),
+            state_env("XDG_STATE_HOME").filter(|p| p.is_absolute()),
+            state_env("LOCALAPPDATA").filter(|p| p.is_absolute()),
+            &home,
+            &app_data,
+        );
+        let mut p = Paths::with_app_data(home, app_data);
+        p.originals = originals;
         p.presets_override = std::env::var_os("PATCHOPS_PRESETS").filter(|v| !v.is_empty()).map(PathBuf::from);
         p
     }
@@ -105,11 +128,33 @@ impl Paths {
             log: app_data.join(LOG_FILE),
             mod_files: app_data.join(MOD_FILES_DIR_NAME),
             backups: app_data.join(BACKUPS_DIR_NAME),
+            originals: app_data.join(ORIGINALS_DIR_NAME),
             app_data,
             home,
             presets_override: None,
         }
     }
+}
+
+/// Pure resolution of [`Paths::originals`] from the platform flags and the (already filtered)
+/// environment values, so it can be tested without touching the process environment.
+fn originals_dir_for(
+    windows: bool,
+    macos: bool,
+    xdg_state: Option<PathBuf>,
+    local_app_data: Option<PathBuf>,
+    home: &std::path::Path,
+    app_data: &std::path::Path,
+) -> PathBuf {
+    if macos {
+        return app_data.join(ORIGINALS_DIR_NAME);
+    }
+    let state = if windows {
+        local_app_data.unwrap_or_else(|| home.join("AppData").join("Local"))
+    } else {
+        xdg_state.unwrap_or_else(|| home.join(".local").join("state"))
+    };
+    state.join(APP_DIR_NAME).join(ORIGINALS_DIR_NAME)
 }
 
 /// App version: `PATCHOPSIII_VERSION_OVERRIDE`, `PATCHOPSIII_VERSION`, else the crate version.
@@ -123,4 +168,53 @@ pub fn app_version() -> String {
         }
     }
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn originals_follow_xdg_state_then_home_fallback() {
+        let home = PathBuf::from("/h/user");
+        let app = PathBuf::from("/h/user/.local/share/PatchOpsIII");
+        assert_eq!(
+            originals_dir_for(false, false, Some("/s".into()), None, &home, &app),
+            PathBuf::from("/s/PatchOpsIII/originals")
+        );
+        assert_eq!(
+            originals_dir_for(false, false, None, None, &home, &app),
+            PathBuf::from("/h/user/.local/state/PatchOpsIII/originals")
+        );
+        // LOCALAPPDATA is ignored off Windows.
+        assert_eq!(
+            originals_dir_for(false, false, None, Some("/la".into()), &home, &app),
+            PathBuf::from("/h/user/.local/state/PatchOpsIII/originals")
+        );
+    }
+
+    #[test]
+    fn originals_on_windows_and_macos() {
+        let home = PathBuf::from("C:/Users/u");
+        let app = PathBuf::from("C:/Users/u/AppData/Roaming/PatchOpsIII");
+        assert_eq!(
+            originals_dir_for(true, false, None, Some("D:/local".into()), &home, &app),
+            PathBuf::from("D:/local/PatchOpsIII/originals")
+        );
+        assert_eq!(
+            originals_dir_for(true, false, None, None, &home, &app),
+            home.join("AppData").join("Local").join("PatchOpsIII").join("originals")
+        );
+        assert_eq!(
+            originals_dir_for(false, true, Some("/ignored".into()), None, &home, &app),
+            app.join("originals")
+        );
+    }
+
+    #[test]
+    fn with_app_data_keeps_originals_inside_the_given_tree() {
+        let p = Paths::with_app_data(PathBuf::from("/tmp/x/home"), PathBuf::from("/tmp/x/appdata"));
+        assert_eq!(p.originals, PathBuf::from("/tmp/x/appdata/originals"));
+        assert!(p.originals.starts_with(&p.app_data));
+    }
 }

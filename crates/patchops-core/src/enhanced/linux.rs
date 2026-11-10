@@ -14,7 +14,8 @@ use serde_json::{json, Map, Value};
 use crate::context::Core;
 use crate::pyfmt::io_error_text;
 use crate::steam::launch_options::{
-    backup_file, modify_vdf_file, modify_vdf_file_if, normalize, restore_file, set_launch_options_exact, steam_config_vdf_path, strip_token_ci,
+    backup_file, first_seen_note, modify_vdf_file, modify_vdf_file_if, normalize, preserve_first_seen, restore_file, set_launch_options_exact,
+    steam_config_vdf_path, strip_token_ci,
 };
 use crate::steam::vdf::{Node, Obj};
 use crate::steam::{self, BO3_APP_ID};
@@ -22,6 +23,7 @@ use crate::steam::{self, BO3_APP_ID};
 pub const ENHANCED_TOOL_NAME: &str = "BO3 Enhanced";
 pub const ENHANCED_LAUNCH_OPTIONS: &str = "WINEDLLOVERRIDES=\"WindowsCodecs=n,b\" %command%";
 const CONFIG_BACKUP: &str = "steam_config_backup.vdf";
+const CONFIG_ORIGINAL: &str = "steam_config_original.vdf";
 
 fn is_linux() -> bool {
     crate::paths::system_name() == "Linux"
@@ -118,8 +120,9 @@ fn remove_key(o: &mut Obj, key: &str) {
     o.0.retain(|(k, _)| k != key);
 }
 
-/// Resolve `config.vdf`, logging the legacy errors; `None` aborts the caller.
-fn config_vdf(core: &Core) -> Option<PathBuf> {
+/// Resolve `config.vdf`, logging the legacy errors; `None` aborts the caller. On success also
+/// returns the first-seen copy (if any) for the callers' error messages.
+fn config_vdf(core: &Core) -> Option<(PathBuf, Option<PathBuf>)> {
     let Some(path) = steam_config_vdf_path(core) else {
         core.log.error("Steam root path could not be resolved.");
         return None;
@@ -128,11 +131,12 @@ fn config_vdf(core: &Core) -> Option<PathBuf> {
         core.log.error(format!("Steam config not found at {}", path.display()));
         return None;
     }
+    let first_seen = preserve_first_seen(core, &path, CONFIG_ORIGINAL);
     if !backup_file(core, &path, CONFIG_BACKUP) {
         core.log.error("Aborting due to backup failure");
         return None;
     }
-    Some(path)
+    Some((path, first_seen))
 }
 
 /// Legacy `set_compatibility_tool_mapping`.
@@ -140,7 +144,7 @@ pub fn set_compatibility_tool_mapping(core: &Core, tool_name: &str) -> bool {
     if !is_linux() {
         return true;
     }
-    let Some(path) = config_vdf(core) else { return false };
+    let Some((path, first_seen)) = config_vdf(core) else { return false };
     let result = modify_vdf_file_if(&path, |data| {
         let map = compat_map(data);
         if load_previous_compat_mapping(core).is_none() {
@@ -171,7 +175,7 @@ pub fn set_compatibility_tool_mapping(core: &Core, tool_name: &str) -> bool {
             false
         }
         Err(e) => {
-            core.log.error(format!("Failed to update compatibility mapping: {e}"));
+            core.log.error(format!("Failed to update compatibility mapping: {e}{}", first_seen_note(first_seen.as_deref())));
             restore_file(core, &path, CONFIG_BACKUP);
             false
         }
@@ -184,7 +188,7 @@ pub fn clear_compatibility_tool_mapping(core: &Core) -> bool {
     if !is_linux() {
         return true;
     }
-    let Some(path) = config_vdf(core) else { return false };
+    let Some((path, first_seen)) = config_vdf(core) else { return false };
     let result = modify_vdf_file(&path, |data| {
         let map = compat_map(data);
         match load_previous_compat_mapping(core) {
@@ -215,7 +219,7 @@ pub fn clear_compatibility_tool_mapping(core: &Core) -> bool {
     match result {
         Ok(()) => true,
         Err(e) => {
-            core.log.error(format!("Failed to clear compatibility mapping: {e}"));
+            core.log.error(format!("Failed to clear compatibility mapping: {e}{}", first_seen_note(first_seen.as_deref())));
             restore_file(core, &path, CONFIG_BACKUP);
             false
         }
@@ -514,5 +518,39 @@ mod tests {
         assert!(sb.log().contains("Removed compatibility tool 'BO3 Enhanced' and 1 backup path(s) from Steam."));
         assert!(remove_compatibility_tool(&sb.core, ENHANCED_TOOL_NAME));
         assert!(sb.log().contains("Compatibility tool 'BO3 Enhanced' was already absent."));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn config_first_copy_is_kept_across_mapping_updates() {
+        use crate::enhanced::testkit::Sandbox;
+        let sb = Sandbox::new();
+        let cfg = sb.steam.join("config/config.vdf");
+        fs::create_dir_all(cfg.parent().unwrap()).unwrap();
+        let first = "\"InstallConfigStore\"\n{\n\t\"Software\"\n\t{\n\t\t\"Valve\"\n\t\t{\n\t\t\t\"Steam\"\n\t\t\t{\n\t\t\t\t\"CompatToolMapping\"\n\t\t\t\t{\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n}\n";
+        fs::write(&cfg, first).unwrap();
+        assert!(set_compatibility_tool_mapping(&sb.core, ENHANCED_TOOL_NAME));
+        let copy = sb.core.paths.originals.join("steam_config_original.vdf");
+        assert_eq!(fs::read(&copy).unwrap(), first.as_bytes());
+        // A later op replaces the rolling backup but never the first copy.
+        let newer = "\"InstallConfigStore\"\n{\n}\n";
+        fs::write(&cfg, newer).unwrap();
+        assert!(clear_compatibility_tool_mapping(&sb.core));
+        assert_eq!(fs::read(&copy).unwrap(), first.as_bytes());
+        assert_eq!(fs::read(sb.core.paths.backups.join(CONFIG_BACKUP)).unwrap(), newer.as_bytes());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn blocked_originals_dir_does_not_fail_config_mapping() {
+        use crate::enhanced::testkit::Sandbox;
+        let sb = Sandbox::new();
+        let cfg = sb.steam.join("config/config.vdf");
+        fs::create_dir_all(cfg.parent().unwrap()).unwrap();
+        fs::write(&cfg, "\"InstallConfigStore\"\n{\n}\n").unwrap();
+        fs::create_dir_all(&sb.core.paths.app_data).unwrap();
+        fs::write(&sb.core.paths.originals, b"in the way").unwrap();
+        assert!(set_compatibility_tool_mapping(&sb.core, ENHANCED_TOOL_NAME));
+        assert!(!sb.log().contains("first copy"));
     }
 }

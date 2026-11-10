@@ -205,6 +205,71 @@ pub fn restore_file(core: &Core, config_path: &Path, backup_name: &str) -> bool 
     }
 }
 
+// ---- first-seen copies ----------------------------------------------------------------------
+
+/// Write-once "first seen" copy of `source` at `<paths.originals>/<name>`.
+///
+/// Unlike the rolling `backups/` slot this is never overwritten: if the destination already
+/// exists nothing happens, so it keeps the oldest content the app ever saw. The copy is made to a
+/// private temp file in the same directory and then `hard_link`ed into place (which fails instead
+/// of clobbering), and the final file is set read-only (0o444 on unix).
+///
+/// Silent by design: it never logs and never fails the caller. Returns `Some(path)` when a
+/// first-seen copy exists afterwards (created now or from before), `None` otherwise.
+pub fn preserve_first_seen(core: &Core, source: &Path, name: &str) -> Option<PathBuf> {
+    let dir = &core.paths.originals;
+    let dest = dir.join(name);
+    if std::fs::symlink_metadata(&dest).is_ok() {
+        return Some(dest);
+    }
+    if std::fs::symlink_metadata(source).is_err() || std::fs::create_dir_all(dir).is_err() {
+        return None;
+    }
+    let tmp = dir.join(format!(".{name}.tmp-{}-{}", std::process::id(), tmp_nonce()));
+    let made = write_new_copy(source, &tmp)
+        .and_then(|()| set_read_only(&tmp))
+        .and_then(|()| std::fs::hard_link(&tmp, &dest));
+    let _ = std::fs::remove_file(&tmp);
+    match made {
+        Ok(()) => Some(dest),
+        // Another writer won the race: their copy is the first-seen one.
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Some(dest),
+        Err(_) => None,
+    }
+}
+
+/// Human-readable suffix for an error message: names the first-seen copy when there is one.
+pub fn first_seen_note(copy: Option<&Path>) -> String {
+    match copy {
+        Some(p) => format!(" An untouched first copy is kept at {}.", p.display()),
+        None => String::new(),
+    }
+}
+
+fn tmp_nonce() -> u128 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos())
+}
+
+/// Byte copy into a file that must not exist yet (`create_new`), so a stray temp is never reused.
+fn write_new_copy(src: &Path, dst: &Path) -> std::io::Result<()> {
+    let mut input = std::fs::File::open(src)?;
+    let mut out = std::fs::OpenOptions::new().write(true).create_new(true).open(dst)?;
+    std::io::copy(&mut input, &mut out)?;
+    Ok(())
+}
+
+fn set_read_only(path: &Path) -> std::io::Result<()> {
+    let mut perms = std::fs::metadata(path)?.permissions();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        perms.set_mode(0o444);
+    }
+    #[cfg(not(unix))]
+    perms.set_readonly(true);
+    std::fs::set_permissions(path, perms)
+}
+
 // ---- localconfig.vdf ------------------------------------------------------------------------
 
 /// `UserLocalConfigStore/Software/Valve/Steam/apps/<app_id>` (created on demand).
@@ -225,6 +290,7 @@ fn update_localconfig(core: &Core, user_id: &str, edit: impl FnOnce(&mut Obj) ->
         core.log.error("localconfig.vdf not found!");
         return false;
     }
+    let first_seen = preserve_first_seen(core, &path, &format!("localconfig_{user_id}_original.vdf"));
     if !backup_file(core, &path, LOCALCONFIG_BACKUP) {
         core.log.error("Aborting due to backup failure");
         return false;
@@ -238,7 +304,8 @@ fn update_localconfig(core: &Core, user_id: &str, edit: impl FnOnce(&mut Obj) ->
     match result {
         Ok(()) => true,
         Err(e) => {
-            core.log.error(format!("Error updating launch options: {e}"));
+            let note = first_seen_note(first_seen.as_deref());
+            core.log.error(format!("Error updating launch options: {e}{note}"));
             restore_file(core, &path, LOCALCONFIG_BACKUP);
             false
         }
@@ -364,3 +431,100 @@ mod tests {
         assert_eq!(fs_game_matches("x +set fs_game y").len(), 1);
     }
 }
+
+#[cfg(test)]
+mod first_seen_tests {
+    use super::*;
+    use crate::enhanced::testkit::Sandbox;
+    use crate::steam::{localconfig_path, read_launch_options};
+
+    const USER: &str = "12345";
+    const APP: &str = "311210";
+
+    fn vdf(options: &str) -> String {
+        format!(
+            "\"UserLocalConfigStore\"\n{{\n\t\"Software\"\n\t{{\n\t\t\"Valve\"\n\t\t{{\n\t\t\t\"Steam\"\n\t\t\t{{\n\t\t\t\t\"apps\"\n\t\t\t\t{{\n\t\t\t\t\t\"{APP}\"\n\t\t\t\t\t{{\n\t\t\t\t\t\t\"LaunchOptions\"\t\t\"{options}\"\n\t\t\t\t\t}}\n\t\t\t\t}}\n\t\t\t}}\n\t\t}}\n\t}}\n}}\n"
+        )
+    }
+
+    fn write_localconfig(core: &Core, text: &str) -> PathBuf {
+        let path = localconfig_path(core, USER);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, text).unwrap();
+        path
+    }
+
+    fn first_copy(core: &Core) -> PathBuf {
+        core.paths.originals.join(format!("localconfig_{USER}_original.vdf"))
+    }
+
+    #[test]
+    fn first_update_keeps_byte_identical_first_copy() {
+        let sb = Sandbox::new();
+        let pre = vdf("-novid");
+        write_localconfig(&sb.core, &pre);
+        assert!(set_launch_options_exact(&sb.core, USER, APP, "-windowed"));
+        assert_eq!(std::fs::read(first_copy(&sb.core)).unwrap(), pre.as_bytes());
+        let mode = std::fs::metadata(first_copy(&sb.core)).unwrap().permissions();
+        #[cfg(unix)]
+        assert_eq!(std::os::unix::fs::PermissionsExt::mode(&mode) & 0o777, 0o444);
+        #[cfg(not(unix))]
+        assert!(mode.readonly());
+    }
+
+    #[test]
+    fn second_update_keeps_first_copy_and_rolls_backup() {
+        let sb = Sandbox::new();
+        let first = vdf("-novid");
+        write_localconfig(&sb.core, &first);
+        assert!(set_launch_options_exact(&sb.core, USER, APP, "-windowed"));
+        let second = vdf("-windowed -console");
+        write_localconfig(&sb.core, &second);
+        assert!(set_launch_options_exact(&sb.core, USER, APP, "-console"));
+        assert_eq!(std::fs::read(first_copy(&sb.core)).unwrap(), first.as_bytes());
+        let rolling = sb.core.paths.backups.join(LOCALCONFIG_BACKUP);
+        assert_eq!(std::fs::read(rolling).unwrap(), second.as_bytes());
+    }
+
+    #[test]
+    fn nothing_created_when_localconfig_missing() {
+        let sb = Sandbox::new();
+        assert!(!set_launch_options_exact(&sb.core, USER, APP, "-x"));
+        assert!(!sb.core.paths.originals.exists());
+        assert!(preserve_first_seen(&sb.core, &localconfig_path(&sb.core, USER), "x.vdf").is_none());
+        assert!(!sb.core.paths.originals.exists());
+    }
+
+    #[test]
+    fn blocked_originals_dir_does_not_fail_the_operation() {
+        let sb = Sandbox::new();
+        std::fs::create_dir_all(&sb.core.paths.app_data).unwrap();
+        std::fs::write(&sb.core.paths.originals, b"in the way").unwrap();
+        write_localconfig(&sb.core, &vdf("-novid"));
+        assert!(set_launch_options_exact(&sb.core, USER, APP, "-windowed"));
+        assert_eq!(read_launch_options(&sb.core, USER, APP).as_deref(), Some("-windowed"));
+        assert!(preserve_first_seen(&sb.core, &localconfig_path(&sb.core, USER), "x.vdf").is_none());
+    }
+
+    #[test]
+    fn preserve_never_logs() {
+        let sb = Sandbox::new();
+        let src = sb.root.join("src.vdf");
+        std::fs::write(&src, "data").unwrap();
+        let before = sb.log();
+        assert!(preserve_first_seen(&sb.core, &src, "a.vdf").is_some());
+        assert!(preserve_first_seen(&sb.core, &src, "a.vdf").is_some());
+        assert!(preserve_first_seen(&sb.core, &sb.root.join("missing"), "b.vdf").is_none());
+        assert_eq!(sb.log(), before);
+    }
+
+    #[test]
+    fn first_seen_note_names_the_copy() {
+        assert_eq!(first_seen_note(None), "");
+        assert_eq!(
+            first_seen_note(Some(Path::new("/x/y.vdf"))),
+            " An untouched first copy is kept at /x/y.vdf."
+        );
+    }
+}
+
