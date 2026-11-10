@@ -33,6 +33,9 @@ pub mod settings;
 pub mod state;
 pub mod steam;
 pub mod t7_install;
+pub mod legacy_install;
+#[cfg(any(windows, test))]
+mod winreg;
 
 pub use context::Core;
 pub use error::{AppError, AppResult, OpError};
