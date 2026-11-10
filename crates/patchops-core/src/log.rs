@@ -144,8 +144,46 @@ impl Logger {
         self.subscribers.lock().unwrap_or_else(|e| e.into_inner()).push(Arc::new(f));
     }
 
+    /// Legacy `manage_log_retention_on_launch(threshold)`: count launches in `counter_path` and
+    /// truncate the log file on every `threshold`-th launch (counter then restarts at 0).
+    /// `threshold <= 0` disables it. Returns whether the log was cleared.
+    pub fn manage_retention(&self, counter_path: &std::path::Path, threshold: i64) -> bool {
+        if threshold <= 0 {
+            return false;
+        }
+        let count = std::fs::read_to_string(counter_path).ok().and_then(|t| t.trim().parse::<i64>().ok()).unwrap_or(0) + 1;
+        let (cleared, count) = if count >= threshold { (self.clear_file(), 0) } else { (false, count) };
+        if let Some(dir) = counter_path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let _ = std::fs::write(counter_path, count.to_string());
+        cleared
+    }
+
     /// Whole log file as text (lossy UTF-8), empty if unreadable.
     pub fn read_file(&self) -> String {
         std::fs::read(&self.path).map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retention_clears_every_third_launch() {
+        let d = std::env::temp_dir().join(format!("patchops-logret-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let log = Logger::new(d.join("x.log"));
+        let counter = d.join("launch_counter.txt");
+        log.log_file_only(Category::Info, "keep me");
+        assert!(!log.manage_retention(&counter, 3));
+        assert!(!log.manage_retention(&counter, 3));
+        assert!(log.read_file().contains("keep me"));
+        assert!(log.manage_retention(&counter, 3));
+        assert_eq!(log.read_file(), "");
+        assert_eq!(std::fs::read_to_string(&counter).unwrap(), "0");
+        assert!(!log.manage_retention(&counter, 0));
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

@@ -127,6 +127,14 @@ impl Core {
         Ok(())
     }
 
+    /// Legacy log retention policy (`utils.manage_log_retention_on_launch(3)`): every third call
+    /// truncates the log file. **Not called by [`Core::new`]**: it would create the counter file
+    /// and wipe the log during the golden parity runs; the application shell may call it once at
+    /// startup. Returns whether the log was cleared.
+    pub fn manage_log_retention(&self, threshold: i64) -> bool {
+        self.log.manage_retention(&self.paths.app_data.join("launch_counter.txt"), threshold)
+    }
+
     /// Resolved game directory (settings, Steam libraries, platform defaults), see [`crate::game`].
     pub fn game_dir(&self) -> Option<String> {
         crate::game::find_game_dir(self)
