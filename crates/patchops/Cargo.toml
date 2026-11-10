@@ -1,0 +1,31 @@
+[package]
+name = "patchops"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "patchops"
+path = "src/main.rs"
+
+[dependencies]
+patchops-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+parking_lot.workspace = true
+unicode-segmentation = "1"
+async-channel = "2"
+
+# Optional stderr logging of gpui internals: `cargo run --features debug-log`, RUST_LOG=info.
+env_logger = { version = "0.11", optional = true, default-features = false, features = ["auto-color"] }
+
+# Backend features per platform. gpui's `default` = font-kit + wayland + x11 + windows-manifest;
+# font-kit is pulled in by x11/wayland on Linux, so only the backends matter.
+[target.'cfg(target_os = "linux")'.dependencies]
+gpui = { workspace = true, features = ["x11", "wayland"] }
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+gpui = { workspace = true, features = ["windows-manifest"] }
+
+[features]
+debug-log = ["dep:env_logger"]

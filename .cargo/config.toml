@@ -1,0 +1,5 @@
+# Optional faster linking on Linux dev machines: uncomment (needs `mold` + `clang`).
+# Measured: no meaningful gain over rustc's default rust-lld for this project (see GPUI_NOTES.md).
+# [target.x86_64-unknown-linux-gnu]
+# linker = "clang"
+# rustflags = ["-C", "link-arg=-fuse-ld=mold"]

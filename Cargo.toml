@@ -1,0 +1,43 @@
+[workspace]
+resolver = "2"
+members = ["crates/patchops-core", "crates/patchops"]
+exclude = ["bench"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.85"
+
+[workspace.dependencies]
+patchops-core = { path = "crates/patchops-core" }
+# gpui 0.2.2 = last crates.io release of the "stable" line. Backend features are
+# chosen per-target in crates/patchops/Cargo.toml (see GPUI_NOTES.md).
+gpui = { version = "0.2.2", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+parking_lot = "0.12"
+
+[profile.dev]
+debug = "line-tables-only"
+opt-level = 1
+[profile.dev.package."*"]
+opt-level = 2
+
+# Measured on 4 cores (see crates/patchops/GPUI_NOTES.md / orchestrator report):
+#   opt-level=3 fat/cgu1: 12.4 MB, 353 s clean, 118 s incremental
+#   opt-level=s fat/cgu1:  9.6 MB, 290 s clean   <- chosen for shipping
+#   opt-level=3 thin/cgu16: 16.1 MB, 255 s clean, 64 s incremental  (profile `release-fast`)
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Quicker local release-ish builds: `cargo build --profile release-fast`.
+[profile.release-fast]
+inherits = "release"
+opt-level = 3
+lto = "thin"
+codegen-units = 16
