@@ -57,8 +57,8 @@ pub type Subscriber = Arc<dyn Fn(&LogEntry) + Send + Sync>;
 /// the elevated install child, the panic hook). Appends are `O_APPEND` single writes. A trim
 /// (a) is exclusive between processes through a `<log>.trim` lock file (stale after 60 s),
 /// (b) holds the old file open while it works and carries every line appended in the meantime into
-/// the new log, so a line is never lost (a line written during the final rename may end up a few
-/// lines out of order), and (c) replaces `.1` only after the new log is fully prepared and the log
+/// the new log (and appenders re-append a line that landed in the replaced file), so a line is never
+/// lost (one written during the final rename may end up a few lines out of order or twice), and (c) replaces `.1` only after the new log is fully prepared and the log
 /// was not truncated behind its back. The only kind of process that trims at start-up is the GUI
 /// ([`Logger::trim_if_needed`], off the main thread); the hidden elevated child never trims
 /// ([`Logger::disable_trim`]); the panic hook uses the append-only [`append_line`].
@@ -174,6 +174,37 @@ fn write_like(dest: &Path, bytes: &[u8], like: &std::fs::Metadata) -> Option<Pat
     }
 }
 
+/// Remove and return the part of `buf` up to and including its last `\n` (empty when there is none).
+fn take_whole_lines(buf: &mut Vec<u8>) -> Vec<u8> {
+    match buf.iter().rposition(|&b| b == b'\n') {
+        Some(i) => {
+            let rest = buf.split_off(i + 1);
+            std::mem::replace(buf, rest)
+        }
+        None => Vec::new(),
+    }
+}
+
+/// After an append through `f` (opened by path): if the log was replaced by a trim in between (the
+/// path now names another file), the line went to the old, soon-gone file; append it again to the
+/// current one. A trimmer that also carries it over from the old file makes this a duplicate, never
+/// a loss. Unix only (file identity); elsewhere the trimmer's grace-period carry-over is all there is.
+fn reappend_if_replaced(f: &std::fs::File, path: &Path, buf: &[u8]) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if let (Ok(a), Ok(b)) = (f.metadata(), std::fs::metadata(path)) {
+            if (a.dev(), a.ino()) != (b.dev(), b.ino()) {
+                if let Ok(mut n) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+                    let _ = n.write_all(buf);
+                }
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = (f, path, buf);
+}
+
 /// One line in the file format of [`Logger`].
 fn format_line(category: Category, message: &str) -> String {
     format!("{} - {}: {}", crate::clock::now().format(), category.as_str(), message)
@@ -189,7 +220,9 @@ pub fn append_line(path: &Path, category: Category, message: &str) {
     let mut buf = format_line(category, message).into_bytes();
     buf.push(b'\n');
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-        let _ = f.write_all(&buf);
+        if f.write_all(&buf).is_ok() {
+            reappend_if_replaced(&f, path, &buf);
+        }
     }
 }
 
@@ -279,6 +312,9 @@ impl FileLog {
         };
         // Lines appended while we were working (by other processes, or other loggers): carry them
         // over into the new log, then re-check until the old file is quiet.
+        // Only whole lines are carried: a read can catch a line another writer is still storing
+        // (page by page), and the rest of it must not end up after somebody else's line.
+        let mut pending: Vec<u8> = Vec::new();
         for _ in 0..4 {
             let mut extra = Vec::new();
             if f.read_to_end(&mut extra).is_err() {
@@ -287,11 +323,14 @@ impl FileLog {
             if extra.is_empty() {
                 break;
             }
-            match std::fs::OpenOptions::new().append(true).open(&tail_tmp).and_then(|mut t| t.write_all(&extra)) {
-                Ok(()) => {
-                    consumed += extra.len() as u64;
-                    tail_len += extra.len() as u64;
-                }
+            consumed += extra.len() as u64;
+            pending.extend_from_slice(&extra);
+            let whole = take_whole_lines(&mut pending);
+            if whole.is_empty() {
+                continue;
+            }
+            match std::fs::OpenOptions::new().append(true).open(&tail_tmp).and_then(|mut t| t.write_all(&whole)) {
+                Ok(()) => tail_len += whole.len() as u64,
                 Err(_) => return discard(Trim::Failed(cur())),
             }
         }
@@ -319,10 +358,19 @@ impl FileLog {
                 std::thread::sleep(std::time::Duration::from_millis(8));
             }
             let mut late = Vec::new();
-            if f.read_to_end(&mut late).is_ok() && !late.is_empty() {
+            let _ = f.read_to_end(&mut late);
+            pending.extend_from_slice(&late);
+            let mut whole = take_whole_lines(&mut pending);
+            if round == 2 && !pending.is_empty() {
+                // A line still unfinished after the grace period: keep what there is as a line of
+                // its own (its writer re-appends the whole line when it sees the file was replaced).
+                whole.append(&mut pending);
+                whole.push(b'\n');
+            }
+            if !whole.is_empty() {
                 if let Ok(mut n) = std::fs::OpenOptions::new().create(true).append(true).open(&self.path) {
-                    if n.write_all(&late).is_ok() {
-                        tail_len += late.len() as u64;
+                    if n.write_all(&whole).is_ok() {
+                        tail_len += whole.len() as u64;
                     }
                 }
             }
@@ -447,6 +495,7 @@ impl Logger {
                 buf.push(b'\n');
                 match f.write_all(&buf) {
                     Ok(()) => {
+                        reappend_if_replaced(&f, &self.path, &buf);
                         drop(f);
                         inner.payload = None;
                         // While backing off after a failed trim, look at the real size (one stat) so
@@ -843,5 +892,17 @@ mod tests {
         // Nothing to remove is fine.
         assert!(log.clear_file());
         let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn whole_lines_are_split_off_the_front() {
+        let mut b = b"a\nbb\ncc".to_vec();
+        assert_eq!(take_whole_lines(&mut b), b"a\nbb\n");
+        assert_eq!(b, b"cc");
+        assert!(take_whole_lines(&mut b).is_empty());
+        assert_eq!(b, b"cc");
+        b.extend_from_slice(b"\n");
+        assert_eq!(take_whole_lines(&mut b), b"cc\n");
+        assert!(b.is_empty());
     }
 }

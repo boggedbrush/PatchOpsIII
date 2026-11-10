@@ -405,7 +405,7 @@ mod tests {
         let read = |h: Root, s: &str, v: &str| r.get(&(h, s.to_string(), v.to_string())).cloned();
         let exe = Path::new(r"D:\x\PatchOpsIII.exe");
         let ok = |canon: &dyn Fn(&Path) -> Option<PathBuf>| {
-            detect_with(&read, &Env { exe: Some(exe), msi_dirs: &w.msi, is_file: &|p| w.files.contains(p), canon }).is_some()
+            detect_with(read, &Env { exe: Some(exe), msi_dirs: &w.msi, is_file: &|p| w.files.contains(p), canon }).is_some()
         };
         assert!(ok(&|p| Some(p.to_path_buf())));
         assert!(!ok(&|_| None), "nothing resolves");
@@ -414,7 +414,7 @@ mod tests {
         // An MSI candidate that does not exist is fine (compared lexically).
         assert!(ok(&|p| (p != Path::new(PF_DIR)).then(|| p.to_path_buf())));
         // `\\?\` prefixes of real canonicalisation are ignored.
-        assert!(!detect_with(&read, &Env { exe: Some(Path::new(r"\\?\C:\Users\a\AppData\Local\Programs\PatchOpsIII\PatchOpsIII.exe")), msi_dirs: &w.msi, is_file: &|p| w.files.contains(p), canon: &|p| Some(p.to_path_buf()) }).is_some());
+        assert!(!detect_with(read, &Env { exe: Some(Path::new(r"\\?\C:\Users\a\AppData\Local\Programs\PatchOpsIII\PatchOpsIII.exe")), msi_dirs: &w.msi, is_file: &|p| w.files.contains(p), canon: &|p| Some(p.to_path_buf()) }).is_some());
     }
 
     #[test]
