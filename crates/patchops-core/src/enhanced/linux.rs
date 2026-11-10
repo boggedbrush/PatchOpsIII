@@ -13,7 +13,9 @@ use serde_json::{json, Map, Value};
 
 use crate::context::Core;
 use crate::pyfmt::io_error_text;
-use crate::steam::launch_options::{backup_file, modify_vdf_file, restore_file, set_launch_options_exact, steam_config_vdf_path};
+use crate::steam::launch_options::{
+    backup_file, modify_vdf_file, modify_vdf_file_if, normalize, restore_file, set_launch_options_exact, steam_config_vdf_path, strip_token_ci,
+};
 use crate::steam::vdf::{Node, Obj};
 use crate::steam::{self, BO3_APP_ID};
 
@@ -29,32 +31,14 @@ fn is_linux() -> bool {
 
 /// Legacy `_normalize_launch_options`: collapse whitespace runs, trim.
 pub fn normalize_launch_options(s: &str) -> String {
-    s.split_whitespace().collect::<Vec<_>>().join(" ")
+    normalize(s)
 }
 
 /// Legacy `_strip_enhanced_launch_override`: drop the whitespace-delimited, case-insensitive
 /// `WINEDLLOVERRIDES="WindowsCodecs=n,b"` token, then normalise whitespace.
 pub fn strip_enhanced_launch_override(options: &str) -> String {
     const OVERRIDE: &str = "WINEDLLOVERRIDES=\"WindowsCodecs=n,b\"";
-    let lower = options.to_ascii_lowercase();
-    let needle = OVERRIDE.to_ascii_lowercase();
-    let mut out = String::new();
-    let mut i = 0;
-    while let Some(off) = lower[i..].find(&needle) {
-        let s = i + off;
-        let e = s + needle.len();
-        let before_ok = options[..s].chars().next_back().is_none_or(char::is_whitespace);
-        let after_ok = options[e..].chars().next().is_none_or(char::is_whitespace);
-        if before_ok && after_ok {
-            out.push_str(&options[i..s]);
-            i = e;
-        } else {
-            out.push_str(&options[i..s + 1]);
-            i = s + 1;
-        }
-    }
-    out.push_str(&options[i..]);
-    normalize_launch_options(&out)
+    normalize(&strip_token_ci(options, OVERRIDE, true))
 }
 
 // ---- previous-state snapshots (backups/*.json) -------------------------------------------------
@@ -160,13 +144,14 @@ pub fn set_compatibility_tool_mapping(core: &Core, tool_name: &str) -> bool {
         return true;
     }
     let Some(path) = config_vdf(core) else { return false };
-    let result = modify_vdf_file(&path, |data| {
+    let result = modify_vdf_file_if(&path, |data| {
         let map = compat_map(data);
         if load_previous_compat_mapping(core).is_none() {
             let existing = map.get(BO3_APP_ID).map(node_to_json);
             let payload = json!({ "had_entry": existing.is_some(), "entry": existing });
             if !save_json_atomic(core, &state_file(core, "compat_mapping"), &payload, "previous compatibility mapping state") {
-                return false;
+                // Legacy aborts before writing: `None` leaves config.vdf untouched.
+                return None;
             }
         }
         map.set(
@@ -177,16 +162,14 @@ pub fn set_compatibility_tool_mapping(core: &Core, tool_name: &str) -> bool {
                 ("priority".into(), Node::Str("250".into())),
             ])),
         );
-        true
+        Some(())
     });
     match result {
-        Ok(true) => {
+        Ok(Some(())) => {
             core.log.success(format!("Mapped AppID {BO3_APP_ID} to compatibility tool '{tool_name}'."));
             true
         }
-        Ok(false) => {
-            // The snapshot could not be saved: legacy aborts before writing (we wrote the
-            // unchanged document back, which is equivalent).
+        Ok(None) => {
             core.log.error("Unable to persist prior compatibility mapping; aborting mapping update.");
             false
         }
@@ -375,22 +358,33 @@ pub fn remove_compatibility_tool(core: &Core, tool_name: &str) -> bool {
 
 // ---- orchestration ------------------------------------------------------------------------------
 
+/// Why the Linux Steam flow did not complete.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FlowError {
+    /// Steam would not exit in time; no Steam file was touched ([`steam::STEAM_CLOSE_TIMEOUT_MSG`]).
+    SteamNotClosed,
+    /// Anything else (already logged).
+    Failed,
+}
+
 /// Legacy `configure_bo3_enhanced_linux` with an already-resolved tool directory (the caller
 /// resolves/downloads the GDK-Proton tool: a bundled `bo3-enhanced-proton/BO3 Enhanced` or the
 /// cached download).
-pub fn configure_bo3_enhanced_linux(core: &Core, resolved_tool_source: Option<&Path>) -> bool {
+pub fn configure_bo3_enhanced_linux(core: &Core, resolved_tool_source: Option<&Path>) -> Result<(), FlowError> {
     if !is_linux() {
-        return true;
+        return Ok(());
     }
     let Some(user_id) = steam::find_user_id(core) else {
         core.log.error("Steam user ID not found; cannot configure Linux BO3 Enhanced flow.");
-        return false;
+        return Err(FlowError::Failed);
     };
     let Some(source) = resolved_tool_source else {
         core.log.error("Could not resolve a BO3 Enhanced Proton source (local bundle or cached download).");
-        return false;
+        return Err(FlowError::Failed);
     };
-    steam::close_steam(core);
+    if steam::close_steam(core).is_err() {
+        return Err(FlowError::SteamNotClosed);
+    }
     let success = (|| {
         if !install_compatibility_tool(core, source, ENHANCED_TOOL_NAME) || !set_compatibility_tool_mapping(core, ENHANCED_TOOL_NAME) {
             return false;
@@ -413,20 +407,22 @@ pub fn configure_bo3_enhanced_linux(core: &Core, resolved_tool_source: Option<&P
     } else {
         core.log.warning("Linux BO3 Enhanced flow setup was only partially applied. Review previous log entries.");
     }
-    success
+    if success { Ok(()) } else { Err(FlowError::Failed) }
 }
 
 /// Legacy `cleanup_bo3_enhanced_linux`: close Steam, restore/clear the compat mapping, restore
 /// (or strip the Enhanced override from) the launch options, remove the tool, re-open Steam.
-pub fn cleanup_bo3_enhanced_linux(core: &Core) -> bool {
+pub fn cleanup_bo3_enhanced_linux(core: &Core) -> Result<(), FlowError> {
     if !is_linux() {
-        return true;
+        return Ok(());
     }
     let user_id = steam::find_user_id(core);
     if user_id.is_none() {
         core.log.error("Steam user ID not found; cannot clear BO3 launch options.");
     }
-    steam::close_steam(core);
+    if steam::close_steam(core).is_err() {
+        return Err(FlowError::SteamNotClosed);
+    }
     let mut success = true;
     success = clear_compatibility_tool_mapping(core) && success;
     if let Some(uid) = &user_id {
@@ -461,7 +457,7 @@ pub fn cleanup_bo3_enhanced_linux(core: &Core) -> bool {
     } else {
         core.log.warning("Linux BO3 Enhanced cleanup was only partially applied. Review previous log entries.");
     }
-    success
+    if success { Ok(()) } else { Err(FlowError::Failed) }
 }
 
 #[cfg(test)]

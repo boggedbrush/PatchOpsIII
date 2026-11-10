@@ -72,12 +72,25 @@ fn remove_ranges(s: &str, ranges: &[(usize, usize)]) -> String {
 }
 
 /// `re.sub(rf'(?<!\S){re.escape(token)}(?!\S)', '', s)`
-fn strip_token(s: &str, token: &str) -> String {
+pub(crate) fn strip_token(s: &str, token: &str) -> String {
+    strip_token_ci(s, token, false)
+}
+
+/// [`strip_token`], optionally matching the (ASCII) token case-insensitively (`re.IGNORECASE`).
+/// ASCII lowercasing keeps byte offsets, so positions found in the lowered copy index `s`.
+pub(crate) fn strip_token_ci(s: &str, token: &str, ignore_ascii_case: bool) -> String {
+    let lowered;
+    let (hay, needle): (&str, std::borrow::Cow<str>) = if ignore_ascii_case {
+        lowered = s.to_ascii_lowercase();
+        (lowered.as_str(), token.to_ascii_lowercase().into())
+    } else {
+        (s, token.into())
+    };
     let mut out = String::with_capacity(s.len());
     let mut i = 0;
-    while let Some(off) = s[i..].find(token) {
+    while let Some(off) = hay[i..].find(needle.as_ref()) {
         let a = i + off;
-        let b = a + token.len();
+        let b = a + needle.len();
         let before_ok = s[..a].chars().next_back().is_none_or(is_ws);
         let after_ok = s[b..].chars().next().is_none_or(is_ws);
         if before_ok && after_ok {
@@ -95,7 +108,7 @@ fn strip_token(s: &str, token: &str) -> String {
 }
 
 /// `re.sub(r'\s+', ' ', s).strip()`
-fn normalize(s: &str) -> String {
+pub(crate) fn normalize(s: &str) -> String {
     s.split(is_ws).filter(|p| !p.is_empty()).collect::<Vec<_>>().join(" ")
 }
 
@@ -265,10 +278,11 @@ pub fn set_launch_options_exact(core: &Core, user_id: &str, app_id: &str, option
 
 /// Legacy `apply_launch_options(options, preserve_fs_game)` for app 311210: close Steam (wait
 /// until gone), merge into `localconfig.vdf`, re-open Steam. `Ok(wrote_file)`;
-/// `Err("Steam user ID not found!")` before Steam is touched.
+/// `Err("Steam user ID not found!")` before Steam is touched; `Err(STEAM_CLOSE_TIMEOUT_MSG)` when
+/// Steam would not exit in time (no file was read or written, Steam is left running).
 pub fn apply_launch_options(core: &Core, options: &str, preserve_fs_game: bool) -> AppResult<bool> {
     let user_id = super::find_user_id(core).ok_or_else(|| AppError::new("Steam user ID not found!"))?;
-    client::close_steam(core);
+    client::close_steam(core).map_err(AppError::new)?;
     let ok = set_launch_options(core, &user_id, BO3_APP_ID, options, preserve_fs_game);
     client::open_steam(core);
     Ok(ok)
@@ -285,7 +299,7 @@ pub fn clear_launch_options(core: &Core) -> AppResult<bool> {
 /// (`set_launch_options_exact`), as the Enhanced install/uninstall code does.
 pub fn apply_launch_options_exact(core: &Core, options: &str) -> AppResult<bool> {
     let user_id = super::find_user_id(core).ok_or_else(|| AppError::new("Steam user ID not found!"))?;
-    client::close_steam(core);
+    client::close_steam(core).map_err(AppError::new)?;
     let ok = set_launch_options_exact(core, &user_id, BO3_APP_ID, options);
     client::open_steam(core);
     Ok(ok)
@@ -302,10 +316,16 @@ pub fn steam_config_vdf_path(core: &Core) -> Option<PathBuf> {
 /// the text to log. Callers are responsible for closing Steam first and for backups
 /// ([`backup_file`]).
 pub fn modify_vdf_file<T>(path: &Path, edit: impl FnOnce(&mut Obj) -> T) -> Result<T, String> {
+    modify_vdf_file_if(path, |d| Some(edit(d))).map(|o| o.expect("edit always returns Some"))
+}
+
+/// [`modify_vdf_file`] where `edit` may return `None` to abort: the file is then left untouched
+/// (nothing is written) and `Ok(None)` is returned.
+pub fn modify_vdf_file_if<T>(path: &Path, edit: impl FnOnce(&mut Obj) -> Option<T>) -> Result<Option<T>, String> {
     let mut data = vdf::load_file(path)?;
-    let out = edit(&mut data);
+    let Some(out) = edit(&mut data) else { return Ok(None) };
     vdf::write_file(path, &data).map_err(|e| io_error_text(&e, Some(path)))?;
-    Ok(out)
+    Ok(Some(out))
 }
 
 #[cfg(test)]

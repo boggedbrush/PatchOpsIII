@@ -25,6 +25,7 @@ pub mod net;
 pub mod ops;
 pub mod paths;
 pub mod presets;
+pub mod proc;
 pub mod pyfmt;
 pub mod pyjson;
 pub mod rpc;

@@ -7,10 +7,11 @@
 
 pub mod client;
 pub mod launch_options;
+pub mod registry;
 pub mod vdf;
 
 // Shared Steam control helpers (used by ops::steam_ops, enhanced, maintenance).
-pub use client::{close_steam, launch_game, open_external_url, open_steam};
+pub use client::{close_steam, STEAM_CLOSE_TIMEOUT_MSG, launch_game, open_external_url, open_steam};
 pub use launch_options::{
     apply_launch_options, apply_launch_options_exact, clear_launch_options, merge_launch_options, modify_vdf_file,
     set_launch_options, set_launch_options_exact, steam_config_vdf_path,
@@ -27,6 +28,7 @@ pub const BO3_APP_ID: &str = "311210";
 pub fn userdata_dir(core: &Core) -> PathBuf {
     #[cfg(windows)]
     {
+        let _ = core;
         if let Some(root) = windows_steam_root() {
             return root.join("userdata");
         }
@@ -47,19 +49,7 @@ pub fn userdata_dir(core: &Core) -> PathBuf {
 }
 
 #[cfg(windows)]
-fn windows_steam_root() -> Option<PathBuf> {
-    // TODO(windows): the legacy code first consults the registry (HKCU\Software\Valve\Steam
-    // SteamPath, HKLM\...\InstallPath). That needs winreg access; fall back to Program Files.
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    for var in ["PROGRAMFILES(X86)", "PROGRAMFILES"] {
-        if let Some(v) = std::env::var_os(var) {
-            candidates.push(PathBuf::from(v).join("Steam"));
-        }
-    }
-    candidates.push(PathBuf::from(r"C:\Program Files (x86)\Steam"));
-    candidates.push(PathBuf::from(r"C:\Program Files\Steam"));
-    candidates.into_iter().find(|c| c.join("steam.exe").exists())
-}
+use registry::windows_steam_root;
 
 /// Keep existing directories, de-duplicated by normalised absolute path (legacy `_dedupe_existing_dirs`).
 fn dedupe_existing_dirs<I: IntoIterator<Item = String>>(paths: I) -> Vec<String> {
@@ -161,13 +151,44 @@ pub fn library_paths(core: &Core) -> Vec<String> {
     resolved
 }
 
-/// Legacy `find_steam_user_id`: first all-digit directory in `userdata` (directory order).
+/// Account id (low 32 bits) of the `MostRecent` user of `<steam root>/config/loginusers.vdf`
+/// (keys are SteamID64s), only when that user's `userdata` directory exists.
+fn most_recent_user_id(userdata: &Path) -> Option<String> {
+    let root = userdata.parent()?;
+    let text = std::fs::read(root.join("config").join("loginusers.vdf")).ok()?;
+    let doc = vdf::parse(&String::from_utf8_lossy(&text)).ok()?;
+    let users = doc.get_obj("users")?;
+    pick_most_recent(users, |id| userdata.join(id).is_dir())
+}
+
+fn pick_most_recent(users: &vdf::Obj, dir_exists: impl Fn(&str) -> bool) -> Option<String> {
+    for (steam_id, node) in &users.0 {
+        let vdf::Node::Obj(o) = node else { continue };
+        if o.get_str("MostRecent").map(str::trim) != Some("1") {
+            continue;
+        }
+        let Ok(id64) = steam_id.trim().parse::<u64>() else { continue };
+        let account = (id64 & 0xFFFF_FFFF).to_string();
+        if account != "0" && dir_exists(&account) {
+            return Some(account);
+        }
+    }
+    None
+}
+
+/// Legacy `find_steam_user_id`, preferring the account Steam itself marks `MostRecent` in
+/// `config/loginusers.vdf` when its userdata dir exists (with several Steam accounts the legacy
+/// "first all-digit directory" picked an arbitrary one); otherwise the legacy behaviour: first
+/// all-digit directory in `userdata` (directory order).
 /// Logs file-only warnings like the legacy code when nothing is found.
 pub fn find_user_id(core: &Core) -> Option<String> {
     let dir = userdata_dir(core);
     if !dir.exists() {
         core.log.log_file_only(crate::log::Category::Warning, "Steam userdata path not found!");
         return None;
+    }
+    if let Some(id) = most_recent_user_id(&dir) {
+        return Some(id);
     }
     let found = std::fs::read_dir(&dir).ok().and_then(|rd| {
         rd.filter_map(|e| e.ok())
@@ -245,5 +266,48 @@ pub fn workshop_item_state(core: &Core, app_id: &str, workshop_id: &str) -> Work
         WorkshopState { state: "Subscribed (not installed yet)", installed: false, subscribed: true, path: None }
     } else {
         WorkshopState { state: "Not Subscribed", installed: false, subscribed: false, path: None }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn users(text: &str) -> vdf::Obj {
+        vdf::parse(text).unwrap().get_obj("users").unwrap().clone()
+    }
+
+    #[test]
+    fn most_recent_user_maps_steamid64_to_account_id() {
+        // 76561197960265728 + 12345 = 76561197960278073
+        let u = users(
+            "\"users\"\n{\n\"76561197960265729\"\n{\n\"MostRecent\"\t\"0\"\n}\n\"76561197960278073\"\n{\n\"MostRecent\"\t\"1\"\n}\n}\n",
+        );
+        assert_eq!(pick_most_recent(&u, |id| id == "12345" || id == "1"), Some("12345".into()));
+        // Its userdata dir is missing: fall back (None) so the legacy scan decides.
+        assert_eq!(pick_most_recent(&u, |id| id == "1"), None);
+        // Garbage ids are skipped.
+        let g = users("\"users\"\n{\n\"abc\"\n{\n\"MostRecent\"\t\"1\"\n}\n}\n");
+        assert_eq!(pick_most_recent(&g, |_| true), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn find_user_id_prefers_most_recent_over_directory_order() {
+        let sb = crate::enhanced::testkit::Sandbox::new();
+        let ud = userdata_dir(&sb.core);
+        for id in ["1", "12345", "99"] {
+            std::fs::create_dir_all(ud.join(id)).unwrap();
+        }
+        // No loginusers.vdf: legacy behaviour (some all-digit dir).
+        assert!(find_user_id(&sb.core).is_some());
+        let cfg = ud.parent().unwrap().join("config");
+        std::fs::create_dir_all(&cfg).unwrap();
+        std::fs::write(
+            cfg.join("loginusers.vdf"),
+            "\"users\"\n{\n\"76561197960278073\"\n{\n\"MostRecent\"\t\"1\"\n}\n}\n",
+        )
+        .unwrap();
+        assert_eq!(find_user_id(&sb.core), Some("12345".into()));
     }
 }

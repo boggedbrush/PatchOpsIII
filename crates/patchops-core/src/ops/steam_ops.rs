@@ -74,8 +74,18 @@ pub fn set_launch_options(core: &Core, options: &str, preserve_fs_game: bool) ->
         core.log.warning("Unsupported launch option.");
         return Err(AppError::new("Unsupported launch option.").with_state(State::build(core)));
     }
-    let ok = steam::apply_launch_options(core, options, preserve_fs_game)?;
+    let ok = steam::apply_launch_options(core, options, preserve_fs_game).map_err(|e| with_state_if_steam_busy(core, e))?;
     Ok(LaunchOptionsResult { ok, state: State::build(core) })
+}
+
+/// "Steam did not close in time" is an ordinary `{ok:false,error,state}` reply (nothing was
+/// changed), unlike the missing-user exception which the legacy route turned into a 500.
+fn with_state_if_steam_busy(core: &Core, e: AppError) -> AppError {
+    if e.state.is_none() && e.message == steam::client::STEAM_CLOSE_TIMEOUT_MSG {
+        e.with_state(State::build(core))
+    } else {
+        e
+    }
 }
 
 fn is_supported_option(options: &str) -> bool {

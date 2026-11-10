@@ -284,7 +284,7 @@ fn install_lpc_files(core: &Core, net: &Net, cache: &mut ReleaseCache, game: &Pa
 static DEFENDER_WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn powershell(script: &str) -> Option<String> {
-    let out = std::process::Command::new("powershell").args(["-Command", script]).output().ok()?;
+    let out = crate::proc::command("powershell").args(["-Command", script]).output().ok()?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 

@@ -139,8 +139,12 @@ fn install_enhanced_inner(core: &Core, net: &Net, game_dir: &Path, dump_source: 
     if crate::paths::system_name() == "Linux" {
         // Legacy order: the Steam user check comes before the tool is resolved / downloaded.
         let tool = if crate::steam::find_user_id(core).is_some() { crate::enhanced_net::resolve_tool_source(core, net, progress) } else { None };
-        if !linux::configure_bo3_enhanced_linux(core, tool.as_deref()) {
-            return Err("Installed files, but Linux compatibility setup failed.".into());
+        match linux::configure_bo3_enhanced_linux(core, tool.as_deref()) {
+            Ok(()) => {}
+            Err(linux::FlowError::SteamNotClosed) => {
+                return Err(format!("Installed files, but {}", crate::steam::client::STEAM_CLOSE_TIMEOUT_MSG));
+            }
+            Err(linux::FlowError::Failed) => return Err("Installed files, but Linux compatibility setup failed.".into()),
         }
     }
     files::finish_install(core, game_dir);
@@ -156,8 +160,16 @@ pub fn uninstall_enhanced(core: &Core, game_dir: &Path) -> Result<(), String> {
     if !files::uninstall_enhanced_files(core, game_dir, &core.paths.mod_files) {
         return Err("BO3 Enhanced uninstall failed.".into());
     }
-    if crate::paths::system_name() == "Linux" && !linux::cleanup_bo3_enhanced_linux(core) {
-        return Err("BO3 Enhanced files were removed, but Linux compatibility cleanup was incomplete.".into());
+    if crate::paths::system_name() == "Linux" {
+        match linux::cleanup_bo3_enhanced_linux(core) {
+            Ok(()) => {}
+            Err(linux::FlowError::SteamNotClosed) => {
+                return Err(format!("BO3 Enhanced files were removed, but {}", crate::steam::client::STEAM_CLOSE_TIMEOUT_MSG));
+            }
+            Err(linux::FlowError::Failed) => {
+                return Err("BO3 Enhanced files were removed, but Linux compatibility cleanup was incomplete.".into());
+            }
+        }
     }
     crate::game::write_exe_variant(game_dir, "default");
     core.log.success("Uninstalled BO3 Enhanced successfully.");
