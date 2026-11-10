@@ -19,10 +19,9 @@ extern "system" {
     fn RegGetValueW(hkey: isize, sub_key: *const u16, value: *const u16, flags: u32, ty: *mut u32, data: *mut c_void, cb_data: *mut u32) -> i32;
 }
 
-/// `RRF_RT_REG_SZ` alone: strings only; the API NUL-terminates. Without `RRF_NOEXPAND` a
-/// `REG_EXPAND_SZ` value is expanded first and then reported as `REG_SZ`, so it passes this
-/// restriction too. (Adding `RRF_RT_REG_EXPAND_SZ` without `RRF_NOEXPAND` is the combination
-/// Wine / older Windows reject with `ERROR_INVALID_PARAMETER`; the MSDN page does not state the rule.)
+/// `RRF_RT_REG_SZ` alone is used because type restrictions are applied after expansion: without
+/// `RRF_NOEXPAND` a `REG_EXPAND_SZ` value is expanded first and then reported as `REG_SZ`, so
+/// expanded values are still returned under this restriction.
 #[cfg(windows)]
 const RRF_RT_STRING: u32 = 0x0000_0002;
 #[cfg(windows)]

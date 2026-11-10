@@ -379,6 +379,9 @@ Scrollbar::new("bar", scroll_handle)               // overlay for your own scrol
   subscription (registered lazily in `render` because `new` has no `Window`).
 * Popups: `deferred(anchored().position(window_point).anchor(..).child(..)).with_priority(n)` with an explicit window-space position.
 * No dep on gpui-component; do not add one.
+* **Do not rely on `.truncate()` for an ellipsis in flex layouts (gpui 0.2.2).** The text keeps its first, unconstrained measure and is
+  clipped mid-glyph instead of getting a `...`; `line_clamp(1)` instead corrupts the font weight of the tail. Use `widgets::ellipsis(text)`
+  (`src/widgets/ellipsis.rs`). `widgets/log_list.rs` still uses `truncate()` on purpose: its rows are fixed-height and carry a tooltip.
 
 
 ---
