@@ -11,6 +11,7 @@ pub mod backup;
 pub mod clock;
 pub mod config_ini;
 pub mod context;
+pub mod enhanced;
 pub mod error;
 pub mod game;
 pub mod hash;

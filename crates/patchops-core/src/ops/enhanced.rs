@@ -1,23 +1,34 @@
-//! Group `enhanced`: `enhanced-validate`, `enhanced-install`, `enhanced-uninstall`,
+//! Group `enhanced`: `enhanced-validate`, `enhanced-install` (stub), `enhanced-uninstall`,
 //! `exe-swap/compatible`, `exe-swap/compatible-depot`, `exe-swap/current`, `exe-swap/enhanced`
 //! plus the `enhanced` and `exeSwap` state builders.
 //!
-//! TODO(enhanced agent) - port from `backend/api.py` + `bo3_enhanced.py` + `utils.py`:
-//! `validate_enhanced`, `install_enhanced`/`_install_enhanced`, `uninstall_enhanced`/`_uninstall_enhanced`
-//! (+ `cleanup_bo3_enhanced_linux`, uses Steam control from `ops::steam_ops`),
-//! `install_compatible_exe`, `compatible_depot_status`, `restore_current_exe`, `restore_enhanced_exe`
-//! and everything they call (`_executable_integrity_status`, `_exe_swap_status`, `_enhanced_status`,
-//! `_known_enhanced_hashes`, `_record_enhanced_hash`, depot helpers, `detect_enhanced_install`,
-//! `status_summary`, `load_state`). Hashing: `crate::hash`. `exe_swap_state` is implemented except the
-//! backup-availability flags; `enhanced_state` is still a stub.
+//! Legacy reference: `backend/api.py` (`_enhanced_status`, `_exe_swap_status`, `_install_enhanced`,
+//! `_uninstall_enhanced`, `_install_compatible_exe`, `_restore_*_exe`, endpoints) and
+//! `bo3_enhanced.py`. The machinery lives in [`crate::enhanced`] (zip reader, hash cache, file
+//! placement, exe swapping, Linux Proton/Steam side); this file is the op layer, the state
+//! structs/builders and the helpers the reset-to-stock port needs.
+//!
+//! Network is not here: `enhanced-install` answers `not implemented` until the download
+//! (`BO3Enhanced_latest.zip` into `BO3 Mod Files`, plus the Proton tool for Linux) is ported.
+//! The local half of the pipeline is ready: [`crate::enhanced::files::prepare_install`],
+//! [`crate::enhanced::files::install_enhanced_files`],
+//! [`crate::enhanced::linux::configure_bo3_enhanced_linux`] and
+//! [`crate::enhanced::files::finish_install`], in that order.
+//!
+//! Helpers for reset-to-stock: [`uninstall_enhanced`], [`restore_current_exe`] /
+//! [`active_exe_profile`] and [`detect_enhanced_install`] (the "Enhanced files present" check).
+
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{not_implemented, Args, Group};
+use super::{not_implemented, reply, state_reply, Args, Group};
 use crate::context::Core;
-use crate::error::OpError;
-use crate::state::StateCx;
+use crate::enhanced::exe::{KnownBuilds, Swap, SwapError, COMPATIBLE_EXE_ID, CURRENT_EXE_ID, ENHANCED_EXE_ID};
+use crate::enhanced::{files, hashcache, linux, state_file};
+use crate::error::{AppError, AppResult, OpError};
+use crate::state::{State, StateCx};
 
 pub const OPS: &[&str] = &[
     "enhanced-validate",
@@ -38,13 +49,150 @@ pub const COMPATIBLE_STEAM_BUILD_ID: &str = "10650222";
 pub const COMPATIBLE_STEAM_BUILD_DATE: &str = "Mar 3, 2023";
 pub const DEFAULT_STEAM_EXE_SHA256: &str = "51ca63bbc660e0826943c60da67606f6bcb4b3b519528b5e0548c68c9423a323";
 pub const COMPATIBLE_BUILD_SHA256: [&str; 1] = ["66b95eb4667bd5b3b3d230e7bed1d29ccd261d48ca2699f01216c863be24ff44"];
+pub const COMPATIBLE_DEPOT_APP_ID: &str = "311210";
+pub const COMPATIBLE_DEPOT_ID: &str = "311211";
+pub const COMPATIBLE_DEPOT_MANIFEST_ID: &str = "9084453472036406216";
 pub const COMPATIBLE_DEPOT_COMMAND: &str = "download_depot 311210 311211 9084453472036406216";
 pub const T7_PATCH_LABEL_CURRENT: &str = "T7 Patch Scroptss/T7Patch";
 
-fn call(core: &Core, op: &str, args: &Args) -> Result<Value, OpError> {
-    // TODO(enhanced agent)
-    not_implemented(core, op, args)
+const NO_GAME_DIR: &str = "Game directory is not set.";
+
+fn call(core: &Core, op: &str, a: &Args) -> Result<Value, OpError> {
+    match op {
+        "enhanced-validate" => {
+            let dump_source = a.str_req("dumpSource", 1)?;
+            reply(validate_enhanced(core, &dump_source))
+        }
+        "enhanced-install" => {
+            // Validate like the legacy model, then stay a stub (network download).
+            a.str_req("dumpSource", 1)?;
+            not_implemented(core, op, a)
+        }
+        "enhanced-uninstall" => state_reply(uninstall_enhanced_op(core)),
+        "exe-swap/compatible" => state_reply(install_compatible_exe_op(core)),
+        "exe-swap/compatible-depot" => reply(compatible_depot_status(core)),
+        "exe-swap/current" => state_reply(restore_current_exe_op(core)),
+        "exe-swap/enhanced" => state_reply(restore_enhanced_exe_op(core)),
+        _ => Err(OpError::UnknownOp(op.to_string())),
+    }
 }
+
+// ---- enhanced-validate ----------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidateReply {
+    pub ok: bool,
+    pub valid: bool,
+    pub message: String,
+    pub state: State,
+}
+
+/// `enhanced-validate`: blank source -> `valid:false` without saving; otherwise remember the
+/// source in the settings and validate it (directory or zip).
+pub fn validate_enhanced(core: &Core, dump_source: &str) -> AppResult<ValidateReply> {
+    let source = dump_source.trim();
+    if source.is_empty() {
+        return Ok(ValidateReply { ok: true, valid: false, message: "Select a dump source first.".into(), state: State::build(core) });
+    }
+    core.update_settings(|s| s.set_str("enhanced_dump_source", source))
+        .map_err(|e| AppError::new(crate::pyfmt::io_error_text(&e, Some(&core.paths.settings))))?;
+    let valid = files::validate_dump_source(core, Path::new(source));
+    Ok(ValidateReply {
+        ok: true,
+        valid,
+        message: if valid { "Source looks ready." } else { "Source is missing required dump files." }.into(),
+        state: State::build(core),
+    })
+}
+
+// ---- enhanced-uninstall ---------------------------------------------------------------------
+
+/// Legacy `_uninstall_enhanced`: remove/restore the Enhanced files, run the Linux Steam cleanup
+/// and mark the exe variant `default`. `Err` carries the legacy exception text. Also what
+/// reset-to-stock calls when Enhanced files are present.
+pub fn uninstall_enhanced(core: &Core, game_dir: &Path) -> Result<(), String> {
+    if !files::uninstall_enhanced_files(core, game_dir, &core.paths.mod_files) {
+        return Err("BO3 Enhanced uninstall failed.".into());
+    }
+    if crate::paths::system_name() == "Linux" && !linux::cleanup_bo3_enhanced_linux(core) {
+        return Err("BO3 Enhanced files were removed, but Linux compatibility cleanup was incomplete.".into());
+    }
+    crate::game::write_exe_variant(game_dir, "default");
+    core.log.success("Uninstalled BO3 Enhanced successfully.");
+    Ok(())
+}
+
+pub fn uninstall_enhanced_op(core: &Core) -> AppResult<State> {
+    let game_dir = core.game_dir().ok_or_else(|| AppError::new(NO_GAME_DIR))?;
+    if let Err(e) = uninstall_enhanced(core, Path::new(&game_dir)) {
+        core.log.error(format!("BO3 Enhanced uninstall failed: {e}"));
+        return Err(AppError::new(e));
+    }
+    Ok(State::build(core))
+}
+
+// ---- exe swap -------------------------------------------------------------------------------
+
+/// Shared endpoint skeleton: game dir check, run, log `<prefix> failed: <err>`.
+fn swap_op(core: &Core, failure_prefix: &str, run: impl FnOnce(&Swap, &Path) -> Result<(), SwapError>) -> AppResult<State> {
+    let game_dir = core.game_dir().ok_or_else(|| AppError::new(NO_GAME_DIR))?;
+    let builds = KnownBuilds::production();
+    let swap = Swap::for_op(core, &builds);
+    match run(&swap, Path::new(&game_dir)) {
+        Ok(()) => Ok(State::build(core)),
+        Err(SwapError::DepotRequired) => {
+            let msg = SwapError::DepotRequired.to_string();
+            core.log.info(&msg);
+            Err(AppError::new(msg)
+                .with_extra("depotRequired", Value::Bool(true))
+                .with_extra("depotCommand", Value::String(COMPATIBLE_DEPOT_COMMAND.into()))
+                .with_state(State::build(core)))
+        }
+        Err(SwapError::Msg(m)) => {
+            core.log.error(format!("{failure_prefix} failed: {m}"));
+            Err(AppError::new(m))
+        }
+    }
+}
+
+/// `exe-swap/compatible`: `depotRequired` responses carry the depot command and the state.
+pub fn install_compatible_exe_op(core: &Core) -> AppResult<State> {
+    swap_op(core, "Compatible EXE swap", |s, g| s.install_compatible_exe(g))
+}
+
+pub fn restore_current_exe_op(core: &Core) -> AppResult<State> {
+    swap_op(core, "Current EXE restore", |s, g| s.restore_current_exe(g))
+}
+
+pub fn restore_enhanced_exe_op(core: &Core) -> AppResult<State> {
+    swap_op(core, "Enhanced EXE restore", |s, g| s.restore_enhanced_exe(g))
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DepotStatus {
+    pub ok: bool,
+    pub available: bool,
+    pub state: State,
+}
+
+/// `exe-swap/compatible-depot`: is the compatible depot downloaded (exe non-empty + install script)?
+pub fn compatible_depot_status(core: &Core) -> AppResult<DepotStatus> {
+    let available = crate::enhanced::exe::compatible_depot_download_exists(core);
+    Ok(DepotStatus { ok: true, available, state: State::build(core) })
+}
+
+/// Reset-to-stock helper: the legacy `_restore_current_exe` (`Err` = exception text; the caller
+/// logs `Executable reset step failed: ...`).
+pub fn restore_current_exe(core: &Core, game_dir: &Path) -> Result<(), String> {
+    crate::enhanced::exe::restore_current_exe(core, game_dir)
+}
+
+/// Reset-to-stock helper: profile (`current|compatible|enhanced|""`) of the active executable.
+pub fn active_exe_profile(core: &Core, game_dir: &Path) -> &'static str {
+    crate::enhanced::exe::active_exe_profile(core, game_dir)
+}
+
+// ---- state ----------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -90,23 +238,40 @@ pub struct ExeSwapState {
     pub enhanced_active: bool,
 }
 
-/// TODO(enhanced agent): real implementation (`status_summary`, `load_state`). Stub = no-game defaults.
+/// Legacy `_enhanced_status`. Like the original it may rewrite `bo3_enhanced_state.json`
+/// (stale `installed` flag, see [`state_file::status_summary`]).
 pub fn enhanced_state(cx: &StateCx) -> EnhancedState {
+    let core = cx.core;
+    let tracked = state_file::installed_files_len(&state_file::load_state(core));
+    let dump_source = core.settings().enhanced_dump_source().to_string();
+    let Some(game_dir) = cx.game_dir.as_deref() else {
+        return EnhancedState {
+            installed: false,
+            detected_at: None,
+            acknowledged_at: None,
+            launch_options_active: false,
+            dump_source,
+            files_installed: tracked as i64,
+            backup_status: "Not created".into(),
+        };
+    };
+    let summary = state_file::status_summary(core, Path::new(game_dir));
+    let options = cx.launch_options.as_deref().unwrap_or("");
     EnhancedState {
-        installed: false,
-        detected_at: None,
-        acknowledged_at: None,
-        launch_options_active: false,
-        dump_source: cx.core.settings().enhanced_dump_source().to_string(),
-        files_installed: 0,
-        backup_status: "Not created".into(),
+        installed: summary.installed,
+        detected_at: summary.detected_at,
+        acknowledged_at: summary.acknowledged_at,
+        launch_options_active: options.to_lowercase().contains("windowscodecs=n,b"),
+        dump_source,
+        files_installed: tracked as i64,
+        backup_status: if summary.installed && tracked > 0 { "Created" } else { "Not created" }.into(),
     }
 }
 
 pub const EXPECTED_ENHANCED_FILES: [&str; 4] = ["T7WSBootstrapper.dll", "T7InternalWS.dll", "steam_api65.dll", "WindowsCodecs.dll"];
 
-/// Legacy `detect_enhanced_install`: all four Enhanced DLLs are present.
-pub fn detect_enhanced_install(game_dir: &std::path::Path) -> bool {
+/// Legacy `detect_enhanced_install`: all four Enhanced DLLs are present ("Enhanced files present").
+pub fn detect_enhanced_install(game_dir: &Path) -> bool {
     EXPECTED_ENHANCED_FILES.iter().all(|f| game_dir.join(f).exists())
 }
 
@@ -137,65 +302,53 @@ pub struct Integrity {
     pub message: String,
 }
 
+/// `_executable_integrity_status` against the production hash table.
 pub fn executable_integrity(exe_hash: &str, exists: bool, enhanced_active: bool, enhanced_hash_known: bool) -> Integrity {
-    let h = exe_hash.to_lowercase();
-    if !exists {
-        return Integrity { trusted: false, status: "missing", profile: "", message: "BlackOps3.exe or BlackOpsIII.exe was not found.".into() };
-    }
-    if h == DEFAULT_STEAM_EXE_SHA256.to_lowercase() {
-        return Integrity { trusted: true, status: "trusted", profile: "current", message: format!("Executable matches latest Steam BuildID {CURRENT_STEAM_BUILD_ID}.") };
-    }
-    if COMPATIBLE_BUILD_SHA256.contains(&h.as_str()) {
-        return Integrity { trusted: true, status: "trusted", profile: "compatible", message: format!("Executable matches compatible BuildID {COMPATIBLE_STEAM_BUILD_ID}.") };
-    }
-    if enhanced_active || enhanced_hash_known {
-        return Integrity { trusted: true, status: "enhanced", profile: "enhanced", message: "Executable is managed by BO3 Enhanced.".into() };
-    }
-    let short: String = if h.is_empty() { "unreadable".into() } else { h.chars().take(12).collect() };
-    Integrity {
-        trusted: false,
-        status: "unverified",
-        profile: "",
-        message: format!(
-            "Active executable hash {short} does not match latest BuildID {CURRENT_STEAM_BUILD_ID}, compatible BuildID {COMPATIBLE_STEAM_BUILD_ID}, or a PatchOpsIII-preserved Enhanced EXE."
-        ),
-    }
+    crate::enhanced::exe::integrity(&KnownBuilds::production(), exe_hash, exists, enhanced_active, enhanced_hash_known)
 }
 
-/// Legacy `_exe_swap_status`.
-///
-/// TODO(enhanced agent): `backup_available`/`latest_available`/`compatible_available`/
-/// `enhanced_available` need the validated-backup helpers (`_validated_*_backup_path`); they are
-/// `false` here (correct for a fresh install without preserved executables).
+/// Legacy `_exe_swap_status` (production hash table). The exe digest comes from a
+/// signature-validated cache, so `status` does not re-read a 100+ MB executable.
 pub fn exe_swap_state(cx: &StateCx) -> ExeSwapState {
-    let game = cx.game_dir.as_deref().map(std::path::Path::new);
+    exe_swap_state_with(cx, &KnownBuilds::production())
+}
+
+/// [`exe_swap_state`] with an explicit known-hash table (tests).
+pub fn exe_swap_state_with(cx: &StateCx, builds: &KnownBuilds) -> ExeSwapState {
+    let game = cx.game_dir.as_deref().map(Path::new);
     let exe = game.and_then(crate::game::find_executable);
-    let hash = exe.as_deref().and_then(crate::hash::file_sha256).unwrap_or_default().to_lowercase();
+    let hash = exe.as_deref().and_then(hashcache::file_sha256_cached).unwrap_or_default().to_lowercase();
     let enhanced_active = game.is_some_and(detect_enhanced_install);
     let known = known_enhanced_hashes(cx.core, cx.game_dir.as_deref());
-    let integ = executable_integrity(&hash, exe.is_some(), enhanced_active, known.contains(&hash));
+    let integ = crate::enhanced::exe::integrity(builds, &hash, exe.is_some(), enhanced_active, known.contains(&hash));
     let mut profile = integ.profile.to_string();
     if profile.is_empty() {
         profile = game.and_then(crate::game::read_exe_variant).unwrap_or_default();
     }
     let (active_id, active_date) = if exe.is_none() {
         ("Unknown", "")
-    } else if profile == "enhanced" {
+    } else if profile == ENHANCED_EXE_ID {
         ("Enhanced", "")
-    } else if profile == "compatible" {
+    } else if profile == COMPATIBLE_EXE_ID {
         (COMPATIBLE_STEAM_BUILD_ID, COMPATIBLE_STEAM_BUILD_DATE)
-    } else if profile == "current" || profile == "default" {
-        profile = "current".into();
+    } else if profile == CURRENT_EXE_ID || profile == "default" {
+        profile = CURRENT_EXE_ID.into();
         (CURRENT_STEAM_BUILD_ID, CURRENT_STEAM_BUILD_DATE)
     } else {
         ("Unverified", "")
     };
-    let patch_label = if profile == "compatible" { "T7 Patch 2.04" } else { T7_PATCH_LABEL_CURRENT };
+
+    let swap = Swap::for_state(cx.core, builds);
+    let latest_available = exe.as_deref().is_some_and(|e| swap.validated_latest_build_backup_path(e, false).is_some());
+    let compatible_available = exe.as_deref().is_some_and(|e| swap.validated_preserved_compatible_exe(e, false).is_some());
+    let enhanced_backup = exe.as_deref().is_some_and(|e| swap.validated_enhanced_backup_path(game, e, false).is_some());
+
+    let patch_label = if profile == COMPATIBLE_EXE_ID { "T7 Patch 2.04" } else { T7_PATCH_LABEL_CURRENT };
     ExeSwapState {
         mode_label: match profile.as_str() {
-            "compatible" => "Compatible EXE",
-            "current" => "Current EXE",
-            "enhanced" => "Enhanced",
+            COMPATIBLE_EXE_ID => "Compatible EXE",
+            CURRENT_EXE_ID => "Current EXE",
+            ENHANCED_EXE_ID => "Enhanced",
             _ => "Unknown",
         }
         .into(),
@@ -216,12 +369,12 @@ pub fn exe_swap_state(cx: &StateCx) -> ExeSwapState {
         trusted_executable: integ.trusted,
         integrity_status: integ.status.into(),
         integrity_message: integ.message,
-        backup_available: false,
-        latest_available: false,
-        compatible_available: false,
-        enhanced_available: profile == "enhanced",
-        compatible_active: profile == "compatible",
-        enhanced_exe_active: profile == "enhanced",
+        backup_available: latest_available,
+        latest_available,
+        compatible_available,
+        enhanced_available: enhanced_backup || profile == ENHANCED_EXE_ID,
+        compatible_active: profile == COMPATIBLE_EXE_ID,
+        enhanced_exe_active: profile == ENHANCED_EXE_ID,
         enhanced_active,
         profile,
     }
