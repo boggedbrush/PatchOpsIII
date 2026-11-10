@@ -21,6 +21,10 @@ fn main() {
     #[cfg(feature = "debug-log")]
     env_logger::init();
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // Hidden elevated-helper commands (e.g. the Windows T7 Patch install child).
+    if let Some(code) = patchops_core::cli::run_cli_command(&args) {
+        std::process::exit(code);
+    }
     if args.iter().any(|a| a == "--version") {
         println!("patchops {}", patchops_core::version());
         return;
