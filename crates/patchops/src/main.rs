@@ -96,8 +96,9 @@ fn check_display() -> Result<(), String> {
 }
 
 /// Append panics (message, location, thread) to the PatchOpsIII log file before the default hook
-/// runs, in GUI and RPC modes alike. Uses a fresh file-only `Logger` on the core's log path rather
-/// than a `Core`: the hook can run while the panicking thread holds one of core's locks.
+/// runs, in GUI and RPC modes alike. Uses the append-only `log::append_line` on the core's log path
+/// rather than a `Core`/`Logger`: the hook can run while the panicking thread holds one of core's
+/// locks, and it must never stat, trim or rotate (a second trimmer is what lost lines).
 fn install_panic_hook() {
     let log_path = patchops_core::paths::Paths::from_env().log;
     let default = std::panic::take_hook();
@@ -111,7 +112,7 @@ fn install_panic_hook() {
         let at = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_else(|| "unknown location".into());
         let thread = std::thread::current();
         let line = format!("panic in thread '{}': {msg} at {at}", thread.name().unwrap_or("<unnamed>"));
-        patchops_core::log::Logger::new(log_path.clone()).log_file_only(patchops_core::log::Category::Error, line);
+        patchops_core::log::append_line(&log_path, patchops_core::log::Category::Error, &line);
         default(info);
     }));
 }

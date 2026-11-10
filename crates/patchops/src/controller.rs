@@ -239,7 +239,16 @@ impl Controller {
         this.push_logs(early, cx);
         this.boot(cx);
         this.detect_legacy(cx);
+        this.trim_log(cx);
         this
+    }
+
+    /// Start-up bound of the app log (a 2 MiB read plus writes and fsyncs when it is over the cap;
+    /// a single stat otherwise), off the main thread so it cannot delay the first frame. This is the
+    /// only process kind that trims at start-up; appends enforce the cap afterwards.
+    fn trim_log(&mut self, cx: &mut Context<Self>) {
+        let core = self.core.clone();
+        cx.background_executor().spawn(async move { core.log.trim_if_needed() }).detach();
     }
 
     // ---- reading -------------------------------------------------------------------------

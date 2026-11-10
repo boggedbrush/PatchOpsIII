@@ -29,6 +29,9 @@ pub fn run_cli_command_with(core: &Core, net: &Net, args: &[String]) -> Option<i
     if args.first().map(String::as_str) != Some(INSTALL_T7_FLAG) {
         return None;
     }
+    // The elevated child only appends a few lines; trimming belongs to the GUI process (a trim here
+    // could race its appends and its own trim).
+    core.log.disable_trim();
     let Some(game_dir) = args.get(1) else {
         core.log.error("T7 Patch install failed: game directory was not provided.");
         return Some(2);
@@ -77,6 +80,11 @@ mod tests {
         let other = d.join("empty");
         std::fs::create_dir_all(&other).unwrap();
         assert_eq!(run_cli_command_with(&core, &Net::local("http://127.0.0.1:9"), &[INSTALL_T7_FLAG.into(), other.display().to_string()]), Some(1));
+        // The elevated child never trims, even over the cap.
+        std::fs::write(&core.paths.log, "x".repeat(crate::log::LOG_MAX_BYTES as usize + 10)).unwrap();
+        assert_eq!(run_cli_command_with(&core, &Net::local("http://127.0.0.1:9"), &[INSTALL_T7_FLAG.into(), other.display().to_string()]), Some(1));
+        assert!(std::fs::metadata(&core.paths.log).unwrap().len() > crate::log::LOG_MAX_BYTES);
+        assert!(!core.paths.log.with_extension("log.1").exists());
         let _ = std::fs::remove_dir_all(&d);
     }
 

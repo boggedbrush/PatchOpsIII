@@ -50,12 +50,19 @@ compares the log lines each step appends. Default binary: `target/debug/patchops
 
 ## Log retention
 
-`<appdata>/PatchOpsIII.log` is size-bounded (`log::LOG_MAX_BYTES` / `LOG_KEEP_BYTES`): when it exceeds 2 MiB (checked at
-logger start-up and on append, using an in-memory size, no extra syscalls per append) the newest 512 KiB, cut forward to a
-whole line, stay in the log and the older content moves to `PatchOpsIII.log.1` (a single generation, replaced on each
-trim, never part of the copy-logs payload). Below the cap nothing is touched. If the trim cannot be done (unwritable
-directory, Windows rename against an open handle) the log is left as is and retried only after it grows another MiB; a
-single line longer than the retained size rotates out whole. `maintenance.logPayload` is a lazy value (`ops::basics::
+`<appdata>/PatchOpsIII.log` is size-bounded (`log::LOG_MAX_BYTES` / `LOG_KEEP_BYTES`): when it exceeds 2 MiB the newest 512 KiB,
+cut forward to a whole line, stay in the log and the older content moves to `PatchOpsIII.log.1` (a single generation, replaced
+on each trim, same permission bits as the log, never part of the copy-logs payload; `Clear Logs` removes it too). Below the cap
+nothing is touched. The cap is checked on append (in-memory size, no extra syscalls per append) and, only in the GUI process, once
+at start-up from a background thread (`Logger::trim_if_needed`; `Logger::new`/`Core::new` never touch the file, so nothing
+delays the first frame). The hidden elevated CLI child never trims (`Logger::disable_trim`) and the GUI's panic hook uses the
+append-only `log::append_line`. A trim takes a `PatchOpsIII.log.trim` lock file (so two processes never trim at once), prepares
+the new `.1` and the new log completely, and carries every line appended to the old file while it worked into the new log, so
+no line is lost (a line written during the final swap can land a few lines out of order; abandoned or failed attempts can leave
+duplicates across `.1` and the log, never gaps). If the trim cannot be done (unwritable directory, Windows rename against an
+open handle) the log is left as is and retried only after it grows another MiB (64 KiB after an abandoned attempt); the back-off
+is dropped as soon as the real size is seen at or below the cap again. A single line longer than the retained size rotates out
+whole. `maintenance.logPayload` is a lazy value (`ops::basics::
 LogPayload`): building a `State` only captures a handle, the text is produced from a per-`Logger` cache (validated by one
 `stat` of `(len, mtime)` per use, invalidated on append/clear/trim) when something serialises it. The RPC/JSON path (and the
 GUI's in-process bench RPC) therefore still returns the full field, byte-identical to before; the GUI's typed refreshes

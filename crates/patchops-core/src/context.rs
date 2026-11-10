@@ -53,6 +53,8 @@ impl Core {
         Core::with_paths(Paths::from_env(), crate::paths::app_version())
     }
 
+    /// Creating a `Core` never touches the log file (no start-up trim): the GUI calls
+    /// `core.log.trim_if_needed()` off the main thread, the elevated CLI child never trims.
     pub fn with_paths(paths: Paths, version: String) -> Core {
         let log = Logger::new(paths.log.clone());
         Core { paths, log, version, settings_cache: Mutex::new(None),
