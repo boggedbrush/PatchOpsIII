@@ -54,9 +54,13 @@ The MSI ProductVersion is the numeric `x.y.z.0` part.
     all-users shortcuts. Users who did that should re-run the MSI (repair).
   * The app shows the notice only when the NSIS folder is known (`InstallLocation`, else the folder of the quoted `UninstallString` path),
     still contains `Uninstall PatchOpsIII.exe`, does not contain the running exe, and is not (and does not contain) the MSI's folder. The MSI
-    folder is read from `HKLM\Software\PatchOpsIII` value `InstallLocation` (written by `PatchOpsIII.wxs`; absent for older MSIs) and
-    `%ProgramFiles%\PatchOpsIII` is always checked as well. In any doubtful case it stays silent, including the stale all-users entry that
-    points at the MSI's folder (cosmetic: one extra Apps entry).
+    folder is `HKLM\Software\PatchOpsIII` value `InstallLocation` (written by `PatchOpsIII.wxs`) when that value is present and non-empty,
+    and only that: a new MSI in a custom folder therefore no longer hides an all-users NSIS install in `%ProgramFiles%\PatchOpsIII`.
+    `%ProgramW6432%` / `%ProgramFiles%` `\PatchOpsIII` are used only when the value is absent (older MSI, or no MSI). In any doubtful case it
+    stays silent, including the stale all-users entry that points at the MSI's folder (cosmetic: one extra Apps entry).
+  * Known false negative, kept on purpose: an all-users NSIS install in Program Files plus a portable-only user (no MSI, hence no
+    `InstallLocation`) stays silent, because without the Windows Installer API it looks the same as an NSIS install the MSI overwrote.
+    A missed notice is the safe direction; the app never points the user's uninstaller at the new app.
 * Release builds are GUI-subsystem; with command-line arguments (`--version`, `--rpc-stdio`, hidden CLI) the process attaches to the
   parent console and keeps inherited pipes untouched (`console` module in `crates/patchops/src/main.rs`).
 * Local build: `cargo build --release --locked -p patchops; dotnet tool install --global wix --version 5.0.2; ./packaging/windows/package.ps1`.

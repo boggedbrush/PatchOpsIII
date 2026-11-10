@@ -31,13 +31,22 @@
 //!    worth a notice);
 //! 3. the running executable is not inside it (portable copy or the new install living there);
 //! 4. the new MSI's install directory is not that directory and not inside it. The MSI directory is
-//!    taken from `HKLM\Software\PatchOpsIII` `InstallLocation` (written by the MSI) *and* the default
-//!    `%ProgramFiles%\PatchOpsIII` (older MSIs, and the wizard's default), both checked.
+//!    `HKLM\Software\PatchOpsIII` `InstallLocation` (written by the MSI) when that value is present
+//!    and non-empty, and **only** that (see [`msi_candidates`]); the `%ProgramW6432%` /
+//!    `%ProgramFiles%` `\PatchOpsIII` defaults are used only when the value is absent (an older MSI,
+//!    or no MSI at all). So a new MSI in a custom folder no longer hides an all-users NSIS install
+//!    in Program Files, which is then a separate install worth reporting.
 //!
 //! The common trap: an all-users NSIS install is in `%ProgramFiles%\PatchOpsIII`, exactly where the
 //! MSI installs. The MSI overwrites the NSIS files and the HKLM NSIS entry is merely stale; running
 //! its uninstaller would delete the new app and its all-users shortcuts. The app shows nothing there
 //! (cosmetic: one extra entry in Settings -> Apps).
+//!
+//! Known, accepted false negative: an all-users NSIS install in Program Files plus a portable-only
+//! user (the new MSI is not installed, so no `InstallLocation`) is indistinguishable, without
+//! calling the Windows Installer API, from the trap above (NSIS install overwritten by the MSI),
+//! so it stays silent. That errs in the safe direction: a missed notice, never an uninstaller
+//! pointed at the new app. No MSI-API FFI is used on purpose.
 
 use std::path::{Path, PathBuf};
 
@@ -175,21 +184,27 @@ pub fn detect_with(read: impl Fn(Root, &str, &str) -> Option<String>, env: &Env)
     None
 }
 
+/// Directories the new MSI may be installed in: the registered `InstallLocation` alone when it is
+/// present and non-empty, else the Program Files defaults (older MSIs, no MSI).
+pub fn msi_candidates(registered: Option<&str>, defaults: &[PathBuf]) -> Vec<PathBuf> {
+    match registered.map(|d| d.trim().trim_matches('"').trim()).filter(|d| !d.is_empty()) {
+        Some(d) => vec![PathBuf::from(d)],
+        None => defaults.to_vec(),
+    }
+}
+
 /// Real registry / file system read on Windows, `None` elsewhere.
 pub fn detect() -> Option<LegacyInstall> {
     #[cfg(windows)]
     {
         use crate::winreg::{read_string, Hive};
         let exe = std::env::current_exe().ok();
-        let mut msi_dirs: Vec<PathBuf> = Vec::new();
-        if let Some(d) = read_string(Hive::LocalMachine, MSI_KEY, "InstallLocation").filter(|d| !d.trim().is_empty()) {
-            msi_dirs.push(PathBuf::from(d.trim().trim_matches('"')));
-        }
-        for var in ["ProgramW6432", "ProgramFiles"] {
-            if let Some(pf) = std::env::var_os(var) {
-                msi_dirs.push(Path::new(&pf).join("PatchOpsIII"));
-            }
-        }
+        let defaults: Vec<PathBuf> = ["ProgramW6432", "ProgramFiles"]
+            .iter()
+            .filter_map(|var| std::env::var_os(var))
+            .map(|pf| Path::new(&pf).join("PatchOpsIII"))
+            .collect();
+        let msi_dirs = msi_candidates(read_string(Hive::LocalMachine, MSI_KEY, "InstallLocation").as_deref(), &defaults);
         detect_with(
             |root, sub, val| {
                 read_string(
@@ -332,6 +347,39 @@ mod tests {
         // An MSI folder *inside* the NSIS folder would be deleted with it.
         w.msi = vec![PathBuf::from(format!(r"{custom}\app"))];
         assert_eq!(run(&r, &w, Some(r"D:\x\PatchOpsIII.exe")), None);
+    }
+
+    #[test]
+    fn msi_candidates_use_the_registered_folder_alone() {
+        let defaults = [PathBuf::from(PF_DIR), PathBuf::from(r"C:\Program Files (x86)\PatchOpsIII")];
+        // Registered (quotes and blanks tolerated): only it.
+        assert_eq!(msi_candidates(Some(r#" "D:\Apps\PatchOpsIII\" "#), &defaults), vec![PathBuf::from(r"D:\Apps\PatchOpsIII\")]);
+        // Absent or empty: the defaults.
+        assert_eq!(msi_candidates(None, &defaults), defaults.to_vec());
+        assert_eq!(msi_candidates(Some("  "), &defaults), defaults.to_vec());
+        assert_eq!(msi_candidates(Some(r#""""#), &defaults), defaults.to_vec());
+    }
+
+    #[test]
+    fn case_d_nsis_in_program_files_with_the_msi_in_a_custom_folder_is_reported() {
+        // The new MSI recorded D:\Apps\PatchOpsIII, so Program Files holds a genuinely separate NSIS install.
+        let mut r = Reg::new();
+        put_install(&mut r, Root::LocalMachine, PF_DIR);
+        let mut w = World::new(&[PF_DIR]);
+        w.msi = msi_candidates(Some(r"D:\Apps\PatchOpsIII"), &[PathBuf::from(PF_DIR)]);
+        let l = run(&r, &w, Some(r"D:\Apps\PatchOpsIII\PatchOpsIII.exe")).unwrap();
+        assert_eq!((l.scope, l.install_dir), (Scope::Machine, Some(PathBuf::from(PF_DIR))));
+    }
+
+    #[test]
+    fn case_c_all_users_nsis_with_a_portable_exe_and_no_msi_stays_silent() {
+        // Deliberate false negative (see the module docs): without an MSI InstallLocation this cannot
+        // be told apart from an NSIS install the MSI overwrote, and silence is the safe side.
+        let mut r = Reg::new();
+        put_install(&mut r, Root::LocalMachine, PF_DIR);
+        let mut w = World::new(&[PF_DIR]);
+        w.msi = msi_candidates(None, &[PathBuf::from(PF_DIR)]);
+        assert_eq!(run(&r, &w, Some(r"C:\Users\a\Downloads\PatchOpsIII.exe")), None);
     }
 
     #[test]
