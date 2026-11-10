@@ -202,8 +202,9 @@ fn labelled(label: &str, body: impl IntoElement, cx: &Context<T7View>) -> gpui::
 }
 
 impl Render for T7View {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = *cx.theme();
+        let cw = views::content_width(window);
         let ctl = self.c.read(cx);
         let Some(state) = ctl.state().cloned() else {
             return div().into_any_element();
@@ -281,19 +282,22 @@ impl Render for T7View {
             .busy(busy("t7-uninstall"))
             .full_width()
             .on_click(views::run_confirmed(&c, Action::T7Uninstall));
+        // Wide: the legacy fixed 400px actions column. Narrow (legacy `.t7-actions` -> 1 column):
+        // the buttons get their own full-width line and wrap again when even that is too tight.
+        let wide = cw >= 1040.;
         let mut actions = div()
-            .flex_none()
-            .w(px(400.))
             .flex()
             .flex_col()
             .justify_center()
             .gap(px(6.))
+            .map(|d| if wide { d.flex_none().w(px(400.)) } else { d.w_full().flex_none() })
             .child(
                 div()
                     .flex()
+                    .flex_wrap()
                     .gap(px(10.))
-                    .child(div().flex_1().min_w_0().child(install))
-                    .child(div().flex_1().min_w_0().child(uninstall)),
+                    .child(div().flex_1().min_w(px(190.)).child(install))
+                    .child(div().flex_1().min_w(px(190.)).child(uninstall)),
             );
         if installing {
             actions = actions.child(
@@ -316,6 +320,7 @@ impl Render for T7View {
         let overview = Panel::new("T7 Patch").child(
             div()
                 .flex()
+                .flex_wrap()
                 .gap(px(10.))
                 .child(module)
                 .child(pill(StatusPill::new(
@@ -364,12 +369,17 @@ impl Render for T7View {
                     }),
             )
         };
+        let per_row = if (730.0..1000.0).contains(&cw) { 4 } else { 5 };
         let colors = div()
             .flex()
             .flex_col()
             .gap(px(8.))
-            .child(div().flex().gap(px(8.)).children((0..5).map(chip)))
-            .child(div().flex().gap(px(8.)).children((5..10).map(chip)));
+            .children(
+                // 5 per row, except while the two panels share a row in a narrow window (4 per row).
+                (0..10usize)
+                    .step_by(per_row)
+                    .map(|start| div().flex().gap(px(8.)).children((start..(start + per_row).min(10)).map(chip))),
+            );
         let saved_tile = div()
             .flex_1()
             .min_w_0()
@@ -446,9 +456,8 @@ impl Render for T7View {
                         }
                     })),
             ))
-            .child(div().flex_1().min_w_0().child({
-                let name = name_text.clone();
-                let color = self.color.clone();
+            .child(div().flex_1().min_w_0().child(
+                // Reads the form at click time (a same-frame click can follow the last keystroke).
                 Button::new("t7-gt-save", "Update Gamertag")
                     .small()
                     .primary()
@@ -456,8 +465,12 @@ impl Render for T7View {
                     .full_width()
                     .disabled(!conf)
                     .busy(busy("t7-gamertag"))
-                    .on_click(views::run(&c, Action::T7Gamertag { name, color_code: color }))
-            }));
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        let name = this.name.read(cx).text().to_string();
+                        let color_code = this.color.clone();
+                        this.c.update(cx, |c, cx| c.run(Action::T7Gamertag { name, color_code }, cx));
+                    })),
+            ));
         let gamertag = Panel::new("Gamertag").child(
             div()
                 .flex()
@@ -498,8 +511,6 @@ impl Render for T7View {
             .px(px(12.))
             .border_b_1()
             .border_color(t.border)
-            .tab_index(if pw_toggle_disabled { -1 } else { 0 })
-            .focus(move |s| s.border_color(t.focus_ring))
             .map(|d| {
                 if pw_toggle_disabled {
                     d
@@ -512,8 +523,15 @@ impl Render for T7View {
                 }
             })
             .child(div().text_color(t.text_strong).child("Network Password"))
-            // The row's own click handler does the toggling; the switch only needs the pointer cursor.
-            .child(Toggle::new("t7-pw-toggle", pw_enabled).disabled(pw_toggle_disabled).on_change(|_, _, _| {}));
+            // The switch is the keyboard stop (Space / Enter) and toggles by itself; it stops the click
+            // from reaching the row so a click on the switch does not toggle twice.
+            .child({
+                let sw_this = cx.entity();
+                Toggle::new("t7-pw-toggle", pw_enabled).disabled(pw_toggle_disabled).on_change(move |v, _, cx| {
+                    cx.stop_propagation();
+                    sw_this.update(cx, |view, cx| view.set_password_enabled(v, cx));
+                })
+            });
 
         let reveal = |id: &'static str, shown: bool, edit: bool| {
             let this = cx.entity();
@@ -585,8 +603,7 @@ impl Render for T7View {
                         }
                     })),
             ))
-            .child(div().flex_1().min_w_0().child({
-                let pw = pw_text.clone();
+            .child(div().flex_1().min_w_0().child(
                 Button::new("t7-sec-save", "Update Security")
                     .small()
                     .primary()
@@ -594,8 +611,11 @@ impl Render for T7View {
                     .full_width()
                     .disabled(!conf || !self.pw_enabled)
                     .busy(busy("t7-password"))
-                    .on_click(views::run(&c, Action::T7Password(pw)))
-            }));
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        let pw = this.password.read(cx).text().to_string();
+                        this.c.update(cx, |c, cx| c.run(Action::T7Password(pw), cx));
+                    })),
+            ));
         let security = Panel::new("Security").child(
             div()
                 .flex()

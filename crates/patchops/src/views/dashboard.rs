@@ -55,8 +55,9 @@ fn status_row(label: &str, ok: bool, detail: Option<String>) -> StatusRow {
 }
 
 impl Render for DashboardView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = *cx.theme();
+        let cw = views::content_width(window);
         let ctl = self.c.read(cx);
         let Some(state) = ctl.state().cloned() else {
             return div().into_any_element();
@@ -109,7 +110,6 @@ impl Render for DashboardView {
         // ---- Launch Options ---------------------------------------------------------------
         let selected = state.launch_profiles.iter().find(|p| p.id == self.selected);
         let installable = selected.is_some_and(|p| p.id != "default" && p.id != "offline");
-        let option = selected.map(|p| p.option.clone()).unwrap_or_default();
         let n = state.launch_profiles.len();
         let rows = state.launch_profiles.iter().enumerate().map(|(i, p)| {
             let this = cx.entity();
@@ -122,10 +122,12 @@ impl Render for DashboardView {
                 } else {
                     Tone::Danger
                 };
+                // Legacy `.profile-state`: right-aligned at its natural width; below 840px it becomes a
+                // 92px word-wrapping column (never ellipsised or cut mid-word).
                 div()
                     .flex_none()
-                    .max_w(px(160.))
-                    .truncate()
+                    .when(cw < 608., |d| d.w(px(120.)).line_height(px(15.)))
+                    .text_right()
                     .text_size(px(t.font_sm))
                     .font_weight(FontWeight::BOLD)
                     .text_color(tone.color(&t))
@@ -151,19 +153,24 @@ impl Render for DashboardView {
                 )
                 .children(tag)
         });
-        let btn = |b: Button| div().flex_1().min_w_0().child(b.small().full_width());
+        let btn = |b: Button| div().flex_1().min_w(px(110.)).child(b.small().full_width());
+        // Handlers read the selection (and its launch option) at click time, not render time.
         let launch_panel = Panel::new("Launch Options")
             .child(div().flex().flex_col().children(rows))
             .child(
                 div()
                     .flex()
+                    .flex_wrap()
                     .gap(px(10.))
                     .pt(px(12.))
                     .child(btn(
                         Button::new("profile-install", "Install Selected Mod")
                             .disabled(!installable)
                             .busy(busy("workshop-install"))
-                            .on_click(views::run(&c, Action::WorkshopInstall(self.selected.clone()))),
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let id = this.selected.clone();
+                                this.c.update(cx, |c, cx| c.run(Action::WorkshopInstall(id), cx));
+                            })),
                     ))
                     .child(btn(
                         Button::new("profile-refresh", "Refresh")
@@ -173,17 +180,31 @@ impl Render for DashboardView {
                     .child(btn(
                         Button::new("profile-apply", "Apply")
                             .busy(busy("launch-options"))
-                            .on_click(views::run(&c, Action::LaunchOptions { options: option, preserve_fs_game: false })),
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let option = this
+                                    .c
+                                    .read(cx)
+                                    .state()
+                                    .and_then(|s| s.launch_profiles.iter().find(|p| p.id == this.selected))
+                                    .map(|p| p.option.clone())
+                                    .unwrap_or_default();
+                                this.c.update(cx, |c, cx| {
+                                    c.run(Action::LaunchOptions { options: option, preserve_fs_game: false }, cx)
+                                });
+                            })),
                     )),
             );
 
         ScrollArea::new("dashboard-scroll").gap(px(PANEL_GAP))
-            .child(div().min_h(px(190.)).child(status))
+            .child(div().flex_none().min_h(px(190.)).child(status))
             .child(
                 div()
                     .flex()
+                    .flex_none()
                     .flex_wrap()
-                    .items_end()
+                    // Legacy `.dashboard-split { align-items: end }` (app.css:899): the shorter panel
+                    // sits on the row's bottom edge; `start` once stacked (<= 980px rules).
+                    .when(cw >= 760., |d| d.items_end())
                     .gap(px(PANEL_GAP))
                     .child(div().flex_1().min_w(px(360.)).child(qol_panel))
                     .child(div().flex_1().min_w(px(360.)).child(launch_panel)),

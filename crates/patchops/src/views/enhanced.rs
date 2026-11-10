@@ -166,17 +166,78 @@ fn summary_line(t: &Theme, key: &'static str, value: &'static str) -> impl IntoE
         .child(value)
 }
 
-/// `state.enhanced.detected_at` is a UTC ISO string (`2026-11-10T14:03:22Z`).
-fn utc_display(raw: Option<&str>) -> String {
-    match raw.filter(|s| !s.is_empty()) {
-        Some(s) => format!("{} UTC", s.replace('T', " ").trim_end_matches('Z')),
-        None => "Never".into(),
+/// Days since 1970-01-01 of a proleptic Gregorian date (Howard Hinnant's `days_from_civil`).
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + d - 1;
+    era * 146_097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719_468
+}
+
+/// Inverse of [`days_from_civil`].
+fn civil_from_days(z: i64) -> (i64, i64, i64) {
+    let z = z + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    (yoe + era * 400 + i64::from(m <= 2), m, d)
+}
+
+/// Seconds the local clock is ahead of UTC right now (`clock` only knows "now" in local time, so
+/// the offset is the difference between its broken-down time and the UTC epoch; accurate to the
+/// current DST rule, which is what a timestamp from the same season needs).
+fn local_utc_offset_secs() -> i64 {
+    let l = clock::now();
+    let local = days_from_civil(i64::from(l.year), i64::from(l.month), i64::from(l.day)) * 86_400
+        + i64::from(l.hour) * 3600
+        + i64::from(l.minute) * 60
+        + i64::from(l.second);
+    let utc = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(local);
+    // Round to the nearest minute: the two clock reads are not atomic.
+    ((local - utc) as f64 / 60.0).round() as i64 * 60
+}
+
+/// `state.enhanced.detected_at` is a UTC ISO string (`2026-11-10T14:03:22Z`); legacy showed it with
+/// `toLocaleString()`, so show local time as `YYYY-MM-DD HH:MM:SS` (same format as the validation time).
+fn local_display(raw: Option<&str>) -> String {
+    let Some(raw) = raw.filter(|s| !s.is_empty()) else { return "Never".into() };
+    let parsed = (|| {
+        let (date, time) = raw.trim_end_matches('Z').split(['T', ' ']).filter(|p| !p.is_empty()).fold(
+            (None, None),
+            |(d, t), part| if d.is_none() { (Some(part), t) } else { (d, t.or(Some(part))) },
+        );
+        let mut dp = date?.split('-').map(|n| n.parse::<i64>().ok());
+        let (y, m, d) = (dp.next()??, dp.next()??, dp.next()??);
+        let time = time.unwrap_or("00:00:00").split(['.', '+']).next().unwrap_or("00:00:00");
+        let mut tp = time.split(':').map(|n| n.parse::<i64>().ok());
+        let (hh, mm, ss) = (tp.next()??, tp.next().flatten().unwrap_or(0), tp.next().flatten().unwrap_or(0));
+        Some(days_from_civil(y, m, d) * 86_400 + hh * 3600 + mm * 60 + ss)
+    })();
+    match parsed {
+        Some(utc) => {
+            let t = utc + local_utc_offset_secs();
+            let (y, m, d) = civil_from_days(t.div_euclid(86_400));
+            let sod = t.rem_euclid(86_400);
+            format!("{y:04}-{m:02}-{d:02} {:02}:{:02}:{:02}", sod / 3600, sod / 60 % 60, sod % 60)
+        }
+        None => raw.to_string(),
     }
 }
 
 impl Render for EnhancedView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = *cx.theme();
+        let cw = views::content_width(window);
+        let cols: u16 = if cw >= 900. { 4 } else if cw >= 480. { 2 } else { 1 };
+        let narrow = cw < 800.;
         let ctl = self.c.read(cx);
         let Some(state) = ctl.state().cloned() else {
             return div().into_any_element();
@@ -192,7 +253,7 @@ impl Render for EnhancedView {
         let status = Card::new().icon(Icon::Gem).title("BO3 Enhanced Status").child(
             div()
                 .grid()
-                .grid_cols(4)
+                .grid_cols(cols)
                 .gap(px(14.))
                 .child(stat(&t, "Status", if e.installed { "Installed" } else { "Not installed" }, Tone::from_ok(e.installed)))
                 .child(stat(
@@ -246,18 +307,23 @@ impl Render for EnhancedView {
         let validate = Button::new("enhanced-validate", "Validate Source")
             .icon(Icon::CircleCheck)
             .disabled(!has_source || validating)
-            .on_click(views::run(&c, Action::EnhancedValidate(source_trimmed.clone())));
+            .on_click(cx.listener(|this, _, _, cx| {
+                // Read the source at click time (a drop / browse result may have landed after render).
+                let source = this.source.trim().to_string();
+                this.c.update(cx, |c, cx| c.run(Action::EnhancedValidate(source), cx));
+            }));
 
         let meta = div()
             .flex()
+            .flex_wrap()
             .gap(px(12.))
-            .child(div().flex_1().min_w_0().child(stat(&t, "Source", source_label, Tone::Neutral)))
-            .child(
-                div()
-                    .flex_none()
-                    .w(px(150.))
-                    .child(stat(&t, "Validation", self.validation.display(), self.validation.tone())),
-            );
+            .child(div().flex_1().min_w(px(150.)).child(stat(&t, "Source", source_label, Tone::Neutral)))
+            .child(div().flex_1().min_w(px(150.)).child(stat(
+                &t,
+                "Validation",
+                self.validation.display(),
+                self.validation.tone(),
+            )));
 
         let install = Button::new("enhanced-install", "Install / Update BO3 Enhanced")
             .primary()
@@ -265,7 +331,10 @@ impl Render for EnhancedView {
             .full_width()
             .disabled(!has_source || !valid)
             .busy(installing)
-            .on_click(views::run(&c, Action::EnhancedInstall(self.source.clone())));
+            .on_click(cx.listener(|this, _, _, cx| {
+                let source = this.source.clone();
+                this.c.update(cx, |c, cx| c.run(Action::EnhancedInstall(source), cx));
+            }));
 
         let controls = div()
             .flex()
@@ -275,9 +344,10 @@ impl Render for EnhancedView {
             .child(
                 div()
                     .flex()
+                    .flex_wrap()
                     .gap(px(10.))
-                    .child(div().flex_1().min_w_0().child(browse.full_width()))
-                    .child(div().flex_1().min_w_0().child(validate.full_width())),
+                    .child(div().flex_1().min_w(px(150.)).child(browse.full_width()))
+                    .child(div().flex_1().min_w(px(170.)).child(validate.full_width())),
             )
             .child(meta)
             .child(install)
@@ -300,8 +370,8 @@ impl Render for EnhancedView {
                 .flex()
                 .flex_wrap()
                 .gap(px(12.))
-                .child(div().flex_1().min_w(px(200.)).child(drop))
-                .child(div().flex_1().min_w(px(200.)).child(controls)),
+                .child(div().flex_1().min_w(px(240.)).child(drop))
+                .child(div().flex_1().min_w(px(340.)).child(controls)),
         );
 
         // ---- Help / Requirements ----------------------------------------------------------
@@ -338,7 +408,7 @@ impl Render for EnhancedView {
             .items_start()
             .gap(px(PANEL_GAP))
             .child(div().flex_1().min_w(px(420.)).child(source_card))
-            .child(div().flex_none().w(px(300.)).child(help));
+            .child(div().flex_none().when(narrow, |d| d.w_full()).when(!narrow, |d| d.w(px(300.))).child(help));
 
         // ---- Install Details / Diagnostics ------------------------------------------------
         let install_path = match state.game_dir.as_deref().filter(|s| !s.is_empty()) {
@@ -348,9 +418,9 @@ impl Render for EnhancedView {
         let details = Card::new().title("Install Details / Diagnostics").child(
             div()
                 .grid()
-                .grid_cols(4)
+                .grid_cols(cols)
                 .gap(px(14.))
-                .child(stat(&t, "Last install", utc_display(e.detected_at.as_deref()), Tone::Neutral))
+                .child(stat(&t, "Last install", local_display(e.detected_at.as_deref()), Tone::Neutral))
                 .child(stat(
                     &t,
                     "Last validation",
@@ -401,15 +471,16 @@ impl Render for EnhancedView {
             .gap(px(PANEL_GAP))
             .child(
                 div()
+                    .flex_none()
                     .text_size(px(t.font_lg))
                     .font_weight(FontWeight::BOLD)
                     .text_color(t.text)
                     .child("Enhanced"),
             )
-            .child(status)
-            .child(main)
-            .child(details)
-            .child(danger)
+            .child(div().flex_none().child(status))
+            .child(div().flex_none().child(main))
+            .child(div().flex_none().child(details))
+            .child(div().flex_none().child(danger))
             .into_any_element()
     }
 }

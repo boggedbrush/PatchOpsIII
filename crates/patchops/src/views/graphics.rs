@@ -15,16 +15,18 @@
 
 use std::sync::Arc;
 
-use gpui::{div, prelude::*, px, Context, Entity, IntoElement, Render, Subscription, Window};
+use gpui::{div, prelude::*, px, AnyElement, Context, Entity, IntoElement, Render, Subscription, Window};
 use patchops_core::ops::dxvk::DxvkSettings;
 use patchops_core::State;
 
 use crate::actions::{Action, ConfigId, ConfigInput};
 use crate::controller::Controller;
+use crate::theme::ActiveTheme;
 use crate::views::{self, PANEL_GAP};
 use crate::widgets::{
     Button, Chip, Collapsible, Group, Icon, NumberInput, NumberInputEvent, Panel, ProgressBar, ScrollArea, Select,
     SelectEvent, SettingRow, Slider, SliderEvent, StatusPill, SubTabs, TextInput, TextInputEvent, Toggle, Tone,
+    tooltip,
 };
 
 const DISPLAY_MODES: [(&str, &str); 3] = [("0", "Windowed"), ("1", "Fullscreen"), ("2", "Fullscreen Windowed")];
@@ -59,6 +61,29 @@ fn dxvk_preset(name: &str) -> Option<DxvkSettings> {
 /// Legacy `detectedCompilerThreads`: logical cores - 2, at least 1.
 fn detected_threads() -> Option<i64> {
     std::thread::available_parallelism().ok().map(|n| (n.get() as i64 - 2).max(1))
+}
+
+/// Bordered tile row (legacy `.graphics-quick-grid .setting-row`): children laid out in a wrapping
+/// row, so controls drop under their label instead of being squeezed when the tile is narrow.
+fn tile_row(cx: &Context<GraphicsView>, children: impl IntoIterator<Item = AnyElement>) -> gpui::Div {
+    let t = *cx.theme();
+    div()
+        .flex()
+        .flex_wrap()
+        .items_center()
+        .gap_x(px(10.))
+        .gap_y(px(6.))
+        .min_h(px(t.row_h))
+        .min_w_0()
+        .px(px(14.))
+        .py(px(5.))
+        .border_1()
+        .border_color(t.border)
+        .rounded(px(t.radius - 4.))
+        .bg(gpui::white().opacity(0.03))
+        .text_size(px(t.font_md))
+        .text_color(t.text_strong)
+        .children(children)
 }
 
 pub struct GraphicsView {
@@ -258,6 +283,17 @@ impl GraphicsView {
         }
     }
 
+    /// The DXVK draft as of *now*: number inputs that are still being edited are committed first
+    /// (a same-frame click on Install / Apply can arrive before the blur commit reached the draft,
+    /// and the closure must not use a copy captured at render time).
+    fn live_draft(&mut self, cx: &mut Context<Self>) -> DxvkSettings {
+        let threads = self.dx_threads.update(cx, |n, cx| n.commit_if_editing(cx));
+        let latency = self.dx_latency.update(cx, |n, cx| n.commit_if_editing(cx));
+        self.draft.num_compiler_threads = (threads as i64).clamp(0, 64);
+        self.draft.max_frame_latency = latency as i64;
+        self.draft.clone()
+    }
+
     /// Push the DXVK draft into the DXVK widgets (no events).
     fn push_draft(&mut self, cx: &mut Context<Self>) {
         let d = self.draft.clone();
@@ -311,17 +347,21 @@ impl GraphicsView {
         let c = self.c.clone();
         let this = cx.entity();
         let (g, a) = (&state.graphics, &state.advanced);
-        let tile = |label: &'static str, w: f32, ctl: gpui::AnyElement| {
-            div().flex_1().min_w(px(280.)).child(SettingRow::new(label).control(div().w(px(w)).child(ctl)).boxed())
+        // Legacy `.graphics-quick-grid`: auto-fit columns of at least 220px; each tile is a bordered
+        // row with a label column (min 88px) and a control that fills the rest.
+        let tile = |label: &'static str, ctl: AnyElement| {
+            tile_row(cx, [div().flex_none().whitespace_nowrap().child(label).into_any_element(), div().flex_1().min_w(px(96.)).child(ctl).into_any_element()])
+                .flex_1()
+                .min_w(px(230.))
         };
         let quick = div()
             .flex()
             .flex_wrap()
             .gap(px(PANEL_GAP))
-            .child(tile("Preset", 200., self.preset.clone().into_any_element()))
-            .child(tile("Display Mode", 200., self.display.clone().into_any_element()))
-            .child(tile("Resolution", 130., self.resolution.clone().into_any_element()))
-            .child(tile("Refresh Rate", 100., self.refresh.clone().into_any_element()));
+            .child(tile("Preset", self.preset.clone().into_any_element()))
+            .child(tile("Display Mode", self.display.clone().into_any_element()))
+            .child(tile("Resolution", self.resolution.clone().into_any_element()))
+            .child(tile("Refresh Rate", self.refresh.clone().into_any_element()));
 
         let cfg_toggle = |id: &'static str, on: bool, cid: ConfigId| {
             let c = c.clone();
@@ -398,23 +438,27 @@ impl GraphicsView {
         let dx = &state.dxvk;
 
         let pill = |label: &'static str, value: &'static str, ok: bool| {
-            div().flex_1().min_w(px(180.)).child(StatusPill::new(label, value, Tone::from_ok(ok)))
+            div().flex_1().min_w(px(190.)).child(StatusPill::new(label, value, Tone::from_ok(ok)))
         };
         let actions = div()
             .flex_1()
-            .min_w(px(250.))
+            .min_w(px(330.))
             .flex()
+            .flex_wrap()
             .items_center()
             .gap(px(8.))
-            .child(div().flex_1().child(
+            .child(div().flex_1().min_w(px(100.)).child(
                 Button::new("dxvk-install", "Install")
                     .icon(Icon::Download)
                     .small()
                     .full_width()
                     .busy(installing)
-                    .on_click(views::run(&c, Action::DxvkInstall(d.clone()))),
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        let d = this.live_draft(cx);
+                        this.run(Action::DxvkInstall(d), cx);
+                    })),
             ))
-            .child(div().flex_1().child(
+            .child(div().flex_1().min_w(px(110.)).child(
                 Button::new("dxvk-uninstall", "Uninstall")
                     .icon(Icon::Trash2)
                     .small()
@@ -423,13 +467,16 @@ impl GraphicsView {
                     .busy(b_uninstall)
                     .on_click(views::run_confirmed(&c, Action::DxvkUninstall)),
             ))
-            .child(div().flex_1().child(
+            .child(div().flex_1().min_w(px(90.)).child(
                 Button::new("dxvk-apply", "Apply")
                     .icon(Icon::Save)
                     .small()
                     .full_width()
                     .busy(b_apply)
-                    .on_click(views::run(&c, Action::DxvkConfig(d.clone()))),
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        let d = this.live_draft(cx);
+                        this.run(Action::DxvkConfig(d), cx);
+                    })),
             ));
         let bar = div()
             .flex()
@@ -444,35 +491,52 @@ impl GraphicsView {
         let t2 = this.clone();
         let threads = d.num_compiler_threads;
         let detected = self.detected;
-        let threads_row = SettingRow::new("Compiler threads")
-            .control(
+        let cores = std::thread::available_parallelism().map(|n| n.get()).ok();
+        let auto_tip = match (detected, cores) {
+            (Some(n), Some(c)) => format!("Auto uses about {n} compiler threads on this {c}-thread CPU"),
+            _ => "Auto lets DXVK choose compiler threads".to_string(),
+        };
+        let threads_row = tile_row(
+            cx,
+            [
+                div().flex_none().child("Compiler threads").into_any_element(),
                 div()
                     .flex()
+                    .flex_wrap()
+                    .flex_1()
+                    .justify_end()
                     .items_center()
                     .gap(px(8.))
                     .child(div().w(px(90.)).child(self.dx_threads.clone()))
                     .child(
-                        Chip::new("dx-auto", "Recommended: Auto (0)")
-                            .active(threads == 0)
-                            .on_click(move |_, _, cx| {
+                        div().id("dx-auto-tip").tooltip(tooltip(auto_tip)).child(
+                            Chip::new("dx-auto", "Recommended: Auto (0)").active(threads == 0).on_click(move |_, _, cx| {
                                 t1.update(cx, |v, cx| {
                                     v.draft.num_compiler_threads = 0;
                                     v.push_draft(cx);
                                 })
                             }),
+                        ),
                     )
                     .children(detected.map(|n| {
-                        Chip::new("dx-manual", format!("Manual: {n}")).active(threads == n && n != 0).on_click(
-                            move |_, _, cx| {
-                                t2.update(cx, |v, cx| {
-                                    v.draft.num_compiler_threads = n;
-                                    v.push_draft(cx);
-                                })
-                            },
+                        let tip = match cores {
+                            Some(c) => format!("{c} logical CPU cores detected"),
+                            None => "Logical CPU cores detected".to_string(),
+                        };
+                        div().id("dx-manual-tip").tooltip(tooltip(tip)).child(
+                            Chip::new("dx-manual", format!("Manual: {n}")).active(threads == n && n != 0).on_click(
+                                move |_, _, cx| {
+                                    t2.update(cx, |v, cx| {
+                                        v.draft.num_compiler_threads = n;
+                                        v.push_draft(cx);
+                                    })
+                                },
+                            ),
                         )
-                    })),
-            )
-            .boxed();
+                    }))
+                    .into_any_element(),
+            ],
+        );
         let quick = div()
             .flex()
             .flex_wrap()
@@ -480,7 +544,7 @@ impl GraphicsView {
             .child(div().flex_1().min_w(px(280.)).child(
                 SettingRow::new("Preset").control(div().w(px(150.)).child(self.dx_preset.clone())).boxed(),
             ))
-            .child(div().flex_1().min_w(px(470.)).child(threads_row));
+            .child(div().flex_1().min_w(px(400.)).child(threads_row));
 
         let toggle = |id: &'static str, on: bool, set: fn(&mut DxvkSettings, bool)| {
             let this = this.clone();

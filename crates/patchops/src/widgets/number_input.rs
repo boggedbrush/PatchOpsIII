@@ -121,6 +121,16 @@ impl NumberInput {
         }
     }
 
+    /// Commit what is typed right now (if the user is still editing) and return the clamped value.
+    /// Button handlers call this first: a same-frame click can arrive before the blur commit has
+    /// reached the owner, so they must not rely on a value captured at render time.
+    pub fn commit_if_editing(&mut self, cx: &mut Context<Self>) -> f64 {
+        if self.editing {
+            self.commit(cx);
+        }
+        self.value
+    }
+
     fn commit(&mut self, cx: &mut Context<Self>) {
         let parsed = self
             .input

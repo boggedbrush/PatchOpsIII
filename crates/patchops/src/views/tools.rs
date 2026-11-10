@@ -33,16 +33,6 @@ impl ToolsView {
     }
 }
 
-/// Page title (legacy `.panel h2`), drawn above the body without a frame.
-fn heading(t: Theme, title: &'static str) -> impl IntoElement {
-    div()
-        .mb(px(8.))
-        .text_size(px(t.font_lg))
-        .font_weight(FontWeight::BOLD)
-        .text_color(t.text)
-        .child(title)
-}
-
 /// Legacy `ToolCard` (`.tool-card`): bordered box, min height 154px, icon + title, then `body`.
 fn tool_card(t: Theme, title: &'static str, glyph: Icon, body: impl IntoIterator<Item = AnyElement>) -> impl IntoElement {
     div()
@@ -90,7 +80,6 @@ fn metric(t: Theme, label: &'static str, value: String, ok: bool, label_w: f32) 
             div()
                 .flex_1()
                 .min_w_0()
-                .truncate()
                 .font_weight(FontWeight::BOLD)
                 .text_color(value_color)
                 .child(value),
@@ -98,8 +87,9 @@ fn metric(t: Theme, label: &'static str, value: String, ok: bool, label_w: f32) 
 }
 
 impl Render for ToolsView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = *cx.theme();
+        let two_cols = views::content_width(window) >= 760.;
         let ctl = self.c.read(cx);
         let Some(state) = ctl.state().cloned() else {
             return div().into_any_element();
@@ -157,20 +147,12 @@ impl Render for ToolsView {
                 div().w_full().min_w_0().child(channel).into_any_element(),
                 div()
                     .flex()
-                    .gap(px(8.))
+                    .flex_wrap()
+                    .gap_x(px(8.))
+                    .gap_y(px(8.))
                     .min_w_0()
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .child(metric(t, "Current", current.into(), true, 0.)),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .child(metric(t, "Last checked", "On demand".into(), false, 0.)),
-                    )
+                    .child(div().flex_1().min_w(px(170.)).child(metric(t, "Current", current.into(), true, 0.)))
+                    .child(div().flex_1().min_w(px(190.)).child(metric(t, "Last checked", "On demand".into(), false, 0.)))
                     .into_any_element(),
                 Button::new("update-check", "Check for Updates")
                     .small()
@@ -301,7 +283,7 @@ impl Render for ToolsView {
         // Legacy `.tools-grid`: two columns, cards aligned to the top, 14px padding.
         let grid = div()
             .grid()
-            .grid_cols(2)
+            .grid_cols(if two_cols { 2 } else { 1 })
             .gap(px(12.))
             .items_start()
             .p(px(14.))
@@ -314,7 +296,7 @@ impl Render for ToolsView {
 
         ScrollArea::new("tools-scroll")
             .gap(px(PANEL_GAP))
-            .child(div().flex().flex_col().child(heading(t, "Tools")).child(grid))
+            .child(div().flex().flex_none().flex_col().child(views::heading(cx, "Tools")).child(grid))
             .into_any_element()
     }
 }

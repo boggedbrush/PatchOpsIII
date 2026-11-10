@@ -39,16 +39,6 @@ enum Line {
     Con,
 }
 
-/// Page title (legacy `.panel h2`), drawn above the body without a frame.
-fn heading(t: Theme, title: &'static str) -> impl IntoElement {
-    div()
-        .mb(px(8.))
-        .text_size(px(t.font_lg))
-        .font_weight(FontWeight::BOLD)
-        .text_color(t.text)
-        .child(title)
-}
-
 /// Legacy `<span class="pro"><CheckCircle2/><strong>label:</strong> text</span>`.
 fn pro_line(t: Theme, kind: Line, label: &'static str, text: &'static str) -> impl IntoElement {
     let (glyph, color): (Icon, Hsla) = match kind {
@@ -83,32 +73,37 @@ struct OptionCard {
     disabled: bool,
     last: bool,
     basis: f32,
+    /// Single-column layout: full width, hairline below instead of to the right.
+    stacked: bool,
     lines: [(Line, &'static str, &'static str); 3],
     button: Button,
 }
 
 impl OptionCard {
     fn into_element(self, t: Theme) -> impl IntoElement {
+        // The badge drops under the title instead of squeezing it to a letter per line.
         let header = div()
             .flex()
+            .flex_wrap()
             .justify_between()
             .items_start()
-            .gap(px(12.))
+            .gap_x(px(12.))
+            .gap_y(px(6.))
             .child(
                 div()
-                    .min_w_0()
+                    .flex_1()
+                    .min_w(px(150.))
                     .child(div().text_size(px(t.font_lg)).font_weight(FontWeight::BOLD).text_color(t.text).child(self.title))
                     .child(
                         div()
                             .min_w_0()
-                            .truncate()
                             .text_size(px(t.font_sm))
                             .font_weight(FontWeight::BOLD)
                             .text_color(t.text_muted)
                             .child(self.subtitle),
                     ),
             )
-            .child(Badge::new(self.badge).tone(if self.active { Tone::Ok } else { Tone::Neutral }));
+            .child(div().flex_none().child(Badge::new(self.badge).tone(if self.active { Tone::Ok } else { Tone::Neutral })));
 
         let pros = div()
             .flex()
@@ -123,9 +118,11 @@ impl OptionCard {
             .flex_col()
             .gap(px(16.))
             .min_w_0()
-            .flex_basis(relative(self.basis))
+            .when(self.stacked, |d| d.w_full().flex_none())
+            .when(!self.stacked, |d| d.flex_basis(relative(self.basis)))
             .p(px(18.))
-            .when(!self.last, |d| d.border_r_1().border_color(t.border))
+            .when(!self.last && !self.stacked, |d| d.border_r_1().border_color(t.border))
+            .when(!self.last && self.stacked, |d| d.border_b_1().border_color(t.border))
             .when(self.active, |d| d.border_t(px(4.)).border_color(t.ok).bg(t.ok.opacity(0.045)))
             .when(self.disabled, |d| d.opacity(0.72))
             .child(header)
@@ -135,8 +132,11 @@ impl OptionCard {
 }
 
 impl Render for ExeSwapView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = *cx.theme();
+        let cw = views::content_width(window);
+        let stack_hero = cw < 1000.;
+        let stack_cards = cw < 800.;
         let ctl = self.c.read(cx);
         let Some(state) = ctl.state().cloned() else {
             return div().into_any_element();
@@ -185,11 +185,13 @@ impl Render for ExeSwapView {
                     ),
             );
 
+        // Pills wrap rather than shrink: a pill never gets narrower than its text.
         let pill = |label: String, value: String, ok: bool| {
-            div().flex_1().min_w_0().child(StatusPill::new(label, value, Tone::from_ok(ok)))
+            div().flex_1().min_w(px(190.)).child(StatusPill::new(label, value, Tone::from_ok(ok)))
         };
         let pills = div()
             .flex()
+            .flex_wrap()
             .gap(px(8.))
             .min_w_0()
             .child(pill(
@@ -214,11 +216,20 @@ impl Render for ExeSwapView {
                 exe.enhanced_available,
             ));
 
-        let hero = div()
-            .flex()
-            .gap(px(12.))
-            .child(div().flex_basis(relative(0.35)).flex_shrink().min_w(px(280.)).child(title_box))
-            .child(div().flex_basis(relative(0.65)).flex_shrink().min_w_0().child(pills));
+        let hero = if stack_hero {
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(12.))
+                .child(div().min_w_0().child(title_box))
+                .child(div().min_w_0().child(pills))
+        } else {
+            div()
+                .flex()
+                .gap(px(12.))
+                .child(div().flex_basis(relative(0.35)).flex_shrink().min_w(px(280.)).child(title_box))
+                .child(div().flex_basis(relative(0.65)).flex_shrink().min_w_0().child(pills))
+        };
 
         // ---- Option cards -----------------------------------------------------------------
         let game = state.game_detected;
@@ -234,6 +245,7 @@ impl Render for ExeSwapView {
             active: compatible_active,
             disabled: compatible_disabled,
             last: false,
+            stacked: stack_cards,
             basis: 1.0 / 3.22,
             lines: [
                 (Line::Pro, "Vanilla experience:", "Supported"),
@@ -255,6 +267,7 @@ impl Render for ExeSwapView {
             active: latest_active,
             disabled: latest_disabled,
             last: false,
+            stacked: stack_cards,
             basis: 1.0 / 3.22,
             lines: [
                 (Line::Pro, "Vanilla experience:", "Best Steam match"),
@@ -281,6 +294,7 @@ impl Render for ExeSwapView {
             active: enhanced_active,
             disabled: enhanced_disabled,
             last: true,
+            stacked: stack_cards,
             basis: 1.22 / 3.22,
             lines: [
                 (Line::Pro, "Vanilla experience:", "Supported"),
@@ -295,6 +309,7 @@ impl Render for ExeSwapView {
 
         let options = div()
             .flex()
+            .when(stack_cards, |d| d.flex_col())
             .min_w_0()
             .overflow_hidden()
             .border_1()
@@ -310,9 +325,10 @@ impl Render for ExeSwapView {
             .child(
                 div()
                     .flex()
+                    .flex_none()
                     .flex_col()
                     .gap(px(12.))
-                    .child(heading(t, "EXE Swapper"))
+                    .child(views::heading(cx, "EXE Swapper"))
                     .child(hero)
                     .child(options),
             )
