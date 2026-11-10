@@ -1,17 +1,19 @@
-//! Group `t7`: `t7-config`, `t7-uninstall` plus the `t7` state builder. `t7-install` (network
-//! download + Windows elevation) is still the not-implemented stub.
+//! Group `t7`: `t7-config`, `t7-install`, `t7-uninstall` plus the `t7` state builder.
 //!
-//! Legacy reference: `backend/api.py` (`set_t7_config`, `_uninstall_t7_patch`, `uninstall_t7_patch`)
-//! and `t7_patch.py` (`update_t7patch_conf`, `restore_lpc_backups`).
+//! Legacy reference: `backend/api.py` (`set_t7_config`, `install_t7_patch`, `_uninstall_t7_patch`,
+//! `uninstall_t7_patch`) and `t7_patch.py` (`update_t7patch_conf`, `restore_lpc_backups`). The
+//! download / extract / LPC machinery is in [`crate::t7_install`]; Windows elevation in
+//! [`crate::elevate`] + [`crate::cli`].
 
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{not_implemented, state_reply, Args, Group};
+use super::{state_reply, Args, Group};
 use crate::context::Core;
 use crate::error::{AppError, AppResult, OpError};
+use crate::net::{no_progress, Net, ProgressFn};
 use crate::pyfmt::{io_error_text, repr_str};
 use crate::state::{State, StateCx};
 
@@ -33,10 +35,50 @@ fn call(core: &Core, op: &str, args: &Args) -> Result<Value, OpError> {
             let friends_only = args.bool_opt("friendsOnly")?;
             state_reply(set_t7_config(core, gamertag.as_deref(), &color_code, network_password.as_deref(), friends_only))
         }
-        "t7-install" => not_implemented(core, op, args),
+        "t7-install" => state_reply(t7_install(core)),
         "t7-uninstall" => state_reply(t7_uninstall(core)),
         _ => Err(OpError::UnknownOp(op.to_string())),
     }
+}
+
+/// Files that only the compatible (2.04) patch ships (legacy `T7PATCH_COMPATIBLE_ONLY_FILES`).
+pub const T7_PATCH_COMPATIBLE_ONLY_FILES: [&str; 2] = ["discord_game_sdk.dll", "zbr2.dll"];
+
+// ---- t7-install -----------------------------------------------------------------------------
+
+/// Legacy `install_t7_patch` route against the real endpoints, without progress reporting.
+pub fn t7_install(core: &Core) -> AppResult<State> {
+    t7_install_with(core, &Net::production(), &mut no_progress)
+}
+
+/// Legacy `install_t7_patch`. On Windows without administrator rights the application re-launches
+/// itself elevated (hidden CLI command, see [`crate::cli`]) and waits for it; elsewhere the install
+/// runs in-process. `progress` receives download progress (not available for the elevated child).
+pub fn t7_install_with(core: &Core, net: &Net, progress: ProgressFn<'_>) -> AppResult<State> {
+    let game_dir = core.game_dir().ok_or_else(|| AppError::new("Game directory is not set."))?;
+    let result = if crate::paths::system_name() == "Windows" && !crate::elevate::is_admin() {
+        install_elevated(core, &game_dir)
+    } else {
+        crate::t7_install::install_t7_patch(core, net, Path::new(&game_dir), progress)
+    };
+    match result {
+        Ok(()) => Ok(State::build(core)),
+        Err(e) => {
+            core.log.error(format!("T7 Patch install failed: {e}"));
+            Err(AppError::new(e))
+        }
+    }
+}
+
+/// Legacy `_install_t7_patch_elevated`.
+fn install_elevated(core: &Core, game_dir: &str) -> Result<(), String> {
+    core.log.info("Requesting Windows administrator approval...");
+    let code = crate::elevate::run_elevated_and_wait(&[crate::cli::INSTALL_T7_FLAG.to_string(), game_dir.to_string()]).map_err(|e| e.to_string())?;
+    if code != 0 {
+        return Err(format!("Elevated T7 Patch install failed with code {code}."));
+    }
+    core.log.success("T7 Patch install completed with administrator approval.");
+    Ok(())
 }
 
 // ---- t7-config ------------------------------------------------------------------------------

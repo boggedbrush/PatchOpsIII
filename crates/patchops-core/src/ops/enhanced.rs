@@ -1,4 +1,4 @@
-//! Group `enhanced`: `enhanced-validate`, `enhanced-install` (stub), `enhanced-uninstall`,
+//! Group `enhanced`: `enhanced-validate`, `enhanced-install`, `enhanced-uninstall`,
 //! `exe-swap/compatible`, `exe-swap/compatible-depot`, `exe-swap/current`, `exe-swap/enhanced`
 //! plus the `enhanced` and `exeSwap` state builders.
 //!
@@ -8,12 +8,9 @@
 //! placement, exe swapping, Linux Proton/Steam side); this file is the op layer, the state
 //! structs/builders and the helpers the reset-to-stock port needs.
 //!
-//! Network is not here: `enhanced-install` answers `not implemented` until the download
-//! (`BO3Enhanced_latest.zip` into `BO3 Mod Files`, plus the Proton tool for Linux) is ported.
-//! The local half of the pipeline is ready: [`crate::enhanced::files::prepare_install`],
-//! [`crate::enhanced::files::install_enhanced_files`],
-//! [`crate::enhanced::linux::configure_bo3_enhanced_linux`] and
-//! [`crate::enhanced::files::finish_install`], in that order.
+//! `enhanced-install` downloads through [`crate::enhanced_net`] (release zip, Linux Proton tool) and
+//! then runs the local pipeline: `prepare_install`, `install_enhanced_files`,
+//! `configure_bo3_enhanced_linux`, `finish_install`.
 //!
 //! Helpers for reset-to-stock: [`uninstall_enhanced`], [`restore_current_exe`] /
 //! [`active_exe_profile`] and [`detect_enhanced_install`] (the "Enhanced files present" check).
@@ -23,11 +20,12 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{not_implemented, reply, state_reply, Args, Group};
+use super::{reply, state_reply, Args, Group};
 use crate::context::Core;
 use crate::enhanced::exe::{KnownBuilds, Swap, SwapError, COMPATIBLE_EXE_ID, CURRENT_EXE_ID, ENHANCED_EXE_ID};
 use crate::enhanced::{files, hashcache, linux, state_file};
 use crate::error::{AppError, AppResult, OpError};
+use crate::net::{no_progress, Net, ProgressFn};
 use crate::state::{State, StateCx};
 
 pub const OPS: &[&str] = &[
@@ -64,9 +62,8 @@ fn call(core: &Core, op: &str, a: &Args) -> Result<Value, OpError> {
             reply(validate_enhanced(core, &dump_source))
         }
         "enhanced-install" => {
-            // Validate like the legacy model, then stay a stub (network download).
-            a.str_req("dumpSource", 1)?;
-            not_implemented(core, op, a)
+            let dump_source = a.str_req("dumpSource", 1)?;
+            state_reply(install_enhanced(core, &dump_source))
         }
         "enhanced-uninstall" => state_reply(uninstall_enhanced_op(core)),
         "exe-swap/compatible" => state_reply(install_compatible_exe_op(core)),
@@ -103,6 +100,51 @@ pub fn validate_enhanced(core: &Core, dump_source: &str) -> AppResult<ValidateRe
         message: if valid { "Source looks ready." } else { "Source is missing required dump files." }.into(),
         state: State::build(core),
     })
+}
+
+// ---- enhanced-install -----------------------------------------------------------------------
+
+/// Legacy `install_enhanced` route against the real endpoints, without progress reporting.
+pub fn install_enhanced(core: &Core, dump_source: &str) -> AppResult<State> {
+    install_enhanced_with(core, &Net::production(), dump_source, &mut no_progress)
+}
+
+/// Legacy `install_enhanced` / `_install_enhanced`: validate the dump, download the latest BO3
+/// Enhanced release (SHA-256 from the release metadata), place the files, on Linux fetch the
+/// GDK-Proton tool and wire Steam up, then record the variant. `progress` receives the download
+/// progress of the Enhanced zip and (Linux, first install) the Proton archive.
+pub fn install_enhanced_with(core: &Core, net: &Net, dump_source: &str, progress: ProgressFn<'_>) -> AppResult<State> {
+    let game_dir = core.game_dir().ok_or_else(|| AppError::new(NO_GAME_DIR))?;
+    match install_enhanced_inner(core, net, Path::new(&game_dir), dump_source, progress) {
+        Ok(()) => Ok(State::build(core)),
+        Err(e) => {
+            core.log.error(format!("BO3 Enhanced install failed: {e}"));
+            Err(AppError::new(e))
+        }
+    }
+}
+
+fn install_enhanced_inner(core: &Core, net: &Net, game_dir: &Path, dump_source: &str, progress: ProgressFn<'_>) -> Result<(), String> {
+    let source = files::prepare_install(core, dump_source)?;
+    let mod_files = &core.paths.mod_files;
+    std::fs::create_dir_all(mod_files).map_err(|e| crate::pyfmt::io_error_text(&e, Some(mod_files)))?;
+    core.log.info("Fetching latest BO3 Enhanced release...");
+    crate::enhanced_net::download_latest_enhanced(core, net, mod_files, &core.paths.app_data, progress)
+        .ok_or("Failed to download BO3 Enhanced.")?;
+
+    core.log.info("Installing BO3 Enhanced files...");
+    if !files::install_enhanced_files(core, game_dir, mod_files, Path::new(&source)) {
+        return Err("BO3 Enhanced installation failed.".into());
+    }
+    if crate::paths::system_name() == "Linux" {
+        // Legacy order: the Steam user check comes before the tool is resolved / downloaded.
+        let tool = if crate::steam::find_user_id(core).is_some() { crate::enhanced_net::resolve_tool_source(core, net, progress) } else { None };
+        if !linux::configure_bo3_enhanced_linux(core, tool.as_deref()) {
+            return Err("Installed files, but Linux compatibility setup failed.".into());
+        }
+    }
+    files::finish_install(core, game_dir);
+    Ok(())
 }
 
 // ---- enhanced-uninstall ---------------------------------------------------------------------

@@ -1,19 +1,19 @@
-//! Group `dxvk`: `dxvk-config`, `dxvk-uninstall` plus the `dxvk` state builder. `dxvk-install`
-//! (network download) is still the not-implemented stub; it should reuse [`write_conf`] for the
-//! config step.
+//! Group `dxvk`: `dxvk-config`, `dxvk-install`, `dxvk-uninstall` plus the `dxvk` state builder.
 //!
-//! Legacy reference: `backend/api.py` (`dxvk_config`, `uninstall_dxvk`, `_read_dxvk_settings`,
-//! `_dxvk_payload_to_settings`, `_write_dxvk_conf`, `_uninstall_dxvk`) and `dxvk_manager.py`
-//! (`_build_dxvk_conf`, `_preset_settings`).
+//! Legacy reference: `backend/api.py` (`dxvk_config`, `install_dxvk`, `_install_dxvk`,
+//! `uninstall_dxvk`, `_read_dxvk_settings`, `_dxvk_payload_to_settings`, `_write_dxvk_conf`,
+//! `_uninstall_dxvk`) and `dxvk_manager.py` (`_build_dxvk_conf`, `_preset_settings`,
+//! `_supports_gpl_async_cache`).
 
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{not_implemented, state_reply, Args, Group};
+use super::{state_reply, Args, Group};
 use crate::context::Core;
 use crate::error::{AppError, AppResult, OpError};
+use crate::net::{no_progress, DownloadOptions, Net, ProgressFn};
 use crate::pyfmt::io_error_text;
 use crate::state::{State, StateCx};
 
@@ -33,8 +33,10 @@ fn call(core: &Core, op: &str, a: &Args) -> Result<Value, OpError> {
             state_reply(set_dxvk_config(core, settings))
         }
         "dxvk-uninstall" => state_reply(dxvk_uninstall(core)),
-        // Network installer: owned by the network agents, see the module doc.
-        "dxvk-install" => not_implemented(core, op, a),
+        "dxvk-install" => {
+            let settings = settings_from_args(a)?;
+            state_reply(dxvk_install(core, settings))
+        }
         _ => Err(OpError::UnknownOp(op.to_string())),
     }
 }
@@ -236,6 +238,127 @@ pub fn dxvk_uninstall(core: &Core) -> AppResult<State> {
     Ok(State::build(core))
 }
 
+// ---- dxvk-install ---------------------------------------------------------------------------
+
+/// Pinned release of the binary tarball (legacy `DXVK_VERSION` / `DXVK_DOWNLOAD_URL`).
+pub const DXVK_VERSION: &str = "v3.0-1";
+const DXVK_COMMIT: &str = "40b31c3cee687e9bc01124e26032a31e9d9bb7c9";
+/// SHA-256 of the pinned tarball. The legacy code does not verify the download; the URL is pinned
+/// to a commit, so the bytes cannot legitimately change and we verify them (new check).
+pub const DXVK_SHA256: &str = "f3d13925baa8124a3b0a6b7cd46ff57e9204426beb42f243dcc17267f7c2c0dc";
+
+pub fn download_url(net: &Net) -> String {
+    format!(
+        "{}/Ph42oN/dxvk-gplasync/-/raw/{DXVK_COMMIT}/releases/dxvk-gplasync-{DXVK_VERSION}.tar.gz",
+        net.endpoints.gitlab_web
+    )
+}
+
+/// Legacy `_supports_gpl_async_cache`: `dxvk.gplAsyncCache` was removed in GPLAsync 2.7+. The first
+/// `<digits>.<digits>` of the tag decides; no match means supported.
+pub fn supports_gpl_async_cache(tag: &str) -> bool {
+    let b = tag.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if !b[i].is_ascii_digit() {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < b.len() && b[i].is_ascii_digit() {
+            i += 1;
+        }
+        if i + 1 < b.len() && b[i] == b'.' && b[i + 1].is_ascii_digit() {
+            let minor_start = i + 1;
+            let mut j = minor_start;
+            while j < b.len() && b[j].is_ascii_digit() {
+                j += 1;
+            }
+            let num = |s: &str| s.parse::<u64>().unwrap_or(u64::MAX);
+            return (num(&tag[start..i]), num(&tag[minor_start..j])) < (2, 7);
+        }
+    }
+    true
+}
+
+/// First directory (pre-order, sorted; `x64` preferred) holding both DXVK DLLs. The legacy
+/// `os.walk` took whichever of `x32`/`x64` the filesystem listed first; BO3 is 64-bit.
+fn find_dll_dir(root: &Path) -> Option<PathBuf> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(rd) = std::fs::read_dir(dir) else { return };
+        let mut subs = Vec::new();
+        let mut files = Vec::new();
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            match e.file_type() {
+                Ok(t) if t.is_dir() => subs.push(e.path()),
+                Ok(_) => files.push(name),
+                Err(_) => {}
+            }
+        }
+        if DXVK_ASYNC_FILES.iter().all(|f| files.iter().any(|n| n == f)) {
+            out.push(dir.to_path_buf());
+        }
+        subs.sort();
+        for s in subs {
+            walk(&s, out);
+        }
+    }
+    let mut found = Vec::new();
+    walk(root, &mut found);
+    let x64 = found.iter().find(|p| p.file_name().is_some_and(|n| n.eq_ignore_ascii_case("x64"))).cloned();
+    x64.or_else(|| found.into_iter().next())
+}
+
+/// Legacy `install_dxvk` route against the real endpoints, without progress reporting.
+pub fn dxvk_install(core: &Core, settings: DxvkSettings) -> AppResult<State> {
+    dxvk_install_with(core, &Net::production(), settings, &mut no_progress)
+}
+
+/// Legacy `install_dxvk`: download + unpack the pinned DXVK-GPLAsync, copy the two DLLs, write
+/// `dxvk.conf`. `progress` receives the download progress.
+pub fn dxvk_install_with(core: &Core, net: &Net, settings: DxvkSettings, progress: ProgressFn<'_>) -> AppResult<State> {
+    let game = game_dir(core)?;
+    install_inner(core, net, &game, settings, progress).map_err(|e| fail(core, "DXVK-GPLAsync install failed", e))?;
+    Ok(State::build(core))
+}
+
+fn install_inner(core: &Core, net: &Net, game: &Path, settings: DxvkSettings, progress: ProgressFn<'_>) -> Result<(), String> {
+    let mod_files = &core.paths.mod_files;
+    let extract_dir = mod_files.join("dxvk_extracted");
+    let url = download_url(net);
+    let archive = mod_files.join(url.rsplit('/').next().unwrap_or("dxvk-gplasync").split('?').next().unwrap_or("dxvk-gplasync"));
+    std::fs::create_dir_all(mod_files).map_err(|e| io_error_text(&e, Some(mod_files)))?;
+    if extract_dir.exists() {
+        std::fs::remove_dir_all(&extract_dir).map_err(|e| io_error_text(&e, Some(&extract_dir)))?;
+    }
+    std::fs::create_dir_all(&extract_dir).map_err(|e| io_error_text(&e, Some(&extract_dir)))?;
+
+    let result = (|| {
+        core.log.info("Downloading DXVK-GPLAsync...");
+        // The hash pin only applies to the real endpoint (tests serve their own bytes).
+        let pins = if net.endpoints.gitlab_web == crate::net::Endpoints::production().gitlab_web { vec![DXVK_SHA256.to_string()] } else { Vec::new() };
+        let opts = DownloadOptions::new(30).verify(pins);
+        net.client.download(&url, &archive, &opts, progress).map_err(|e| e.to_string())?;
+        core.log.success("Downloaded DXVK-GPLAsync successfully.");
+        crate::archive::extract_archive(&archive, &extract_dir, Default::default())?;
+        core.log.success("Extracted DXVK-GPLAsync successfully.");
+
+        let source = find_dll_dir(&extract_dir).ok_or("Required DXVK files were not found in the archive.")?;
+        for file in DXVK_ASYNC_FILES {
+            let dst = game.join(file);
+            crate::enhanced::files::copy2(&source.join(file), &dst).map_err(|e| io_error_text(&e, Some(&dst)))?;
+            core.log.success(format!("Installed {file}."));
+        }
+        write_conf(core, game, &settings.normalized(), supports_gpl_async_cache(DXVK_VERSION))?;
+        core.log.success("DXVK-GPLAsync installed successfully.");
+        Ok(())
+    })();
+    let _ = std::fs::remove_file(&archive);
+    let _ = std::fs::remove_dir_all(&extract_dir);
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -318,6 +441,88 @@ mod tests {
         assert_eq!(msgs, ["Removed dxgi.dll.", "Removed dxvk.conf.", "DXVK-GPLAsync has been uninstalled."]);
         dxvk_uninstall(&core).unwrap();
         assert_eq!(core.log.recent(1)[0].message, "DXVK-GPLAsync was not installed.");
+        let _ = std::fs::remove_dir_all(core.paths.home.parent().unwrap());
+    }
+
+    #[test]
+    fn gpl_async_cache_version_gate() {
+        assert!(supports_gpl_async_cache("v2.6-1"));
+        assert!(supports_gpl_async_cache("gplasync-2.6.9"));
+        assert!(!supports_gpl_async_cache("v2.7-1"));
+        assert!(!supports_gpl_async_cache("v3.0-1"));
+        assert!(!supports_gpl_async_cache("release 10.1"));
+        assert!(supports_gpl_async_cache("nightly"));
+        assert!(supports_gpl_async_cache(""));
+        assert!(supports_gpl_async_cache("v2"));
+    }
+
+    fn dxvk_tarball() -> Vec<u8> {
+        use crate::archive::testutil::*;
+        tar_gz(&[
+            TarMember::dir("dxvk-gplasync-v3.0-1/"),
+            TarMember::file("dxvk-gplasync-v3.0-1/x32/dxgi.dll", b"32-dxgi"),
+            TarMember::file("dxvk-gplasync-v3.0-1/x32/d3d11.dll", b"32-d3d11"),
+            TarMember::file("dxvk-gplasync-v3.0-1/x64/dxgi.dll", b"64-dxgi"),
+            TarMember::file("dxvk-gplasync-v3.0-1/x64/d3d11.dll", b"64-d3d11"),
+        ])
+    }
+
+    #[test]
+    fn install_downloads_extracts_and_writes_conf() {
+        use crate::net::testserver::{serve, Route};
+        let (core, game) = setup("install");
+        let mut routes = std::collections::HashMap::new();
+        let net0 = Net::local("http://x");
+        let path = download_url(&net0).replacen("http://x", "", 1);
+        routes.insert(path, Route::bytes(dxvk_tarball()));
+        let srv = serve(routes);
+        let net = Net::local(&srv.base);
+        let mut last = None;
+        let st = dxvk_install_with(&core, &net, DxvkSettings { max_frame_rate: 90, ..Default::default() }, &mut |t| last = Some(*t)).unwrap();
+        assert!(st.dxvk.installed && st.dxvk.conf_exists);
+        assert_eq!(std::fs::read(game.join("dxgi.dll")).unwrap(), b"64-dxgi");
+        assert_eq!(std::fs::read(game.join("d3d11.dll")).unwrap(), b"64-d3d11");
+        // GPLAsync >= 2.7: no gplAsyncCache line even though it was requested.
+        let conf = std::fs::read_to_string(game.join("dxvk.conf")).unwrap();
+        assert!(conf.contains("dxgi.maxFrameRate=90") && !conf.contains("gplAsyncCache"));
+        assert!(last.unwrap().done > 0);
+        let msgs: Vec<String> = core.log.recent(20).into_iter().map(|e| e.message).collect();
+        assert_eq!(
+            msgs,
+            [
+                "Downloading DXVK-GPLAsync...",
+                "Downloaded DXVK-GPLAsync successfully.",
+                "Extracted DXVK-GPLAsync successfully.",
+                "Installed dxgi.dll.",
+                "Installed d3d11.dll.",
+                "Updated dxvk.conf from DXVK settings.",
+                "DXVK-GPLAsync installed successfully."
+            ]
+        );
+        // Temporary files are cleaned up.
+        assert_eq!(std::fs::read_dir(&core.paths.mod_files).unwrap().count(), 0);
+        let _ = std::fs::remove_dir_all(core.paths.home.parent().unwrap());
+    }
+
+    #[test]
+    fn install_failures_are_logged_and_reported() {
+        use crate::net::testserver::{serve, Route};
+        let (core, _game) = setup("install-fail");
+        let srv = serve(std::collections::HashMap::new());
+        let net = Net::local(&srv.base);
+        let err = dxvk_install_with(&core, &net, DxvkSettings::default(), &mut no_progress).unwrap_err();
+        assert!(err.message.starts_with("404 Client Error: Not Found for url: "), "{}", err.message);
+        assert_eq!(core.log.recent(1)[0].message, format!("DXVK-GPLAsync install failed: {}", err.message));
+
+        // Archive without the DLLs.
+        let mut routes = std::collections::HashMap::new();
+        routes.insert(
+            download_url(&Net::local("http://x")).replacen("http://x", "", 1),
+            Route::bytes(crate::archive::testutil::tar_gz(&[crate::archive::testutil::TarMember::file("a/readme", b"x")])),
+        );
+        let srv = serve(routes);
+        let err = dxvk_install_with(&core, &Net::local(&srv.base), DxvkSettings::default(), &mut no_progress).unwrap_err();
+        assert_eq!(err.message, "Required DXVK files were not found in the archive.");
         let _ = std::fs::remove_dir_all(core.paths.home.parent().unwrap());
     }
 
