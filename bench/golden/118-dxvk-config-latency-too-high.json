@@ -1,0 +1,22 @@
+{
+ "args": {
+  "maxFrameLatency": 17
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {},
+  "removed": []
+ },
+ "fs_digest": "a3561dd701af52b29e626a5fcca8dae8dd366ed7cd17b105a1b4d3d382aec306",
+ "fs_text": {},
+ "fx": [],
+ "label": "dxvk-config-latency-too-high",
+ "note": "",
+ "op": "dxvk-config",
+ "response": {
+  "envelope_ok": false,
+  "error_class": "validation"
+ },
+ "step": 118,
+ "tags": []
+}

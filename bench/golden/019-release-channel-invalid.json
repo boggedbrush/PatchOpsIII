@@ -1,0 +1,25 @@
+{
+ "args": {
+  "channel": "nightly"
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {},
+  "removed": []
+ },
+ "fs_digest": "f53f171a2c1549e3df982c04a404a16acab5d73b383e5eac0c982b65a98f5c3a",
+ "fs_text": {},
+ "fx": [],
+ "label": "release-channel-invalid",
+ "note": "",
+ "op": "release-channel",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "error": "Release channel must be beta or stable.",
+   "ok": false
+  }
+ },
+ "step": 19,
+ "tags": []
+}

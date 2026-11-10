@@ -1,0 +1,22 @@
+{
+ "args": {
+  "enabled": "maybe"
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {},
+  "removed": []
+ },
+ "fs_digest": "4e6880af50bd5670edefd8313adf588ab8f24c2abac69b2556243f171a9a0c8c",
+ "fs_text": {},
+ "fx": [],
+ "label": "intro-skip-bad-arg",
+ "note": "",
+ "op": "intro-skip",
+ "response": {
+  "envelope_ok": false,
+  "error_class": "validation"
+ },
+ "step": 59,
+ "tags": []
+}

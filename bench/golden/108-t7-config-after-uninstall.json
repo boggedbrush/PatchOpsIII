@@ -1,0 +1,25 @@
+{
+ "args": {
+  "gamertag": "Gone"
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {},
+  "removed": []
+ },
+ "fs_digest": "27c17de0cd5fc0a81d1cd5768643f9eb88a842fb99152266ffe86b4570189fc0",
+ "fs_text": {},
+ "fx": [],
+ "label": "t7-config-after-uninstall",
+ "note": "",
+ "op": "t7-config",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "error": "t7patch.conf was not found. Install T7 Patch before updating the gamertag.",
+   "ok": false
+  }
+ },
+ "step": 108,
+ "tags": []
+}

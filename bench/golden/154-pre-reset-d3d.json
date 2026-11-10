@@ -1,0 +1,204 @@
+{
+ "args": {
+  "enabled": true
+ },
+ "fs_diff": {
+  "added": {
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/d3dcompiler_46.dll.patchops.bak": {
+    "mode": "0644",
+    "sha256": "bin:5928a615d1ad720f3bb6237978914cbd98dba4d3d4088a7a0e59a42b16d6f276",
+    "size": 4098,
+    "t": "f"
+   }
+  },
+  "changed": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "mode": "0644",
+    "sha256": "txt:028808cecf6dfb1856c546b3792e59f568fa4341d3b8c699fc9afef6ffa2d918",
+    "t": "f"
+   }
+  },
+  "removed": [
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/d3dcompiler_46.dll"
+  ]
+ },
+ "fs_digest": "4a34b6a7059bd17731cce9913fca5b3b52b0f897606e13a7381e1edf6ccb915e",
+ "fs_text": {
+  "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+   "appended": [
+    "<TS> - Success: Renamed d3dcompiler_46.dll to reduce stuttering."
+   ]
+  }
+ },
+ "fx": [],
+ "label": "pre-reset-d3d",
+ "note": "",
+ "op": "d3dcompiler",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "ok": true,
+   "state": {
+    "activeLaunchProfile": "ultimate",
+    "advanced": {
+     "configReadonly": false,
+     "maxFrameLatency": 1,
+     "reduceCpu": true,
+     "smoothFramerate": false,
+     "unlockOptions": true,
+     "vramLimited": true,
+     "vramTarget": 75
+    },
+    "appVersion": "bench",
+    "configExists": true,
+    "currentLaunchOptions": "WINEDLLOVERRIDES=\"dsound=n,b\" %command% +set fs_game 2942053577",
+    "dxvk": {
+     "confExists": true,
+     "installed": true,
+     "settings": {
+      "enableAsync": true,
+      "gplAsyncCache": true,
+      "hudEnabled": true,
+      "maxFrameLatency": 2,
+      "maxFrameRate": 144,
+      "numCompilerThreads": 4,
+      "tearFree": "Auto"
+     }
+    },
+    "enhanced": {
+     "acknowledgedAt": null,
+     "backupStatus": "Not created",
+     "detectedAt": null,
+     "dumpSource": "<SB>/nope",
+     "filesInstalled": 0,
+     "installed": true,
+     "launchOptionsActive": false
+    },
+    "exeSwap": {
+     "activeBuildDate": "",
+     "activeBuildId": "Enhanced",
+     "backupAvailable": false,
+     "compatibleActive": false,
+     "compatibleAvailable": false,
+     "compatibleBuildDate": "Mar 3, 2023",
+     "compatibleBuildId": "10650222",
+     "currentBuildDate": "Sep 10, 2026",
+     "currentBuildId": "24784313",
+     "displayLabel": "Executable is managed by BO3 Enhanced. T7 installs will use T7 Patch Scroptss/T7Patch.",
+     "enhancedActive": true,
+     "enhancedAvailable": true,
+     "enhancedBuildDate": "",
+     "enhancedBuildId": "Enhanced",
+     "enhancedExeActive": true,
+     "executable": "<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/BlackOps3.exe",
+     "executableHash": "92ad6bbeeb6b99115837261d607c4d6da8ed7c6c6c30dae42070a92e4f969818",
+     "executableName": "BlackOps3.exe",
+     "integrityMessage": "Executable is managed by BO3 Enhanced.",
+     "integrityStatus": "enhanced",
+     "latestAvailable": false,
+     "modeLabel": "Enhanced",
+     "patchLabel": "T7 Patch Scroptss/T7Patch",
+     "profile": "enhanced",
+     "state": "enhanced",
+     "trustedExecutable": true
+    },
+    "gameDetected": true,
+    "gameDir": "<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III",
+    "graphics": {
+     "displayMode": 2,
+     "drawFps": true,
+     "fov": 100,
+     "maxFps": 165,
+     "refreshRate": 144.0,
+     "renderResolution": 125,
+     "resolution": "2560x1440",
+     "vsync": false
+    },
+    "launchProfiles": [
+     {
+      "active": false,
+      "id": "default",
+      "installed": true,
+      "label": "Default (None)",
+      "option": "",
+      "state": "Ready",
+      "subscribed": true
+     },
+     {
+      "active": false,
+      "id": "offline",
+      "installed": true,
+      "label": "Play Offline",
+      "option": "+set fs_game offlinemp",
+      "state": "Ready",
+      "subscribed": true
+     },
+     {
+      "active": false,
+      "id": "all_around",
+      "installed": true,
+      "label": "All-around Enhancement Lite",
+      "option": "+set fs_game 2994481309",
+      "path": "<SB>/games/SteamLibrary/steamapps/workshop/content/311210/2994481309",
+      "state": "Installed",
+      "subscribed": true
+     },
+     {
+      "active": true,
+      "id": "ultimate",
+      "installed": false,
+      "label": "Ultimate Experience Mod",
+      "option": "+set fs_game 2942053577",
+      "path": null,
+      "state": "Subscribed (not installed yet)",
+      "subscribed": true
+     },
+     {
+      "active": false,
+      "id": "reforged",
+      "installed": false,
+      "label": "BO3 Reforged",
+      "option": "+set fs_game 3667377161",
+      "path": null,
+      "state": "Not Subscribed",
+      "subscribed": false
+     }
+    ],
+    "logPath": "<SB>/home/.local/share/PatchOpsIII/PatchOpsIII.log",
+    "maintenance": {
+     "logPayload": "PatchOpsIII bench - <PLATFORM> logs:\n```\n<TS> - Success: Logs cleared.\n<TS> - Success: Cleared mod files in <SB>/home/.local/share/PatchOpsIII/BO3 Mod Files\n<TS> - Success: Cleared mod files in <SB>/home/.local/share/PatchOpsIII/BO3 Mod Files\n<TS> - Success: All intro videos skipped.\n<TS> - Success: Renamed d3dcompiler_46.dll to reduce stuttering.\n```",
+     "modFilesDir": "<SB>/home/.local/share/PatchOpsIII/BO3 Mod Files"
+    },
+    "mods": {
+     "dxvk": true,
+     "enhanced": true,
+     "t7Patch": true
+    },
+    "platform": "Linux",
+    "presets": [
+     "Smooth Preset",
+     "Low-Latency Preset"
+    ],
+    "qol": {
+     "allIntros": true,
+     "d3dcompiler": true,
+     "intro": true
+    },
+    "releaseChannel": "stable",
+    "steamUserId": "12345678",
+    "t7": {
+     "colorCode": "^1",
+     "confExists": true,
+     "friendsOnly": false,
+     "gamertag": "^1BenchPlayer",
+     "installed": true,
+     "mode": "Enhanced",
+     "networkPassword": "",
+     "plainName": "BenchPlayer"
+    }
+   }
+  }
+ },
+ "step": 154,
+ "tags": []
+}

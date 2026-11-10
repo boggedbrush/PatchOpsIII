@@ -1,0 +1,40 @@
+{
+ "args": {
+  "key": "MaxFPS",
+  "value": 99
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "mode": "0644",
+    "sha256": "txt:36c688c687f01a6ee4465d6a9f90a8319f898717a1a5de5186b1db79aa76a7f6",
+    "t": "f"
+   }
+  },
+  "removed": []
+ },
+ "fs_digest": "7864653551734299dd2046c8f07379b21c6af9b361dc90044d7f7220475c3aa7",
+ "fs_text": {
+  "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+   "appended": [
+    "<TS> - Error: [Errno 13] Permission denied: '<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini'"
+   ]
+  }
+ },
+ "fx": [],
+ "label": "config-write-while-readonly",
+ "note": "PermissionError text returned as error (non-root)",
+ "op": "config",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "error": "[Errno 13] Permission denied: '<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini'",
+   "ok": false
+  }
+ },
+ "step": 75,
+ "tags": [
+  "quirk"
+ ]
+}

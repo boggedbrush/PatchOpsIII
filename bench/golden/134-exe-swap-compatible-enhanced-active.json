@@ -1,0 +1,196 @@
+{
+ "args": {},
+ "fs_diff": {
+  "added": {},
+  "changed": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "mode": "0644",
+    "sha256": "txt:9b300688ff68cc3ca792d83a305c3003aa660e1fa6c976cd84921e6de44ec24e",
+    "t": "f"
+   }
+  },
+  "removed": []
+ },
+ "fs_digest": "87f0ac3c0b1b367ea4f3ab4225b3c3489d6123c77db9ddc2cd60558f97d1da69",
+ "fs_text": {
+  "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+   "appended": [
+    "<TS> - Info: Compatible Steam depot was not found. Copy the depot command, open Steam Console, run it, then continue once the download finishes."
+   ]
+  }
+ },
+ "fx": [],
+ "label": "exe-swap-compatible-enhanced-active",
+ "note": "",
+ "op": "exe-swap/compatible",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "depotCommand": "download_depot 311210 311211 9084453472036406216",
+   "depotRequired": true,
+   "error": "Compatible Steam depot was not found. Copy the depot command, open Steam Console, run it, then continue once the download finishes.",
+   "ok": false,
+   "state": {
+    "activeLaunchProfile": "ultimate",
+    "advanced": {
+     "configReadonly": false,
+     "maxFrameLatency": 1,
+     "reduceCpu": true,
+     "smoothFramerate": false,
+     "unlockOptions": true,
+     "vramLimited": true,
+     "vramTarget": 75
+    },
+    "appVersion": "bench",
+    "configExists": true,
+    "currentLaunchOptions": "WINEDLLOVERRIDES=\"dsound=n,b\" %command% +set fs_game 2942053577",
+    "dxvk": {
+     "confExists": false,
+     "installed": false,
+     "settings": {
+      "enableAsync": true,
+      "gplAsyncCache": true,
+      "hudEnabled": false,
+      "maxFrameLatency": 1,
+      "maxFrameRate": 0,
+      "numCompilerThreads": 0,
+      "tearFree": "True"
+     }
+    },
+    "enhanced": {
+     "acknowledgedAt": null,
+     "backupStatus": "Not created",
+     "detectedAt": null,
+     "dumpSource": "<SB>/nope",
+     "filesInstalled": 0,
+     "installed": true,
+     "launchOptionsActive": false
+    },
+    "exeSwap": {
+     "activeBuildDate": "",
+     "activeBuildId": "Enhanced",
+     "backupAvailable": false,
+     "compatibleActive": false,
+     "compatibleAvailable": false,
+     "compatibleBuildDate": "Mar 3, 2023",
+     "compatibleBuildId": "10650222",
+     "currentBuildDate": "Sep 10, 2026",
+     "currentBuildId": "24784313",
+     "displayLabel": "Executable is managed by BO3 Enhanced. T7 installs will use T7 Patch Scroptss/T7Patch.",
+     "enhancedActive": true,
+     "enhancedAvailable": true,
+     "enhancedBuildDate": "",
+     "enhancedBuildId": "Enhanced",
+     "enhancedExeActive": true,
+     "executable": "<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/BlackOps3.exe",
+     "executableHash": "92ad6bbeeb6b99115837261d607c4d6da8ed7c6c6c30dae42070a92e4f969818",
+     "executableName": "BlackOps3.exe",
+     "integrityMessage": "Executable is managed by BO3 Enhanced.",
+     "integrityStatus": "enhanced",
+     "latestAvailable": false,
+     "modeLabel": "Enhanced",
+     "patchLabel": "T7 Patch Scroptss/T7Patch",
+     "profile": "enhanced",
+     "state": "enhanced",
+     "trustedExecutable": true
+    },
+    "gameDetected": true,
+    "gameDir": "<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III",
+    "graphics": {
+     "displayMode": 2,
+     "drawFps": true,
+     "fov": 100,
+     "maxFps": 165,
+     "refreshRate": 144.0,
+     "renderResolution": 125,
+     "resolution": "2560x1440",
+     "vsync": false
+    },
+    "launchProfiles": [
+     {
+      "active": false,
+      "id": "default",
+      "installed": true,
+      "label": "Default (None)",
+      "option": "",
+      "state": "Ready",
+      "subscribed": true
+     },
+     {
+      "active": false,
+      "id": "offline",
+      "installed": true,
+      "label": "Play Offline",
+      "option": "+set fs_game offlinemp",
+      "state": "Ready",
+      "subscribed": true
+     },
+     {
+      "active": false,
+      "id": "all_around",
+      "installed": true,
+      "label": "All-around Enhancement Lite",
+      "option": "+set fs_game 2994481309",
+      "path": "<SB>/games/SteamLibrary/steamapps/workshop/content/311210/2994481309",
+      "state": "Installed",
+      "subscribed": true
+     },
+     {
+      "active": true,
+      "id": "ultimate",
+      "installed": false,
+      "label": "Ultimate Experience Mod",
+      "option": "+set fs_game 2942053577",
+      "path": null,
+      "state": "Subscribed (not installed yet)",
+      "subscribed": true
+     },
+     {
+      "active": false,
+      "id": "reforged",
+      "installed": false,
+      "label": "BO3 Reforged",
+      "option": "+set fs_game 3667377161",
+      "path": null,
+      "state": "Not Subscribed",
+      "subscribed": false
+     }
+    ],
+    "logPath": "<SB>/home/.local/share/PatchOpsIII/PatchOpsIII.log",
+    "maintenance": {
+     "logPayload": "PatchOpsIII bench - <PLATFORM> logs:\n```\n<TS> - Error: Selected directory is not a Black Ops III install: <SB>/home\n<TS> - Success: Game directory set to <SB>/games/alt/Call of Duty Black Ops III\n<TS> - Error: config.ini not found at <SB>/games/alt/Call of Duty Black Ops III/players/config.ini\n<TS> - Success: Game directory set to <SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III\n<TS> - Success: Release channel set to Beta.\n<TS> - Success: Release channel set to Stable.\n<TS> - Success: Set MaxFPS to 240.\n<TS> - Success: Set FOV to 100.\n<TS> - Success: Set FullScreenMode to 2.\n<TS> - Success: Set WindowSize to 2560x1440.\n<TS> - Success: Set RefreshRate to 144.\n<TS> - Success: Set ResolutionPercent to 125.\n<TS> - Success: Set Vsync to 0.\n<TS> - Success: Set DrawFPS to 1.\n<TS> - Success: Set SmoothFramerate to 1.\n<TS> - Success: Set RestrictGraphicsOptions to 0.\n<TS> - Success: Set SerializeRender to 2.\n<TS> - Success: Set MaxFrameLatency to 3.\n<TS> - Success: Set BenchNewKey to abc.\n<TS> - Success: Set BenchBool to True.\n<TS> - Success: Set BenchFloat to 1.0.\n<TS> - Success: Set BenchDefault to 7.\n<TS> - Success: Set BenchEsc to a\\nb.\n<TS> - Success: Set BenchEsc to x\\ny.\n<TS> - Error: bad escape \\q at position 12\n<TS> - Success: Limited VRAM usage set to 80%.\n<TS> - Success: Limited VRAM usage set to 100%.\n<TS> - Success: Limited VRAM usage set to 75%.\n<TS> - Success: Enabled full VRAM usage.\n<TS> - Success: Applied preset 'Smooth Preset'.\n<TS> - Success: Applied preset 'Low-Latency Preset'.\n<TS> - Error: Failed to apply preset: 'Nope'\n<TS> - Success: Intro video skipped.\n<TS> - Success: Intro video skipped.\n<TS> - Success: Intro video restored.\n<TS> - Success: Intro video restored.\n<TS> - Success: Intro video skipped.\n<TS> - Success: All intro videos skipped.\n<TS> - Success: Intro videos were already skipped.\n<TS> - Success: Intro videos restored.\n<TS> - Success: No intro video backups were found.\n<TS> - Success: Intro video skipped.\n<TS> - Success: Renamed d3dcompiler_46.dll to reduce stuttering.\n<TS> - Success: Already using latest d3dcompiler.\n<TS> - Success: Restored d3dcompiler_46.dll.\n<TS> - Success: config.ini set to read-only.\n<TS> - Error: [Errno 13] Permission denied: '<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini'\n<TS> - Error: Failed to apply preset: [Errno 13] Permission denied: '<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini'\n<TS> - Error: Failed to update VRAM target: [Errno 13] Permission denied: '<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini'\n<TS> - Success: config.ini set to writable.\n<TS> - Success: Set MaxFPS to 165.\n<TS> - Info: Steam was not running.\n<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/localconfig_backup.vdf\n<TS> - Info: Setting launch options to: WINEDLLOVERRIDES=\"dsound=n,b\" %command% +set fs_game offlinemp\n<TS> - Info: Setting launch options...\n<TS> - Info: Opening Steam...\n<TS> - Success: Steam launched successfully\n<TS> - Warning: Unsupported launch option.\n<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/localconfig_backup.vdf\n<TS> - Info: Setting launch options to: WINEDLLOVERRIDES=\"dsound=n,b\" %command% +set fs_game 2994481309\n<TS> - Info: Setting launch options...\n<TS> - Info: Opening Steam...\n<TS> - Success: Steam launched successfully\n<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/localconfig_backup.vdf\n<TS> - Info: Setting launch options to: WINEDLLOVERRIDES=\"dsound=n,b\" %command% +set fs_game 2994481309\n<TS> - Info: Setting launch options...\n<TS> - Info: Opening Steam...\n<TS> - Success: Steam launched successfully\n<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/localconfig_backup.vdf\n<TS> - Info: Setting launch options to: WINEDLLOVERRIDES=\"dsound=n,b\" %command%\n<TS> - Info: Setting launch options...\n<TS> - Info: Opening Steam...\n<TS> - Success: Steam launched successfully\n<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/localconfig_backup.vdf\n<TS> - Info: Setting launch options to: WINEDLLOVERRIDES=\"dsound=n,b\" %command% +set fs_game 2942053577\n<TS> - Info: Setting launch options...\n<TS> - Info: Opening Steam...\n<TS> - Success: Steam launched successfully\n<TS> - Info: Opened Ultimate Experience Mod Workshop page in Steam.\n<TS> - Success: Launched Black Ops III via Steam (AppID: 311210) using steam -applaunch\n<TS> - Success: Updated 'playername' in t7patch.conf to '^5Bench'.\n<TS> - Success: Updated 'playername' in t7patch.conf to 'Spaced Name'.\n<TS> - Success: Updated network password in t7patch.conf.\n<TS> - Success: Updated network password in t7patch.conf.\n<TS> - Success: Cleared network password in t7patch.conf.\n<TS> - Success: Updated 'isfriendsonly' in t7patch.conf to On.\n<TS> - Success: Updated 'isfriendsonly' in t7patch.conf to Off.\n<TS> - Success: Updated 'playername' in t7patch.conf to '^2Combo'.\n<TS> - Success: Updated network password in t7patch.conf.\n<TS> - Success: Updated 'isfriendsonly' in t7patch.conf to On.\n<TS> - Success: Uninstalled T7 Patch files from the game directory.\n<TS> - Success: Removed cached T7 Patch files.\n<TS> - Success: Restored 2 LPC backup files\n<TS> - Success: T7 Patch has been completely uninstalled.\n<TS> - Success: T7 Patch has been completely uninstalled.\n<TS> - Success: Updated dxvk.conf from DXVK settings.\n<TS> - Success: Removed dxvk.conf.\n<TS> - Success: DXVK-GPLAsync has been uninstalled.\n<TS> - Success: Updated dxvk.conf from DXVK settings.\n<TS> - Success: Updated dxvk.conf from DXVK settings.\n<TS> - Success: Updated dxvk.conf from DXVK settings.\n<TS> - Success: Removed dxgi.dll.\n<TS> - Success: Removed d3d11.dll.\n<TS> - Success: Removed dxvk.conf.\n<TS> - Success: DXVK-GPLAsync has been uninstalled.\n<TS> - Info: DXVK-GPLAsync was not installed.\n<TS> - Error: Dump source missing required files: BlackOps3.exe, MicrosoftGame.config\n<TS> - Error: Dump source not found: <SB>/nope\n<TS> - Error: BO3 Enhanced install failed: The selected dump source does not exist.\n<TS> - Error: Dump source missing required files: BlackOps3.exe, MicrosoftGame.config\n<TS> - Error: BO3 Enhanced install failed: The dump source is missing required files.\n<TS> - Error: Compatible EXE swap failed: Active executable hash 92ad6bbeeb6b does not match latest BuildID 24784313, compatible BuildID 10650222, or a PatchOpsIII-preserved Enhanced EXE.\n<TS> - Error: Current EXE restore failed: Active executable hash 92ad6bbeeb6b does not match latest BuildID 24784313, compatible BuildID 10650222, or a PatchOpsIII-preserved Enhanced EXE.\n<TS> - Error: Enhanced EXE restore failed: Active executable hash 92ad6bbeeb6b does not match latest BuildID 24784313, compatible BuildID 10650222, or a PatchOpsIII-preserved Enhanced EXE.\n<TS> - Info: Compatible Steam depot was not found. Copy the depot command, open Steam Console, run it, then continue once the download finishes.\n```",
+     "modFilesDir": "<SB>/home/.local/share/PatchOpsIII/BO3 Mod Files"
+    },
+    "mods": {
+     "dxvk": false,
+     "enhanced": true,
+     "t7Patch": false
+    },
+    "platform": "Linux",
+    "presets": [
+     "Smooth Preset",
+     "Low-Latency Preset"
+    ],
+    "qol": {
+     "allIntros": false,
+     "d3dcompiler": false,
+     "intro": false
+    },
+    "releaseChannel": "stable",
+    "steamUserId": "12345678",
+    "t7": {
+     "colorCode": "",
+     "confExists": false,
+     "friendsOnly": false,
+     "gamertag": "",
+     "installed": false,
+     "mode": "Enhanced",
+     "networkPassword": "",
+     "plainName": ""
+    }
+   }
+  }
+ },
+ "step": 134,
+ "tags": []
+}

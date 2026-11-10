@@ -1,0 +1,39 @@
+{
+ "args": {
+  "limited": false
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "mode": "0644",
+    "sha256": "txt:4691be167a03a59e15b7f9a877cb47b990f67b9522b74ecc090a51bd88eb9c88",
+    "t": "f"
+   }
+  },
+  "removed": []
+ },
+ "fs_digest": "966093b1faed6ac8381b033bc86595ca71f987f7176f155acd80867a60334cc0",
+ "fs_text": {
+  "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+   "appended": [
+    "<TS> - Error: Failed to update VRAM target: [Errno 13] Permission denied: '<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini'"
+   ]
+  }
+ },
+ "fx": [],
+ "label": "vram-while-readonly",
+ "note": "",
+ "op": "vram-target",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "error": "[Errno 13] Permission denied: '<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini'",
+   "ok": false
+  }
+ },
+ "step": 77,
+ "tags": [
+  "quirk"
+ ]
+}

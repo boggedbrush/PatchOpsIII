@@ -1,0 +1,23 @@
+{
+ "args": {},
+ "fs_diff": {
+  "added": {},
+  "changed": {},
+  "removed": []
+ },
+ "fs_digest": "73d3be26b0c8912a21dddb6ee2477dbd2fb57b70a0596cf42a6489f8e1673297",
+ "fs_text": {},
+ "fx": [],
+ "label": "health",
+ "note": "",
+ "op": "health",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "ok": true,
+   "version": "bench"
+  }
+ },
+ "step": 1,
+ "tags": []
+}

@@ -1,0 +1,25 @@
+{
+ "args": {
+  "enabled": false
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {},
+  "removed": []
+ },
+ "fs_digest": "770a695e2832476cbcf9cf2d91c99aef22bb5c820b142b4699024c3f08415501",
+ "fs_text": {},
+ "fx": [],
+ "label": "d3dcompiler-off-again",
+ "note": "",
+ "op": "d3dcompiler",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "error": "No d3dcompiler backup was found.",
+   "ok": false
+  }
+ },
+ "step": 72,
+ "tags": []
+}

@@ -1,0 +1,25 @@
+{
+ "args": {
+  "profileId": "nope"
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {},
+  "removed": []
+ },
+ "fs_digest": "1eb5f7cb8bfda1c232ba8737fc5291f5c1fd019ae8ebf66d583e4dfd22d7d109",
+ "fs_text": {},
+ "fx": [],
+ "label": "workshop-install-unknown",
+ "note": "",
+ "op": "workshop-install",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "error": "Select an installable Workshop mod.",
+   "ok": false
+  }
+ },
+ "step": 85,
+ "tags": []
+}

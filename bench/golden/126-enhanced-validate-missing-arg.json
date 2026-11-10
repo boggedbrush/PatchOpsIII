@@ -1,0 +1,20 @@
+{
+ "args": {},
+ "fs_diff": {
+  "added": {},
+  "changed": {},
+  "removed": []
+ },
+ "fs_digest": "311df8808260994173c9742167881796bbccbb5b8ad30374ae98a2227cc902ee",
+ "fs_text": {},
+ "fx": [],
+ "label": "enhanced-validate-missing-arg",
+ "note": "",
+ "op": "enhanced-validate",
+ "response": {
+  "envelope_ok": false,
+  "error_class": "validation"
+ },
+ "step": 126,
+ "tags": []
+}

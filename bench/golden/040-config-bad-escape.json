@@ -1,0 +1,41 @@
+{
+ "args": {
+  "comment": "c",
+  "key": "BenchEsc",
+  "value": "\\q"
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "mode": "0644",
+    "sha256": "txt:a3e8e230c4904f31f99e9ec32937d888e56cdaaf1475a40a9f11d62b12efd68d",
+    "t": "f"
+   }
+  },
+  "removed": []
+ },
+ "fs_digest": "beee3321be25aeadba9aed4904341acb974cc2218bfe768a96e3b5f6b2ef7011",
+ "fs_text": {
+  "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+   "appended": [
+    "<TS> - Error: bad escape \\q at position 12"
+   ]
+  }
+ },
+ "fx": [],
+ "label": "config-bad-escape",
+ "note": "re.error 'bad escape' text is returned verbatim in error",
+ "op": "config",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "error": "bad escape \\q at position 12",
+   "ok": false
+  }
+ },
+ "step": 40,
+ "tags": [
+  "quirk"
+ ]
+}

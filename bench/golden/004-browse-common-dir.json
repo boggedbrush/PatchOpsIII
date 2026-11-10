@@ -1,0 +1,65 @@
+{
+ "args": {
+  "path": "{common}"
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {},
+  "removed": []
+ },
+ "fs_digest": "73d3be26b0c8912a21dddb6ee2477dbd2fb57b70a0596cf42a6489f8e1673297",
+ "fs_text": {},
+ "fx": [],
+ "label": "browse-common-dir",
+ "note": "",
+ "op": "browse",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "entries": [
+    {
+     "hasGameExecutable": true,
+     "name": "Call of Duty Black Ops III",
+     "path": "<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III"
+    }
+   ],
+   "hasGameExecutable": false,
+   "parent": "<SB>/games/SteamLibrary/steamapps",
+   "path": "<SB>/games/SteamLibrary/steamapps/common",
+   "roots": [
+    {
+     "label": "/",
+     "path": "/"
+    }
+   ],
+   "shortcuts": [
+    {
+     "label": "Home",
+     "path": "<SB>/home"
+    },
+    {
+     "label": "Desktop",
+     "path": "<SB>/home/Desktop"
+    },
+    {
+     "label": "Downloads",
+     "path": "<SB>/home/Downloads"
+    },
+    {
+     "label": "Detected BO3 folder",
+     "path": "<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III"
+    },
+    {
+     "label": "Steam Library 1",
+     "path": "<SB>/home/.steam/steam"
+    },
+    {
+     "label": "Steam Library 2",
+     "path": "<SB>/games/SteamLibrary"
+    }
+   ]
+  }
+ },
+ "step": 4,
+ "tags": []
+}

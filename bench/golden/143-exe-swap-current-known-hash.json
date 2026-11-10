@@ -1,0 +1,35 @@
+{
+ "args": {},
+ "fs_diff": {
+  "added": {},
+  "changed": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "mode": "0644",
+    "sha256": "txt:0b07a243891bea867be5e3c459b51c033cfe8b942533f33aadcd3a3ef982852c",
+    "t": "f"
+   }
+  },
+  "removed": []
+ },
+ "fs_digest": "dad7ce3e07e5ab58174f9fcfdfe096d039735fbd86b5e56c7496e106cc81cc6a",
+ "fs_text": {
+  "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+   "appended": [
+    "<TS> - Error: Current EXE restore failed: No backup executable found. Cannot restore the current EXE."
+   ]
+  }
+ },
+ "fx": [],
+ "label": "exe-swap-current-known-hash",
+ "note": "",
+ "op": "exe-swap/current",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "error": "No backup executable found. Cannot restore the current EXE.",
+   "ok": false
+  }
+ },
+ "step": 143,
+ "tags": []
+}

@@ -1,0 +1,23 @@
+{
+ "args": {},
+ "fs_diff": {
+  "added": {},
+  "changed": {},
+  "removed": []
+ },
+ "fs_digest": "ecfae6d622ffeef4efaa20dd8549f1677130e118065571f6657e4822316840c6",
+ "fs_text": {},
+ "fx": [],
+ "label": "logs-payload-after-clear",
+ "note": "",
+ "op": "logs/payload",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "ok": true,
+   "payload": "PatchOpsIII bench - <PLATFORM> logs:\n```\n<TS> - Success: Logs cleared.\n```"
+  }
+ },
+ "step": 149,
+ "tags": []
+}

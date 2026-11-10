@@ -1,0 +1,40 @@
+{
+ "args": {},
+ "fs_diff": {
+  "added": {},
+  "changed": {
+   "fakebin-log/steam.calls": {
+    "mode": "0644",
+    "sha256": "txt:c7aa6604a613e1624fca52179486791f79ba4aa728b64c6ca417fec0e6b11521",
+    "t": "f"
+   },
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "mode": "0644",
+    "sha256": "txt:a4f7e11623e71e177e4e3b95f8ccd5dfc0550d442a0db1fa0318a356aaf1b63c",
+    "t": "f"
+   }
+  },
+  "removed": []
+ },
+ "fs_digest": "9525c354a66a16276f9722c3eafd2f2b48fac5b26679ab630eb7eee3b2c16ed2",
+ "fs_text": {
+  "fakebin-log/steam.calls": "steam -silent\nsteam -silent\nsteam -silent\nsteam -silent\nsteam -silent\nxdg-open steam://openurl/https://steamcommunity.com/sharedfiles/filedetails/?id=2942053577\nsteam -applaunch 311210\n",
+  "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+   "appended": [
+    "<TS> - Success: Launched Black Ops III via Steam (AppID: 311210) using steam -applaunch"
+   ]
+  }
+ },
+ "fx": [],
+ "label": "launch",
+ "note": "",
+ "op": "launch",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "ok": true
+  }
+ },
+ "step": 89,
+ "tags": []
+}

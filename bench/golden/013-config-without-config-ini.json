@@ -1,0 +1,38 @@
+{
+ "args": {
+  "key": "MaxFPS",
+  "value": 60
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "mode": "0644",
+    "sha256": "txt:26c2a5a28bec757d6a1a1497cb459bedd4f11fc9cbd370a955878a99207ff650",
+    "t": "f"
+   }
+  },
+  "removed": []
+ },
+ "fs_digest": "18a972d2ae1d4b3f33f527c21b690125f4a109c638e70bcd8edc0b3c1c530104",
+ "fs_text": {
+  "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+   "appended": [
+    "<TS> - Error: config.ini not found at <SB>/games/alt/Call of Duty Black Ops III/players/config.ini"
+   ]
+  }
+ },
+ "fx": [],
+ "label": "config-without-config-ini",
+ "note": "",
+ "op": "config",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "error": "config.ini not found at <SB>/games/alt/Call of Duty Black Ops III/players/config.ini",
+   "ok": false
+  }
+ },
+ "step": 13,
+ "tags": []
+}

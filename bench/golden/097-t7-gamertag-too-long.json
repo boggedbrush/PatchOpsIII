@@ -1,0 +1,26 @@
+{
+ "args": {
+  "colorCode": "^1",
+  "gamertag": "AAAAAAAAAAAAAAAAAAAAA"
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {},
+  "removed": []
+ },
+ "fs_digest": "1011246d8697ac3f790bb0ac7902ed9303d96bfb0fba0b8fa9ecf5528c724c2b",
+ "fs_text": {},
+ "fx": [],
+ "label": "t7-gamertag-too-long",
+ "note": "",
+ "op": "t7-config",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "error": "Gamertag cannot exceed 20 characters.",
+   "ok": false
+  }
+ },
+ "step": 97,
+ "tags": []
+}

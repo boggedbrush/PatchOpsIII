@@ -1,0 +1,38 @@
+{
+ "args": {
+  "dumpSource": "{invalid_dump}"
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "mode": "0644",
+    "sha256": "txt:923c8af6c7444fc9770c44d9972eabd9972856fd06649f7245b89ffe8ac96168",
+    "t": "f"
+   }
+  },
+  "removed": []
+ },
+ "fs_digest": "b741e9ed5c7e67be04f8b9d9f1c8126b7321cac1d23d9b65f7a4ec6c5dc9b9f0",
+ "fs_text": {
+  "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+   "appended": [
+    "<TS> - Error: Dump source missing required files: BlackOps3.exe, MicrosoftGame.config",
+    "<TS> - Error: BO3 Enhanced install failed: The dump source is missing required files."
+   ]
+  }
+ },
+ "fx": [],
+ "label": "enhanced-install-invalid-source",
+ "note": "",
+ "op": "enhanced-install",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "error": "The dump source is missing required files.",
+   "ok": false
+  }
+ },
+ "step": 128,
+ "tags": []
+}

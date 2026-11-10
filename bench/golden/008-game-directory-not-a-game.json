@@ -1,0 +1,37 @@
+{
+ "args": {
+  "path": "{home}"
+ },
+ "fs_diff": {
+  "added": {
+   "home/.local/share/PatchOpsIII": {
+    "mode": "0755",
+    "t": "d"
+   },
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "mode": "0644",
+    "sha256": "txt:d55c0c24e54e39b2bd0f3832302f9399d541918ddc8cd2173848979559d43850",
+    "t": "f"
+   }
+  },
+  "changed": {},
+  "removed": []
+ },
+ "fs_digest": "cfac035ed0e024dcea1900a41028adeb4b50fdc9bbc853fe8eae30d57a211b5e",
+ "fs_text": {
+  "home/.local/share/PatchOpsIII/PatchOpsIII.log": "<TS> - Error: Selected directory is not a Black Ops III install: <SB>/home\n"
+ },
+ "fx": [],
+ "label": "game-directory-not-a-game",
+ "note": "",
+ "op": "game-directory",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "error": "BlackOps3.exe or BlackOpsIII.exe was not found.",
+   "ok": false
+  }
+ },
+ "step": 8,
+ "tags": []
+}

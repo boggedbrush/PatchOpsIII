@@ -1,0 +1,20 @@
+{
+ "args": {},
+ "fs_diff": {
+  "added": {},
+  "changed": {},
+  "removed": []
+ },
+ "fs_digest": "d467a8fe62ffb0b811f4ed95e3713d0bcdd77f8b094f814483e9fd2dc19089b2",
+ "fs_text": {},
+ "fx": [],
+ "label": "vram-target-missing-limited",
+ "note": "",
+ "op": "vram-target",
+ "response": {
+  "envelope_ok": false,
+  "error_class": "validation"
+ },
+ "step": 50,
+ "tags": []
+}

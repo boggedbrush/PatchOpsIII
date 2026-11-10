@@ -1,0 +1,22 @@
+{
+ "args": {
+  "profileId": ""
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {},
+  "removed": []
+ },
+ "fs_digest": "1eb5f7cb8bfda1c232ba8737fc5291f5c1fd019ae8ebf66d583e4dfd22d7d109",
+ "fs_text": {},
+ "fx": [],
+ "label": "workshop-install-empty-id",
+ "note": "",
+ "op": "workshop-install",
+ "response": {
+  "envelope_ok": false,
+  "error_class": "validation"
+ },
+ "step": 86,
+ "tags": []
+}

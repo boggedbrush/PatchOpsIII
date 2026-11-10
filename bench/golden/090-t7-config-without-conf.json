@@ -1,0 +1,26 @@
+{
+ "args": {
+  "colorCode": "^5",
+  "gamertag": "Bench"
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {},
+  "removed": []
+ },
+ "fs_digest": "9525c354a66a16276f9722c3eafd2f2b48fac5b26679ab630eb7eee3b2c16ed2",
+ "fs_text": {},
+ "fx": [],
+ "label": "t7-config-without-conf",
+ "note": "",
+ "op": "t7-config",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "error": "t7patch.conf was not found. Install T7 Patch before updating the gamertag.",
+   "ok": false
+  }
+ },
+ "step": 90,
+ "tags": []
+}

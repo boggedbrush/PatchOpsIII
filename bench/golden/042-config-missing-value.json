@@ -1,0 +1,22 @@
+{
+ "args": {
+  "key": "X"
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {},
+  "removed": []
+ },
+ "fs_digest": "beee3321be25aeadba9aed4904341acb974cc2218bfe768a96e3b5f6b2ef7011",
+ "fs_text": {},
+ "fx": [],
+ "label": "config-missing-value",
+ "note": "",
+ "op": "config",
+ "response": {
+  "envelope_ok": false,
+  "error_class": "validation"
+ },
+ "step": 42,
+ "tags": []
+}

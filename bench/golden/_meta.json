@@ -1,0 +1,18 @@
+{
+ "recorded_at": "2026-11-10T07:27:43+00:00",
+ "target": "legacy",
+ "source": {
+  "path": "/home/user/PatchOpsIII",
+  "commit": "25034853a6636278c7fce1afb76370825d24b1e5",
+  "branch": "claude/serene-brown-26fl09",
+  "describe": "2503485-dirty",
+  "dirty_tracked_files": 1
+ },
+ "harness_version": "1.0",
+ "fixture_version": "1",
+ "steps": 161,
+ "uid": 65534,
+ "run_mode": "packaged",
+ "kernel": "6.18.44-fc-v338",
+ "note": "recorded from the legacy GUI instance; every later run compares against these files"
+}

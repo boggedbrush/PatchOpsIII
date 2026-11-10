@@ -1,0 +1,37 @@
+{
+ "args": {
+  "dumpSource": "{sb}/nope"
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "mode": "0644",
+    "sha256": "txt:aec1789f60e709a2c807f718ef757f23ea910c4af484cbe6cb2a782aabc385af",
+    "t": "f"
+   }
+  },
+  "removed": []
+ },
+ "fs_digest": "ae4ad2640e74abfe79223f834b325679361552d7f25d693b904f20207cc245fb",
+ "fs_text": {
+  "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+   "appended": [
+    "<TS> - Error: BO3 Enhanced install failed: The selected dump source does not exist."
+   ]
+  }
+ },
+ "fx": [],
+ "label": "enhanced-install-bad-source",
+ "note": "",
+ "op": "enhanced-install",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "error": "The selected dump source does not exist.",
+   "ok": false
+  }
+ },
+ "step": 127,
+ "tags": []
+}

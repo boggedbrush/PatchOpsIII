@@ -1,0 +1,35 @@
+{
+ "args": {},
+ "fs_diff": {
+  "added": {},
+  "changed": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "mode": "0644",
+    "sha256": "txt:af03c57d057fd16908bdd48512b0a42e7eef67a8c41e199f0953439ee7b14d30",
+    "t": "f"
+   }
+  },
+  "removed": []
+ },
+ "fs_digest": "4dcd29f5d5ffda721a3005c9570a97be2a36ea398428e06223ab78825f337768",
+ "fs_text": {
+  "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+   "appended": [
+    "<TS> - Error: Enhanced EXE restore failed: Active executable hash 92ad6bbeeb6b does not match latest BuildID 24784313, compatible BuildID 10650222, or a PatchOpsIII-preserved Enhanced EXE."
+   ]
+  }
+ },
+ "fx": [],
+ "label": "exe-swap-enhanced-unverified",
+ "note": "",
+ "op": "exe-swap/enhanced",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "error": "Active executable hash 92ad6bbeeb6b does not match latest BuildID 24784313, compatible BuildID 10650222, or a PatchOpsIII-preserved Enhanced EXE.",
+   "ok": false
+  }
+ },
+ "step": 132,
+ "tags": []
+}

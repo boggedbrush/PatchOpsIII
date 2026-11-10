@@ -1,0 +1,20 @@
+{
+ "args": {},
+ "fs_diff": {
+  "added": {},
+  "changed": {},
+  "removed": []
+ },
+ "fs_digest": "6518240d125bb65fb939295183617dc57570f4fd336e777668817a7640e5c19e",
+ "fs_text": {},
+ "fx": [],
+ "label": "preset-missing-name",
+ "note": "",
+ "op": "presets/apply",
+ "response": {
+  "envelope_ok": false,
+  "error_class": "validation"
+ },
+ "step": 54,
+ "tags": []
+}

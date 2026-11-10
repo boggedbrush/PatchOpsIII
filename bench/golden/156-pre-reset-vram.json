@@ -1,0 +1,202 @@
+{
+ "args": {
+  "limited": true,
+  "target": 85
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini": {
+    "mode": "0600",
+    "sha256": "txt:80066d1ad2028d10bcd0ed71685d4c8ccb2c14c8e41d9bc38660446730df52da",
+    "t": "f"
+   },
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "mode": "0644",
+    "sha256": "txt:9d6ec4506f46a769de0cf83f3f2dd6b55448b4f8cd9bf3e76fd47f8b89906d32",
+    "t": "f"
+   }
+  },
+  "removed": []
+ },
+ "fs_digest": "c1c18c2d374a61725af534260f70d6dcf4e6e12484797ccea8ee8bc52316b411",
+ "fs_text": {
+  "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini": "// Black Ops III configuration (bench fixture)\nAATechnique = \"FXAA\" // Anti-aliasing set to FXAA\nActorShadows = \"0\" // Actor shadows disabled\nBackbufferCount = \"2\" // Reset Vsync to double buffer\nCorpseCount = \"16\" // Maximum number of corpses is 32, 16 is selected for a balanced approach\nDisableDynamicLightShadows = \"1\" // Dynamic light shadows disabled\nDisableDynamicSunShadows = \"1\" // Dynamic sun shadows disabled\nDrawFPS = \"1\" // FPS counter\nFOV = \"100\" // Field of view\n// FOV = \"70\" (commented out, must not be matched)\nFullScreenMode = \"2\" // 0=Windowed,1=Fullscreen,2=Fullscreen Windowed\nGamma = \"1.0\" // gamma (not managed by PatchOpsIII)\nMaxFPS = \"165\" // Maximum FPS cap\nMaxFrameLatency = \"1\" // Driver can only queue up to 1 frame\nMeshQuality = \"0\" // Highest quality meshes\nMotionBlur = \"Off\" // Motion blur disabled\nMotionBlurQuality = \"Medium\" // Medium quality motion blur (if enabled)\nOIT = \"1\" // Order-independent transparency enabled\nRefreshRate = \"144\" // 1 to 240\nRestrictGraphicsOptions = \"0\" // Advanced graphics options unlocked\nResolutionPercent = \"125\" // 50 to 200\nSerializeRender = \"2\" // 0 is the default for the best performance, 1 and 2 improve latency but require a powerful CPU.\nShadowFiltering = \"1\" // Multi-sampled soft shadows enabled\nSmoothFramerate = \"0\" // Disable smoothing to minimize frame delay\nSpotShadowTextureSize = \"1024\" // Spot light shadow resolution set to 1024\nStreamMinResident = \"1\" // 0 or 1\nTextureFilter = \"2\" // High anisotropic filtering\nTextureQuality = \"1\" // High texture quality (balanced)\nVideoMemory = \"0.85\" // 0.75 to 1\nVsync = \"0\" // Vertical sync disabled for lower latency\nVsyncMode = \"adaptive\" // different key sharing the prefix \"Vsync\"\nWindowSize = \"2560x1440\" // any text\nDrawFPS = \"1\" // FPS counter\n// caf latin-1 byte in a comment MARK\nBenchNewKey = \"abc\" // appended\nBenchBool = \"True\" // Managed by PatchOpsIII\nBenchFloat = \"1.0\" // Managed by PatchOpsIII\nBenchDefault = \"7\" // Managed by PatchOpsIII\nBenchEsc = \"x\ny\" // c\nTextureQualityFX = \"1\" // Improved effect quality\nTextureQualityProbes = \"0\" // Default reflection quality\nTextureQualityBakedSunShadows = \"1\" // Slightly reduced baked sun shadow quality\nTextureLowDetailResident = \"0\" // Lowest detail resident streaming disabled\nOmniShadowTextureSize = \"256\" // Omni (point) light shadow resolution set to 256\nVolumetricLightingEnabled = \"0\" // Volumetric lighting disabled\nVolumetricLightingMaxSunSamples = \"8\" // Max sun samples for volumetric lighting\nVolumetricLightingMaxLightSamples = \"40\" // Max light samples for volumetric lighting\nVolumetricLightingSkipSunSamples = \"1\" // Skip alternate sun samples\nVolumetricLightingSkipLightSamples = \"1\" // Skip alternate light samples\nOITLayers = \"8\" // 8 transparency layers set\nSSAOTechnique = \"GTAO Low Quality\" // Ambient occlusion set to GTAO Low Quality\nSubsurfaceScattering = \"0\" // Subsurface scattering disabled\n",
+  "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+   "appended": [
+    "<TS> - Success: Limited VRAM usage set to 85%."
+   ]
+  }
+ },
+ "fx": [],
+ "label": "pre-reset-vram",
+ "note": "",
+ "op": "vram-target",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "ok": true,
+   "state": {
+    "activeLaunchProfile": "ultimate",
+    "advanced": {
+     "configReadonly": false,
+     "maxFrameLatency": 1,
+     "reduceCpu": true,
+     "smoothFramerate": false,
+     "unlockOptions": true,
+     "vramLimited": true,
+     "vramTarget": 85
+    },
+    "appVersion": "bench",
+    "configExists": true,
+    "currentLaunchOptions": "WINEDLLOVERRIDES=\"dsound=n,b\" %command% +set fs_game 2942053577",
+    "dxvk": {
+     "confExists": true,
+     "installed": true,
+     "settings": {
+      "enableAsync": true,
+      "gplAsyncCache": true,
+      "hudEnabled": true,
+      "maxFrameLatency": 2,
+      "maxFrameRate": 144,
+      "numCompilerThreads": 4,
+      "tearFree": "Auto"
+     }
+    },
+    "enhanced": {
+     "acknowledgedAt": null,
+     "backupStatus": "Not created",
+     "detectedAt": null,
+     "dumpSource": "<SB>/nope",
+     "filesInstalled": 0,
+     "installed": true,
+     "launchOptionsActive": false
+    },
+    "exeSwap": {
+     "activeBuildDate": "",
+     "activeBuildId": "Enhanced",
+     "backupAvailable": false,
+     "compatibleActive": false,
+     "compatibleAvailable": false,
+     "compatibleBuildDate": "Mar 3, 2023",
+     "compatibleBuildId": "10650222",
+     "currentBuildDate": "Sep 10, 2026",
+     "currentBuildId": "24784313",
+     "displayLabel": "Executable is managed by BO3 Enhanced. T7 installs will use T7 Patch Scroptss/T7Patch.",
+     "enhancedActive": true,
+     "enhancedAvailable": true,
+     "enhancedBuildDate": "",
+     "enhancedBuildId": "Enhanced",
+     "enhancedExeActive": true,
+     "executable": "<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/BlackOps3.exe",
+     "executableHash": "92ad6bbeeb6b99115837261d607c4d6da8ed7c6c6c30dae42070a92e4f969818",
+     "executableName": "BlackOps3.exe",
+     "integrityMessage": "Executable is managed by BO3 Enhanced.",
+     "integrityStatus": "enhanced",
+     "latestAvailable": false,
+     "modeLabel": "Enhanced",
+     "patchLabel": "T7 Patch Scroptss/T7Patch",
+     "profile": "enhanced",
+     "state": "enhanced",
+     "trustedExecutable": true
+    },
+    "gameDetected": true,
+    "gameDir": "<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III",
+    "graphics": {
+     "displayMode": 2,
+     "drawFps": true,
+     "fov": 100,
+     "maxFps": 165,
+     "refreshRate": 144.0,
+     "renderResolution": 125,
+     "resolution": "2560x1440",
+     "vsync": false
+    },
+    "launchProfiles": [
+     {
+      "active": false,
+      "id": "default",
+      "installed": true,
+      "label": "Default (None)",
+      "option": "",
+      "state": "Ready",
+      "subscribed": true
+     },
+     {
+      "active": false,
+      "id": "offline",
+      "installed": true,
+      "label": "Play Offline",
+      "option": "+set fs_game offlinemp",
+      "state": "Ready",
+      "subscribed": true
+     },
+     {
+      "active": false,
+      "id": "all_around",
+      "installed": true,
+      "label": "All-around Enhancement Lite",
+      "option": "+set fs_game 2994481309",
+      "path": "<SB>/games/SteamLibrary/steamapps/workshop/content/311210/2994481309",
+      "state": "Installed",
+      "subscribed": true
+     },
+     {
+      "active": true,
+      "id": "ultimate",
+      "installed": false,
+      "label": "Ultimate Experience Mod",
+      "option": "+set fs_game 2942053577",
+      "path": null,
+      "state": "Subscribed (not installed yet)",
+      "subscribed": true
+     },
+     {
+      "active": false,
+      "id": "reforged",
+      "installed": false,
+      "label": "BO3 Reforged",
+      "option": "+set fs_game 3667377161",
+      "path": null,
+      "state": "Not Subscribed",
+      "subscribed": false
+     }
+    ],
+    "logPath": "<SB>/home/.local/share/PatchOpsIII/PatchOpsIII.log",
+    "maintenance": {
+     "logPayload": "PatchOpsIII bench - <PLATFORM> logs:\n```\n<TS> - Success: Logs cleared.\n<TS> - Success: Cleared mod files in <SB>/home/.local/share/PatchOpsIII/BO3 Mod Files\n<TS> - Success: Cleared mod files in <SB>/home/.local/share/PatchOpsIII/BO3 Mod Files\n<TS> - Success: All intro videos skipped.\n<TS> - Success: Renamed d3dcompiler_46.dll to reduce stuttering.\n<TS> - Success: Applied preset 'Low-Latency Preset'.\n<TS> - Success: Limited VRAM usage set to 85%.\n```",
+     "modFilesDir": "<SB>/home/.local/share/PatchOpsIII/BO3 Mod Files"
+    },
+    "mods": {
+     "dxvk": true,
+     "enhanced": true,
+     "t7Patch": true
+    },
+    "platform": "Linux",
+    "presets": [
+     "Smooth Preset",
+     "Low-Latency Preset"
+    ],
+    "qol": {
+     "allIntros": true,
+     "d3dcompiler": true,
+     "intro": true
+    },
+    "releaseChannel": "stable",
+    "steamUserId": "12345678",
+    "t7": {
+     "colorCode": "^1",
+     "confExists": true,
+     "friendsOnly": false,
+     "gamertag": "^1BenchPlayer",
+     "installed": true,
+     "mode": "Enhanced",
+     "networkPassword": "",
+     "plainName": "BenchPlayer"
+    }
+   }
+  }
+ },
+ "step": 156,
+ "tags": []
+}

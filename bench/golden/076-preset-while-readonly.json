@@ -1,0 +1,39 @@
+{
+ "args": {
+  "name": "Smooth Preset"
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "mode": "0644",
+    "sha256": "txt:8566db1174bc8f0f6fcabdb06780458879b8ad904b27b8fab606b50c87136fc1",
+    "t": "f"
+   }
+  },
+  "removed": []
+ },
+ "fs_digest": "1492dd8f16d34e8001af149e7e20cbe508c0bc654350923af1568e6dfdb4d8dc",
+ "fs_text": {
+  "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+   "appended": [
+    "<TS> - Error: Failed to apply preset: [Errno 13] Permission denied: '<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini'"
+   ]
+  }
+ },
+ "fx": [],
+ "label": "preset-while-readonly",
+ "note": "",
+ "op": "presets/apply",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "error": "[Errno 13] Permission denied: '<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini'",
+   "ok": false
+  }
+ },
+ "step": 76,
+ "tags": [
+  "quirk"
+ ]
+}

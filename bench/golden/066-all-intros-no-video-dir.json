@@ -1,0 +1,27 @@
+{
+ "args": {
+  "enabled": true
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {},
+  "removed": []
+ },
+ "fs_digest": "4278e829ef841bcda9028af50d4a7d7076e4f6fe4b40b8860a3c0820ba6d460a",
+ "fs_text": {},
+ "fx": [
+  "remove_video_dir"
+ ],
+ "label": "all-intros-no-video-dir",
+ "note": "",
+ "op": "all-intros-skip",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "error": "Video directory was not found.",
+   "ok": false
+  }
+ },
+ "step": 66,
+ "tags": []
+}

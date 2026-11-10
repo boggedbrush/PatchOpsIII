@@ -1,0 +1,37 @@
+{
+ "args": {
+  "name": "Nope"
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "mode": "0644",
+    "sha256": "txt:fafa92b7469eb8aaa4431c5e4c5888a4c46eaa5974d43daae598f61aff960643",
+    "t": "f"
+   }
+  },
+  "removed": []
+ },
+ "fs_digest": "6518240d125bb65fb939295183617dc57570f4fd336e777668817a7640e5c19e",
+ "fs_text": {
+  "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+   "appended": [
+    "<TS> - Error: Failed to apply preset: 'Nope'"
+   ]
+  }
+ },
+ "fx": [],
+ "label": "preset-unknown",
+ "note": "KeyError text is returned as \"'Nope'\"",
+ "op": "presets/apply",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "error": "'Nope'",
+   "ok": false
+  }
+ },
+ "step": 53,
+ "tags": []
+}

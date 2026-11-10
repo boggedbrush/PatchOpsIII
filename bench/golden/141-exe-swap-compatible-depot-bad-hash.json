@@ -1,0 +1,35 @@
+{
+ "args": {},
+ "fs_diff": {
+  "added": {},
+  "changed": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "mode": "0644",
+    "sha256": "txt:d928fbc2178409ea0f111d092980c91b2cee696463b53d71a1c0e64dee9182ad",
+    "t": "f"
+   }
+  },
+  "removed": []
+ },
+ "fs_digest": "c6550d87927a2e07c22c8fe8f3aa956926b988ca3c392914a35d2610701025cd",
+ "fs_text": {
+  "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+   "appended": [
+    "<TS> - Error: Compatible EXE swap failed: Active executable hash 92ad6bbeeb6b does not match latest BuildID 24784313, compatible BuildID 10650222, or a PatchOpsIII-preserved Enhanced EXE."
+   ]
+  }
+ },
+ "fx": [],
+ "label": "exe-swap-compatible-depot-bad-hash",
+ "note": "",
+ "op": "exe-swap/compatible",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "error": "Active executable hash 92ad6bbeeb6b does not match latest BuildID 24784313, compatible BuildID 10650222, or a PatchOpsIII-preserved Enhanced EXE.",
+   "ok": false
+  }
+ },
+ "step": 141,
+ "tags": []
+}

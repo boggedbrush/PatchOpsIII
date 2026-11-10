@@ -1,0 +1,307 @@
+{
+ "args": {},
+ "fs_diff": {
+  "added": {
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/d3dcompiler_46.dll": {
+    "mode": "0644",
+    "sha256": "bin:5928a615d1ad720f3bb6237978914cbd98dba4d3d4088a7a0e59a42b16d6f276",
+    "size": 4098,
+    "t": "f"
+   },
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/video/BO3_Global_Logo_IW.mkv": {
+    "mode": "0644",
+    "sha256": "bin:8b8687ecc27cd3e5dd53209c81cb203dff984b6fef34b0cf5f5b858610501378",
+    "size": 3000,
+    "t": "f"
+   },
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/video/BO3_Global_Logo_LogoSequence.mkv": {
+    "mode": "0644",
+    "sha256": "bin:eadb14aef437052b955740b402d579be0eac1a3ef690666ba144e2a241716cee",
+    "size": 3000,
+    "t": "f"
+   },
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/video/BO3_Global_Logo_Treyarch.mkv": {
+    "mode": "0644",
+    "sha256": "bin:d28808894080906d7493aab5091a8c356757c3fdc0458696a8df69fac978af91",
+    "size": 3000,
+    "t": "f"
+   },
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/video/loadingscreen_zm.mkv": {
+    "mode": "0644",
+    "sha256": "bin:dbb5f66a401ac252102af6d74427a5cedc8a2af42d2c38c6daf4092fed0ff73f",
+    "size": 3000,
+    "t": "f"
+   }
+  },
+  "changed": {
+   "fakebin-log/steam.calls": {
+    "mode": "0644",
+    "sha256": "txt:ac2813186229b6c709167a42fe2d9e985a7562915051de4f58430d12685bf70b",
+    "t": "f"
+   },
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/LPC/lpc_core.ff": {
+    "mode": "0644",
+    "sha256": "bin:c7e48bb0cec98091f73cabcb507930237e2c10410af494ff5e82f8047fcf7fda",
+    "size": 1500,
+    "t": "f"
+   },
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/LPC/lpc_extra.ff": {
+    "mode": "0644",
+    "sha256": "bin:4dec774414fe905d0077d76667bc068a07de4bad93843dd34fddf2e007225555",
+    "size": 1500,
+    "t": "f"
+   },
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini": {
+    "mode": "0600",
+    "sha256": "txt:f89262bea031463e66d20d4ad35c13d6ddb0975efd6abb86df0c4675d1491925",
+    "t": "f"
+   },
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "mode": "0644",
+    "sha256": "txt:c44da7f921933ee4f8ab672fd8b4a379929935f69aa903d9a820c85949d71fd3",
+    "t": "f"
+   },
+   "home/.steam/steam/userdata/12345678/config/localconfig.vdf": {
+    "mode": "0644",
+    "sha256": "txt:7ab0bb914ef9282fe78607d31be5c85abd7834e8f10a44a7386592c7281f44ad",
+    "t": "f"
+   }
+  },
+  "removed": [
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/LPC/lpc_core.ff.patchops.bak",
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/LPC/lpc_extra.ff.patchops.bak",
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/T7InternalWS.dll",
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/T7WSBootstrapper.dll",
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/WindowsCodecs.dll",
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/d3d11.dll",
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/d3dcompiler_46.dll.patchops.bak",
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/dsound.dll",
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/dxgi.dll",
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/dxvk.conf",
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/steam_api65.dll",
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/t7patch.conf",
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/t7patch.dll",
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/t7patchloader.dll",
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/video/BO3_Global_Logo_IW.mkv.patchops.bak",
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/video/BO3_Global_Logo_LogoSequence.mkv.patchops.bak",
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/video/BO3_Global_Logo_Treyarch.mkv.patchops.bak",
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/video/loadingscreen_zm.mkv.patchops.bak",
+   "home/.local/share/PatchOpsIII/BO3 Mod Files/T7Patch.zip",
+   "home/.local/share/PatchOpsIII/BO3 Mod Files/T7Patch_extracted",
+   "home/.local/share/PatchOpsIII/BO3 Mod Files/T7Patch_extracted/t7patch.dll"
+  ]
+ },
+ "fs_digest": "96db5422311bd66ee4f5a0d56ef5c017456c39bf054877ba9b24f7f0f3b60377",
+ "fs_text": {
+  "fakebin-log/steam.calls": "steam -silent\nsteam -silent\nsteam -silent\nsteam -silent\nsteam -silent\nxdg-open steam://openurl/https://steamcommunity.com/sharedfiles/filedetails/?id=2942053577\nsteam -applaunch 311210\nsteam -silent\nsteam -silent\nsteam -silent\nsteam -silent\nsteam -silent\n",
+  "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini": "// Black Ops III configuration (bench fixture)\nAATechnique = \"FXAA\" // Anti-aliasing set to FXAA\nActorShadows = \"0\" // Actor shadows disabled\nBackbufferCount = \"2\" // Reset Vsync to double buffer\nCorpseCount = \"16\" // Maximum number of corpses is 32, 16 is selected for a balanced approach\nDisableDynamicLightShadows = \"1\" // Dynamic light shadows disabled\nDisableDynamicSunShadows = \"1\" // Dynamic sun shadows disabled\nDrawFPS = \"1\" // FPS counter\nFOV = \"100\" // Field of view\n// FOV = \"70\" (commented out, must not be matched)\nFullScreenMode = \"2\" // 0=Windowed,1=Fullscreen,2=Fullscreen Windowed\nGamma = \"1.0\" // gamma (not managed by PatchOpsIII)\nMaxFPS = \"165\" // Maximum FPS cap\nMaxFrameLatency = \"1\" // 0 to 4\nMeshQuality = \"0\" // Highest quality meshes\nMotionBlur = \"Off\" // Motion blur disabled\nMotionBlurQuality = \"Medium\" // Medium quality motion blur (if enabled)\nOIT = \"1\" // Order-independent transparency enabled\nRefreshRate = \"144\" // 1 to 240\nRestrictGraphicsOptions = \"1\" // 0 or 1\nResolutionPercent = \"125\" // 50 to 200\nSerializeRender = \"0\" // 0 to 2\nShadowFiltering = \"1\" // Multi-sampled soft shadows enabled\nSmoothFramerate = \"0\" // 0 or 1\nSpotShadowTextureSize = \"1024\" // Spot light shadow resolution set to 1024\nStreamMinResident = \"0\" // 0 or 1\nTextureFilter = \"2\" // High anisotropic filtering\nTextureQuality = \"1\" // High texture quality (balanced)\nVideoMemory = \"1\" // 0.75 to 1\nVsync = \"0\" // Vertical sync disabled for lower latency\nVsyncMode = \"adaptive\" // different key sharing the prefix \"Vsync\"\nWindowSize = \"2560x1440\" // any text\nDrawFPS = \"1\" // FPS counter\n// caf latin-1 byte in a comment MARK\nBenchNewKey = \"abc\" // appended\nBenchBool = \"True\" // Managed by PatchOpsIII\nBenchFloat = \"1.0\" // Managed by PatchOpsIII\nBenchDefault = \"7\" // Managed by PatchOpsIII\nBenchEsc = \"x\ny\" // c\nTextureQualityFX = \"1\" // Improved effect quality\nTextureQualityProbes = \"0\" // Default reflection quality\nTextureQualityBakedSunShadows = \"1\" // Slightly reduced baked sun shadow quality\nTextureLowDetailResident = \"0\" // Lowest detail resident streaming disabled\nOmniShadowTextureSize = \"256\" // Omni (point) light shadow resolution set to 256\nVolumetricLightingEnabled = \"0\" // Volumetric lighting disabled\nVolumetricLightingMaxSunSamples = \"8\" // Max sun samples for volumetric lighting\nVolumetricLightingMaxLightSamples = \"40\" // Max light samples for volumetric lighting\nVolumetricLightingSkipSunSamples = \"1\" // Skip alternate sun samples\nVolumetricLightingSkipLightSamples = \"1\" // Skip alternate light samples\nOITLayers = \"8\" // 8 transparency layers set\nSSAOTechnique = \"GTAO Low Quality\" // Ambient occlusion set to GTAO Low Quality\nSubsurfaceScattering = \"0\" // Subsurface scattering disabled\n",
+  "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+   "appended": [
+    "<TS> - Success: Dump files uninstalled.",
+    "<TS> - Success: Uninstall completed. Restored 0 files from backup; removed 4 files.",
+    "<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/steam_config_backup.vdf",
+    "<TS> - Success: Cleared compatibility mapping for AppID 311210.",
+    "<TS> - Info: No BO3 Enhanced launch override found; leaving launch options unchanged.",
+    "<TS> - Info: Compatibility tool 'BO3 Enhanced' was already absent.",
+    "<TS> - Info: Setting launch options...",
+    "<TS> - Info: Opening Steam...",
+    "<TS> - Success: Steam launched successfully",
+    "<TS> - Success: Linux BO3 Enhanced cleanup complete: mapping cleared, launch options reset, and tool removed.",
+    "<TS> - Success: Uninstalled BO3 Enhanced successfully.",
+    "<TS> - Warning: Executable reset step failed: Active executable hash 92ad6bbeeb6b does not match latest BuildID 24784313, compatible BuildID 10650222, or a PatchOpsIII-preserved Enhanced EXE.",
+    "<TS> - Success: Uninstalled T7 Patch files from the game directory.",
+    "<TS> - Success: Removed cached T7 Patch files.",
+    "<TS> - Success: Restored 2 LPC backup files",
+    "<TS> - Success: T7 Patch has been completely uninstalled.",
+    "<TS> - Success: Removed dxgi.dll.",
+    "<TS> - Success: Removed d3d11.dll.",
+    "<TS> - Success: Removed dxvk.conf.",
+    "<TS> - Success: DXVK-GPLAsync has been uninstalled.",
+    "<TS> - Success: Restored d3dcompiler_46.dll.",
+    "<TS> - Success: Restored 4 intro video file(s).",
+    "<TS> - Success: Reset stock graphics and advanced config values.",
+    "<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/localconfig_backup.vdf",
+    "<TS> - Info: Setting launch options to: WINEDLLOVERRIDES=\"dsound=n,b\" %command%",
+    "<TS> - Info: Setting launch options...",
+    "<TS> - Info: Opening Steam...",
+    "<TS> - Success: Steam launched successfully",
+    "<TS> - Success: Cleared Steam launch options.",
+    "<TS> - Success: Reset to stock complete."
+   ]
+  },
+  "home/.steam/steam/userdata/12345678/config/localconfig.vdf": "\"UserLocalConfigStore\"\n{\n\t\"Software\"\n\t{\n\t\t\"Valve\"\n\t\t{\n\t\t\t\"Steam\"\n\t\t\t{\n\t\t\t\t\"apps\"\n\t\t\t\t{\n\t\t\t\t\t\"220\"\n\t\t\t\t\t{\n\t\t\t\t\t\t\"LaunchOptions\" \"-novid\"\n\t\t\t\t\t}\n\t\t\t\t\t\"311210\"\n\t\t\t\t\t{\n\t\t\t\t\t\t\"LastPlayed\" \"1700000000\"\n\t\t\t\t\t\t\"LaunchOptions\" \"WINEDLLOVERRIDES=\\\"dsound=n,b\\\" %command%\"\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n\t\"friends\"\n\t{\n\t\t\"PersonaName\" \"BenchUser\"\n\t}\n}\n"
+ },
+ "fx": [],
+ "label": "reset-stock",
+ "note": "",
+ "op": "reset-stock",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "ok": true,
+   "state": {
+    "activeLaunchProfile": "custom",
+    "advanced": {
+     "configReadonly": false,
+     "maxFrameLatency": 1,
+     "reduceCpu": false,
+     "smoothFramerate": false,
+     "unlockOptions": false,
+     "vramLimited": false,
+     "vramTarget": 100
+    },
+    "appVersion": "bench",
+    "configExists": true,
+    "currentLaunchOptions": "WINEDLLOVERRIDES=\"dsound=n,b\" %command%",
+    "dxvk": {
+     "confExists": false,
+     "installed": false,
+     "settings": {
+      "enableAsync": true,
+      "gplAsyncCache": true,
+      "hudEnabled": false,
+      "maxFrameLatency": 1,
+      "maxFrameRate": 0,
+      "numCompilerThreads": 0,
+      "tearFree": "True"
+     }
+    },
+    "enhanced": {
+     "acknowledgedAt": null,
+     "backupStatus": "Not created",
+     "detectedAt": null,
+     "dumpSource": "<SB>/nope",
+     "filesInstalled": 0,
+     "installed": false,
+     "launchOptionsActive": false
+    },
+    "exeSwap": {
+     "activeBuildDate": "Sep 10, 2026",
+     "activeBuildId": "24784313",
+     "backupAvailable": false,
+     "compatibleActive": false,
+     "compatibleAvailable": false,
+     "compatibleBuildDate": "Mar 3, 2023",
+     "compatibleBuildId": "10650222",
+     "currentBuildDate": "Sep 10, 2026",
+     "currentBuildId": "24784313",
+     "displayLabel": "Active executable hash 92ad6bbeeb6b does not match latest BuildID 24784313, compatible BuildID 10650222, or a PatchOpsIII-preserved Enhanced EXE. T7 installs will use T7 Patch Scroptss/T7Patch.",
+     "enhancedActive": false,
+     "enhancedAvailable": false,
+     "enhancedBuildDate": "",
+     "enhancedBuildId": "Enhanced",
+     "enhancedExeActive": false,
+     "executable": "<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/BlackOps3.exe",
+     "executableHash": "92ad6bbeeb6b99115837261d607c4d6da8ed7c6c6c30dae42070a92e4f969818",
+     "executableName": "BlackOps3.exe",
+     "integrityMessage": "Active executable hash 92ad6bbeeb6b does not match latest BuildID 24784313, compatible BuildID 10650222, or a PatchOpsIII-preserved Enhanced EXE.",
+     "integrityStatus": "unverified",
+     "latestAvailable": false,
+     "modeLabel": "Current EXE",
+     "patchLabel": "T7 Patch Scroptss/T7Patch",
+     "profile": "current",
+     "state": "unverified",
+     "trustedExecutable": false
+    },
+    "gameDetected": true,
+    "gameDir": "<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III",
+    "graphics": {
+     "displayMode": 2,
+     "drawFps": true,
+     "fov": 100,
+     "maxFps": 165,
+     "refreshRate": 144.0,
+     "renderResolution": 125,
+     "resolution": "2560x1440",
+     "vsync": false
+    },
+    "launchProfiles": [
+     {
+      "active": false,
+      "id": "default",
+      "installed": true,
+      "label": "Default (None)",
+      "option": "",
+      "state": "Ready",
+      "subscribed": true
+     },
+     {
+      "active": false,
+      "id": "offline",
+      "installed": true,
+      "label": "Play Offline",
+      "option": "+set fs_game offlinemp",
+      "state": "Ready",
+      "subscribed": true
+     },
+     {
+      "active": false,
+      "id": "all_around",
+      "installed": true,
+      "label": "All-around Enhancement Lite",
+      "option": "+set fs_game 2994481309",
+      "path": "<SB>/games/SteamLibrary/steamapps/workshop/content/311210/2994481309",
+      "state": "Installed",
+      "subscribed": true
+     },
+     {
+      "active": false,
+      "id": "ultimate",
+      "installed": false,
+      "label": "Ultimate Experience Mod",
+      "option": "+set fs_game 2942053577",
+      "path": null,
+      "state": "Subscribed (not installed yet)",
+      "subscribed": true
+     },
+     {
+      "active": false,
+      "id": "reforged",
+      "installed": false,
+      "label": "BO3 Reforged",
+      "option": "+set fs_game 3667377161",
+      "path": null,
+      "state": "Not Subscribed",
+      "subscribed": false
+     }
+    ],
+    "logPath": "<SB>/home/.local/share/PatchOpsIII/PatchOpsIII.log",
+    "maintenance": {
+     "logPayload": "PatchOpsIII bench - <PLATFORM> logs:\n```\n<TS> - Success: Logs cleared.\n<TS> - Success: Cleared mod files in <SB>/home/.local/share/PatchOpsIII/BO3 Mod Files\n<TS> - Success: Cleared mod files in <SB>/home/.local/share/PatchOpsIII/BO3 Mod Files\n<TS> - Success: All intro videos skipped.\n<TS> - Success: Renamed d3dcompiler_46.dll to reduce stuttering.\n<TS> - Success: Applied preset 'Low-Latency Preset'.\n<TS> - Success: Limited VRAM usage set to 85%.\n<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/localconfig_backup.vdf\n<TS> - Info: Setting launch options to: WINEDLLOVERRIDES=\"dsound=n,b\" %command% +set fs_game 2942053577\n<TS> - Info: Setting launch options...\n<TS> - Info: Opening Steam...\n<TS> - Success: Steam launched successfully\n<TS> - Success: Dump files uninstalled.\n<TS> - Success: Uninstall completed. Restored 0 files from backup; removed 4 files.\n<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/steam_config_backup.vdf\n<TS> - Success: Cleared compatibility mapping for AppID 311210.\n<TS> - Info: No BO3 Enhanced launch override found; leaving launch options unchanged.\n<TS> - Info: Compatibility tool 'BO3 Enhanced' was already absent.\n<TS> - Info: Setting launch options...\n<TS> - Info: Opening Steam...\n<TS> - Success: Steam launched successfully\n<TS> - Success: Linux BO3 Enhanced cleanup complete: mapping cleared, launch options reset, and tool removed.\n<TS> - Success: Uninstalled BO3 Enhanced successfully.\n<TS> - Warning: Executable reset step failed: Active executable hash 92ad6bbeeb6b does not match latest BuildID 24784313, compatible BuildID 10650222, or a PatchOpsIII-preserved Enhanced EXE.\n<TS> - Success: Uninstalled T7 Patch files from the game directory.\n<TS> - Success: Removed cached T7 Patch files.\n<TS> - Success: Restored 2 LPC backup files\n<TS> - Success: T7 Patch has been completely uninstalled.\n<TS> - Success: Removed dxgi.dll.\n<TS> - Success: Removed d3d11.dll.\n<TS> - Success: Removed dxvk.conf.\n<TS> - Success: DXVK-GPLAsync has been uninstalled.\n<TS> - Success: Restored d3dcompiler_46.dll.\n<TS> - Success: Restored 4 intro video file(s).\n<TS> - Success: Reset stock graphics and advanced config values.\n<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/localconfig_backup.vdf\n<TS> - Info: Setting launch options to: WINEDLLOVERRIDES=\"dsound=n,b\" %command%\n<TS> - Info: Setting launch options...\n<TS> - Info: Opening Steam...\n<TS> - Success: Steam launched successfully\n<TS> - Success: Cleared Steam launch options.\n<TS> - Success: Reset to stock complete.\n```",
+     "modFilesDir": "<SB>/home/.local/share/PatchOpsIII/BO3 Mod Files"
+    },
+    "mods": {
+     "dxvk": false,
+     "enhanced": false,
+     "t7Patch": false
+    },
+    "platform": "Linux",
+    "presets": [
+     "Smooth Preset",
+     "Low-Latency Preset"
+    ],
+    "qol": {
+     "allIntros": false,
+     "d3dcompiler": false,
+     "intro": false
+    },
+    "releaseChannel": "stable",
+    "steamUserId": "12345678",
+    "t7": {
+     "colorCode": "",
+     "confExists": false,
+     "friendsOnly": false,
+     "gamertag": "",
+     "installed": false,
+     "mode": "Default",
+     "networkPassword": "",
+     "plainName": ""
+    }
+   }
+  }
+ },
+ "step": 158,
+ "tags": [
+  "steam"
+ ]
+}

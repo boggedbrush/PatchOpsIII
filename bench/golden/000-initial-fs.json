@@ -1,0 +1,237 @@
+{
+ "digest": "73d3be26b0c8912a21dddb6ee2477dbd2fb57b70a0596cf42a6489f8e1673297",
+ "fs": {
+  "dumps": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "dumps/invalid-dump": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "dumps/invalid-dump/readme.md": {
+   "mode": "0644",
+   "sha256": "txt:47dca68a76ff940c64c5f6de18e3290731d364ef70cdcacb5963d042c807221f",
+   "t": "f"
+  },
+  "dumps/valid-dump": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "dumps/valid-dump/DUMP": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "dumps/valid-dump/DUMP/BlackOps3.exe": {
+   "mode": "0644",
+   "sha256": "bin:c26d4a8371a35ba439244f4957fb7faa9a27a242a8d1d3c907700ca2c852b610",
+   "size": 514,
+   "t": "f"
+  },
+  "dumps/valid-dump/DUMP/MicrosoftGame.config": {
+   "mode": "0644",
+   "sha256": "txt:9898ed9492b8302a547ce8de4d9f87a8fd467e056784bb7995f355056b908ffd",
+   "t": "f"
+  },
+  "fakebin-log": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "games": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "games/SteamLibrary": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "games/SteamLibrary/steamapps": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "games/SteamLibrary/steamapps/common": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/BlackOps3.exe": {
+   "mode": "0644",
+   "sha256": "bin:92ad6bbeeb6b99115837261d607c4d6da8ed7c6c6c30dae42070a92e4f969818",
+   "size": 16386,
+   "t": "f"
+  },
+  "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/LPC": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/LPC/lpc_core.ff": {
+   "mode": "0644",
+   "sha256": "bin:c7e48bb0cec98091f73cabcb507930237e2c10410af494ff5e82f8047fcf7fda",
+   "size": 1500,
+   "t": "f"
+  },
+  "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/LPC/lpc_extra.ff": {
+   "mode": "0644",
+   "sha256": "bin:4dec774414fe905d0077d76667bc068a07de4bad93843dd34fddf2e007225555",
+   "size": 1500,
+   "t": "f"
+  },
+  "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/d3dcompiler_46.dll": {
+   "mode": "0644",
+   "sha256": "bin:5928a615d1ad720f3bb6237978914cbd98dba4d3d4088a7a0e59a42b16d6f276",
+   "size": 4098,
+   "t": "f"
+  },
+  "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/installscript_311210.vdf": {
+   "mode": "0644",
+   "sha256": "txt:e09a97adba23f99b520207c8b5f6ed43c49c6e16dc635585ecd6cb07e2a353c7",
+   "t": "f"
+  },
+  "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini": {
+   "mode": "0644",
+   "sha256": "bin:368e535e9d75747dab824c956af3847ac2b9f744f7402f89407f32ff2de0ad1a",
+   "size": 1528,
+   "t": "f"
+  },
+  "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/steam_api64.dll": {
+   "mode": "0644",
+   "sha256": "bin:6cafac46b8be9309c730217b23509740da0710a59b8bd4fad95ca6a53f75c42c",
+   "size": 2050,
+   "t": "f"
+  },
+  "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/video": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/video/BO3_Global_Logo_IW.mkv": {
+   "mode": "0644",
+   "sha256": "bin:8b8687ecc27cd3e5dd53209c81cb203dff984b6fef34b0cf5f5b858610501378",
+   "size": 3000,
+   "t": "f"
+  },
+  "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/video/BO3_Global_Logo_LogoSequence.mkv": {
+   "mode": "0644",
+   "sha256": "bin:eadb14aef437052b955740b402d579be0eac1a3ef690666ba144e2a241716cee",
+   "size": 3000,
+   "t": "f"
+  },
+  "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/video/BO3_Global_Logo_Treyarch.mkv": {
+   "mode": "0644",
+   "sha256": "bin:d28808894080906d7493aab5091a8c356757c3fdc0458696a8df69fac978af91",
+   "size": 3000,
+   "t": "f"
+  },
+  "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/video/keepme.bik": {
+   "mode": "0644",
+   "sha256": "bin:1f095e190b5ea81802940a052873cf97d24444d617d8801900f5afd892716583",
+   "size": 500,
+   "t": "f"
+  },
+  "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/video/loadingscreen_zm.mkv": {
+   "mode": "0644",
+   "sha256": "bin:dbb5f66a401ac252102af6d74427a5cedc8a2af42d2c38c6daf4092fed0ff73f",
+   "size": 3000,
+   "t": "f"
+  },
+  "games/SteamLibrary/steamapps/workshop": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "games/SteamLibrary/steamapps/workshop/appworkshop_311210.acf": {
+   "mode": "0644",
+   "sha256": "txt:2c541cfed8dd73012e57391afda48c82062209b1cb8c1a74ef0ed79f1ee76db4",
+   "t": "f"
+  },
+  "games/SteamLibrary/steamapps/workshop/content": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "games/SteamLibrary/steamapps/workshop/content/311210": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "games/SteamLibrary/steamapps/workshop/content/311210/2994481309": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "games/SteamLibrary/steamapps/workshop/content/311210/2994481309/workshop.json": {
+   "mode": "0644",
+   "sha256": "txt:82711f1abb9145e57dfccd69c229ca4661b42d49d24936fcc7fc3b8665e27c8f",
+   "t": "f"
+  },
+  "games/alt": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "games/alt/Call of Duty Black Ops III": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "games/alt/Call of Duty Black Ops III/BlackOpsIII.exe": {
+   "mode": "0644",
+   "sha256": "bin:176ee38a6ad39ea03d1c6b0a1e2a3196125b28a9f6622c7931fe54e6c4d5da8e",
+   "size": 1026,
+   "t": "f"
+  },
+  "home/.steam": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "home/.steam/steam": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "home/.steam/steam/config": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "home/.steam/steam/config/config.vdf": {
+   "mode": "0644",
+   "sha256": "txt:c51eb2cf014c42b60568e0ae2fb13a44c08d920ca94fee370be1c399301ed145",
+   "t": "f"
+  },
+  "home/.steam/steam/steamapps": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "home/.steam/steam/steamapps/libraryfolders.vdf": {
+   "mode": "0644",
+   "sha256": "txt:fe47a36de74051be0f49d648ed6280ff874197dc2f9bfbba790d364b3cb2b756",
+   "t": "f"
+  },
+  "home/.steam/steam/userdata": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "home/.steam/steam/userdata/12345678": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "home/.steam/steam/userdata/12345678/config": {
+   "mode": "0755",
+   "t": "d"
+  },
+  "home/.steam/steam/userdata/12345678/config/localconfig.vdf": {
+   "mode": "0644",
+   "sha256": "txt:1f5550c224ba69baa71e0557a0afb673a557390c2af2dbd8b25d8664740d6c30",
+   "t": "f"
+  }
+ },
+ "texts": {
+  "dumps/invalid-dump/readme.md": "not a dump\n",
+  "dumps/valid-dump/DUMP/MicrosoftGame.config": "<Game/>\n",
+  "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/installscript_311210.vdf": "\"InstallScript\"\n{\n}\n",
+  "games/SteamLibrary/steamapps/workshop/appworkshop_311210.acf": "\"AppWorkshop\"\n{\n\t\"appid\"\t\t\"311210\"\n\t\"WorkshopItemsInstalled\"\n\t{\n\t\t\"2942053577\"\n\t\t{\n\t\t\t\"size\"\t\t\"1024\"\n\t\t\t\"timeupdated\"\t\t\"1700000000\"\n\t\t}\n\t}\n}\n",
+  "games/SteamLibrary/steamapps/workshop/content/311210/2994481309/workshop.json": "{\"Title\":\"All-around Enhancement Lite\"}\n",
+  "home/.steam/steam/config/config.vdf": "\"InstallConfigStore\"\n{\n\t\"Software\"\n\t{\n\t\t\"Valve\"\n\t\t{\n\t\t\t\"Steam\"\n\t\t\t{\n\t\t\t\t\"CompatToolMapping\"\n\t\t\t\t{\n\t\t\t\t\t\"0\"\n\t\t\t\t\t{\n\t\t\t\t\t\t\"name\"\t\t\"proton_9\"\n\t\t\t\t\t\t\"config\"\t\t\"\"\n\t\t\t\t\t\t\"priority\"\t\t\"75\"\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n}\n",
+  "home/.steam/steam/steamapps/libraryfolders.vdf": "\"libraryfolders\"\n{\n\t\"0\"\n\t{\n\t\t\"path\"\t\t\"<SB>/home/.steam/steam\"\n\t\t\"label\"\t\t\"\"\n\t}\n\t\"1\"\n\t{\n\t\t\"path\"\t\t\"<SB>/games/SteamLibrary\"\n\t\t\"label\"\t\t\"Games\"\n\t}\n}\n",
+  "home/.steam/steam/userdata/12345678/config/localconfig.vdf": "\"UserLocalConfigStore\"\n{\n\t\"Software\"\n\t{\n\t\t\"Valve\"\n\t\t{\n\t\t\t\"Steam\"\n\t\t\t{\n\t\t\t\t\"apps\"\n\t\t\t\t{\n\t\t\t\t\t\"220\"\n\t\t\t\t\t{\n\t\t\t\t\t\t\"LaunchOptions\"\t\t\"-novid\"\n\t\t\t\t\t}\n\t\t\t\t\t\"311210\"\n\t\t\t\t\t{\n\t\t\t\t\t\t\"LastPlayed\"\t\t\"1700000000\"\n\t\t\t\t\t\t\"LaunchOptions\"\t\t\"WINEDLLOVERRIDES=\\\"dsound=n,b\\\" %command%\"\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n\t\"friends\"\n\t{\n\t\t\"PersonaName\"\t\t\"BenchUser\"\n\t}\n}\n"
+ }
+}

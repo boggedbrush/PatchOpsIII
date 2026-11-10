@@ -1,0 +1,5 @@
+# harness scratch: copies of the sources under test, build outputs, sandboxes, raw logs
+.work/
+__pycache__/
+*.pyc
+results/raw/

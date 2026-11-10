@@ -1,0 +1,203 @@
+{
+ "args": {
+  "comment": "Frame smoothing",
+  "key": "SmoothFramerate",
+  "value": "1"
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini": {
+    "mode": "0644",
+    "sha256": "txt:3d7d6c6de6b18f5238d5875cd5d3d6695d5ea30676651a4bf7f9ac405e6bc312",
+    "t": "f"
+   },
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "mode": "0644",
+    "sha256": "txt:3a2cb5e2ec0c3e4b96e0924c1afc4ae07312c22ca55ace54767406d2ba49fe67",
+    "t": "f"
+   }
+  },
+  "removed": []
+ },
+ "fs_digest": "9925adf8926402c1b2c18e5d89d6d706d37dfee7e38f5abcd9a8ec0a8995ff27",
+ "fs_text": {
+  "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini": "// Black Ops III configuration (bench fixture)\nAATechnique = \"SMAA 1x\" // anti-aliasing technique\nActorShadows = \"1\" // actor shadows\nBackbufferCount = \"2\" // back buffers\nCorpseCount = \"32\" // corpses\nDisableDynamicLightShadows = \"0\" // dynamic light shadows\nDisableDynamicSunShadows = \"0\" // dynamic sun shadows\nDrawFPS = \"1\" // FPS counter\nFOV = \"100\" // Field of view\n// FOV = \"70\" (commented out, must not be matched)\nFullScreenMode = \"2\" // 0=Windowed,1=Fullscreen,2=Fullscreen Windowed\nGamma = \"1.0\" // gamma (not managed by PatchOpsIII)\nMaxFPS = \"240\" // Maximum FPS cap\nMaxFrameLatency = \"1\" // frame latency\nMeshQuality = \"0\" // mesh quality\nMotionBlur = \"On\" // motion blur\nMotionBlurQuality = \"High\" // motion blur quality\nOIT = \"0\" // order independent transparency\nRefreshRate = \"144\" // 1 to 240\nRestrictGraphicsOptions = \"1\" // restrict graphics options\nResolutionPercent = \"125\" // 50 to 200\n  SerializeRender = \"0\" // 0 to 2 (leading spaces)\nShadowFiltering = \"0\" // shadow filtering\nSmoothFramerate = \"1\" // Frame smoothing\nSpotShadowTextureSize = \"2048\" // spot shadows\nStreamMinResident = \"0\" // 0 or 1\nTextureFilter = \"1\" // aniso\nTextureQuality = \"0\" // texture quality\nVideoMemory = \"0.75\" // 0.75 to 1\nVsync = \"0\" // Vertical sync\nVsyncMode = \"adaptive\" // different key sharing the prefix \"Vsync\"\nWindowSize = \"2560x1440\" // any text\nDrawFPS = \"1\" // FPS counter\n// caf latin-1 byte in a comment MARK\n",
+  "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+   "appended": [
+    "<TS> - Success: Set SmoothFramerate to 1."
+   ]
+  }
+ },
+ "fx": [],
+ "label": "config-SmoothFramerate",
+ "note": "",
+ "op": "config",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "ok": true,
+   "state": {
+    "activeLaunchProfile": "custom",
+    "advanced": {
+     "configReadonly": false,
+     "maxFrameLatency": 1,
+     "reduceCpu": false,
+     "smoothFramerate": true,
+     "unlockOptions": false,
+     "vramLimited": true,
+     "vramTarget": 75
+    },
+    "appVersion": "bench",
+    "configExists": true,
+    "currentLaunchOptions": "WINEDLLOVERRIDES=\"dsound=n,b\" %command%",
+    "dxvk": {
+     "confExists": false,
+     "installed": false,
+     "settings": {
+      "enableAsync": true,
+      "gplAsyncCache": true,
+      "hudEnabled": false,
+      "maxFrameLatency": 1,
+      "maxFrameRate": 0,
+      "numCompilerThreads": 0,
+      "tearFree": "True"
+     }
+    },
+    "enhanced": {
+     "acknowledgedAt": null,
+     "backupStatus": "Not created",
+     "detectedAt": null,
+     "dumpSource": "",
+     "filesInstalled": 0,
+     "installed": false,
+     "launchOptionsActive": false
+    },
+    "exeSwap": {
+     "activeBuildDate": "",
+     "activeBuildId": "Unverified",
+     "backupAvailable": false,
+     "compatibleActive": false,
+     "compatibleAvailable": false,
+     "compatibleBuildDate": "Mar 3, 2023",
+     "compatibleBuildId": "10650222",
+     "currentBuildDate": "Sep 10, 2026",
+     "currentBuildId": "24784313",
+     "displayLabel": "Active executable hash 92ad6bbeeb6b does not match latest BuildID 24784313, compatible BuildID 10650222, or a PatchOpsIII-preserved Enhanced EXE. T7 installs will use T7 Patch Scroptss/T7Patch.",
+     "enhancedActive": false,
+     "enhancedAvailable": false,
+     "enhancedBuildDate": "",
+     "enhancedBuildId": "Enhanced",
+     "enhancedExeActive": false,
+     "executable": "<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/BlackOps3.exe",
+     "executableHash": "92ad6bbeeb6b99115837261d607c4d6da8ed7c6c6c30dae42070a92e4f969818",
+     "executableName": "BlackOps3.exe",
+     "integrityMessage": "Active executable hash 92ad6bbeeb6b does not match latest BuildID 24784313, compatible BuildID 10650222, or a PatchOpsIII-preserved Enhanced EXE.",
+     "integrityStatus": "unverified",
+     "latestAvailable": false,
+     "modeLabel": "Unknown",
+     "patchLabel": "T7 Patch Scroptss/T7Patch",
+     "profile": "",
+     "state": "unverified",
+     "trustedExecutable": false
+    },
+    "gameDetected": true,
+    "gameDir": "<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III",
+    "graphics": {
+     "displayMode": 2,
+     "drawFps": true,
+     "fov": 100,
+     "maxFps": 240,
+     "refreshRate": 144.0,
+     "renderResolution": 125,
+     "resolution": "2560x1440",
+     "vsync": false
+    },
+    "launchProfiles": [
+     {
+      "active": false,
+      "id": "default",
+      "installed": true,
+      "label": "Default (None)",
+      "option": "",
+      "state": "Ready",
+      "subscribed": true
+     },
+     {
+      "active": false,
+      "id": "offline",
+      "installed": true,
+      "label": "Play Offline",
+      "option": "+set fs_game offlinemp",
+      "state": "Ready",
+      "subscribed": true
+     },
+     {
+      "active": false,
+      "id": "all_around",
+      "installed": true,
+      "label": "All-around Enhancement Lite",
+      "option": "+set fs_game 2994481309",
+      "path": "<SB>/games/SteamLibrary/steamapps/workshop/content/311210/2994481309",
+      "state": "Installed",
+      "subscribed": true
+     },
+     {
+      "active": false,
+      "id": "ultimate",
+      "installed": false,
+      "label": "Ultimate Experience Mod",
+      "option": "+set fs_game 2942053577",
+      "path": null,
+      "state": "Subscribed (not installed yet)",
+      "subscribed": true
+     },
+     {
+      "active": false,
+      "id": "reforged",
+      "installed": false,
+      "label": "BO3 Reforged",
+      "option": "+set fs_game 3667377161",
+      "path": null,
+      "state": "Not Subscribed",
+      "subscribed": false
+     }
+    ],
+    "logPath": "<SB>/home/.local/share/PatchOpsIII/PatchOpsIII.log",
+    "maintenance": {
+     "logPayload": "PatchOpsIII bench - <PLATFORM> logs:\n```\n<TS> - Error: Selected directory is not a Black Ops III install: <SB>/home\n<TS> - Success: Game directory set to <SB>/games/alt/Call of Duty Black Ops III\n<TS> - Error: config.ini not found at <SB>/games/alt/Call of Duty Black Ops III/players/config.ini\n<TS> - Success: Game directory set to <SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III\n<TS> - Success: Release channel set to Beta.\n<TS> - Success: Release channel set to Stable.\n<TS> - Success: Set MaxFPS to 240.\n<TS> - Success: Set FOV to 100.\n<TS> - Success: Set FullScreenMode to 2.\n<TS> - Success: Set WindowSize to 2560x1440.\n<TS> - Success: Set RefreshRate to 144.\n<TS> - Success: Set ResolutionPercent to 125.\n<TS> - Success: Set Vsync to 0.\n<TS> - Success: Set DrawFPS to 1.\n<TS> - Success: Set SmoothFramerate to 1.\n```",
+     "modFilesDir": "<SB>/home/.local/share/PatchOpsIII/BO3 Mod Files"
+    },
+    "mods": {
+     "dxvk": false,
+     "enhanced": false,
+     "t7Patch": false
+    },
+    "platform": "Linux",
+    "presets": [
+     "Smooth Preset",
+     "Low-Latency Preset"
+    ],
+    "qol": {
+     "allIntros": false,
+     "d3dcompiler": false,
+     "intro": false
+    },
+    "releaseChannel": "stable",
+    "steamUserId": "12345678",
+    "t7": {
+     "colorCode": "",
+     "confExists": false,
+     "friendsOnly": false,
+     "gamertag": "",
+     "installed": false,
+     "mode": "Custom",
+     "networkPassword": "",
+     "plainName": ""
+    }
+   }
+  }
+ },
+ "step": 30,
+ "tags": []
+}

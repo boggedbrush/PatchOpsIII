@@ -1,0 +1,3 @@
+#!/bin/bash
+# Test double for target/release/patchops (see legacy_rpc_shim.py). Not a benchmark target.
+exec "${BENCH_SHIM_PY:?set BENCH_SHIM_PY}" "$(dirname "$0")/legacy_rpc_shim.py" "$@"

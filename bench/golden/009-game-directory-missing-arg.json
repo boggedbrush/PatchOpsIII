@@ -1,0 +1,20 @@
+{
+ "args": {},
+ "fs_diff": {
+  "added": {},
+  "changed": {},
+  "removed": []
+ },
+ "fs_digest": "cfac035ed0e024dcea1900a41028adeb4b50fdc9bbc853fe8eae30d57a211b5e",
+ "fs_text": {},
+ "fx": [],
+ "label": "game-directory-missing-arg",
+ "note": "",
+ "op": "game-directory",
+ "response": {
+  "envelope_ok": false,
+  "error_class": "validation"
+ },
+ "step": 9,
+ "tags": []
+}

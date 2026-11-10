@@ -1,0 +1,25 @@
+{
+ "args": {
+  "enabled": true
+ },
+ "fs_diff": {
+  "added": {},
+  "changed": {},
+  "removed": []
+ },
+ "fs_digest": "18a972d2ae1d4b3f33f527c21b690125f4a109c638e70bcd8edc0b3c1c530104",
+ "fs_text": {},
+ "fx": [],
+ "label": "config-readonly-without-config-ini",
+ "note": "",
+ "op": "config-readonly",
+ "response": {
+  "envelope_ok": true,
+  "result": {
+   "error": "config.ini was not found.",
+   "ok": false
+  }
+ },
+ "step": 14,
+ "tags": []
+}
