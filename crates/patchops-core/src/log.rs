@@ -671,59 +671,42 @@ mod tests {
         texts.iter().flat_map(|t| t.lines()).filter_map(|l| l.split(" - Info: ").nth(1)).map(|s| s.split(' ').next().unwrap().to_string()).collect()
     }
 
-    #[cfg(unix)]
     #[test]
     fn two_loggers_on_one_file_lose_no_line() {
-        use std::sync::atomic::{AtomicBool, Ordering};
-        let d = tmp("two");
-        let p = d.join("a.log");
-        let a = Arc::new(Logger::new(p.clone()));
-        let b = Arc::new(Logger::new(p.clone())); // separate mutex: a second process / instance
-        let gens = Arc::new(Mutex::new(Vec::<String>::new()));
-        let stop = Arc::new(AtomicBool::new(false));
-        let poll = {
-            let (gens, stop, rot) = (gens.clone(), stop.clone(), rotated_path(&p));
-            std::thread::spawn(move || {
-                use std::os::unix::fs::MetadataExt;
-                let mut last = 0;
-                while !stop.load(Ordering::Relaxed) {
-                    if let Ok(m) = fs::metadata(&rot) {
-                        if m.ino() != last {
-                            if let Ok(x) = fs::read(&rot) {
-                                last = m.ino();
-                                gens.lock().unwrap().push(String::from_utf8_lossy(&x).into_owned());
-                            }
+        // Seeded just under the cap, then ~0.6 MB of racing appends = exactly one trim, so `.1` plus
+        // the log hold every line without snapshotting generations. Several rounds for race coverage.
+        for round in 0..6 {
+            let d = tmp(&format!("two{round}"));
+            let p = d.join("a.log");
+            let msg = "q".repeat(200);
+            let seed: String = (0..8000).map(|i| format!("2026-01-01 00:00:00 - Info: seed-{i:06} {msg}\n")).collect();
+            assert!((seed.len() as u64) < LOG_MAX_BYTES);
+            fs::write(&p, &seed).unwrap();
+            let a = Arc::new(Logger::new(p.clone()));
+            let b = Arc::new(Logger::new(p.clone())); // separate mutex: a second process / instance
+            let per = 600;
+            let hs: Vec<_> = [("A", a), ("B", b)]
+                .into_iter()
+                .flat_map(|(n, l)| (0..2).map(move |t| (n, t, l.clone())))
+                .map(|(n, t, l)| {
+                    let msg = msg.clone();
+                    std::thread::spawn(move || {
+                        for i in 0..per {
+                            l.log_file_only(Category::Info, format!("{n}{t}-{i:06} {msg}"));
                         }
-                    }
-                }
-            })
-        };
-        let msg = "q".repeat(200);
-        let per = 6000;
-        let hs: Vec<_> = [("A", a), ("B", b)]
-            .into_iter()
-            .flat_map(|(n, l)| (0..2).map(move |t| (n, t, l.clone())))
-            .map(|(n, t, l)| {
-                let msg = msg.clone();
-                std::thread::spawn(move || {
-                    for i in 0..per {
-                        l.log_file_only(Category::Info, format!("{n}{t}-{i:06} {msg}"));
-                    }
+                    })
                 })
-            })
-            .collect();
-        for h in hs {
-            h.join().unwrap();
+                .collect();
+            for h in hs {
+                h.join().unwrap();
+            }
+            assert!(rotated_path(&p).exists(), "the run crossed the cap");
+            let texts = vec![fs::read_to_string(rotated_path(&p)).unwrap(), fs::read_to_string(&p).unwrap()];
+            assert_eq!(ids(&texts).len(), 8000 + 4 * per, "round {round}: every line survives in .1 + the log");
+            assert!(texts.iter().flat_map(|t| t.lines()).all(|l| l.ends_with(&msg)), "no torn line");
+            assert!(!d.join("a.log.trim").exists(), "trim lock released");
+            let _ = fs::remove_dir_all(&d);
         }
-        stop.store(true, Ordering::Relaxed);
-        poll.join().unwrap();
-        let mut texts = gens.lock().unwrap().clone();
-        assert!(texts.len() >= 2, "the run crossed the cap more than once");
-        texts.push(fs::read_to_string(&p).unwrap());
-        assert_eq!(ids(&texts).len(), 4 * per, "every line survives in .1 generations + the log");
-        assert!(texts.iter().flat_map(|t| t.lines()).all(|l| l.ends_with(&msg)), "no torn line");
-        assert!(!d.join("a.log.trim").exists(), "trim lock released");
-        let _ = fs::remove_dir_all(&d);
     }
 
     #[test]
