@@ -61,6 +61,42 @@ mod console {
     }
 }
 
+/// gpui 0.2.2 exposes no fallible platform init (`current_platform` is crate-private and unwraps; with
+/// neither DISPLAY nor WAYLAND_DISPLAY set it silently starts "headless" with no window). So before
+/// handing over to gpui, check that the display socket gpui will pick is reachable and, if not, print a
+/// one-line error and return it instead of letting gpui abort with a raw panic.
+#[cfg(target_os = "linux")]
+fn check_display() -> Result<(), String> {
+    use std::os::linux::net::SocketAddrExt;
+    use std::os::unix::net::{SocketAddr, UnixStream};
+    let var = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());
+    if let Some(w) = var("WAYLAND_DISPLAY") {
+        let path = if w.starts_with('/') {
+            std::path::PathBuf::from(&w)
+        } else {
+            std::path::Path::new(&var("XDG_RUNTIME_DIR").unwrap_or_default()).join(&w)
+        };
+        return UnixStream::connect(&path)
+            .map(drop)
+            .map_err(|e| format!("cannot connect to Wayland display {} ({e})", path.display()));
+    }
+    let Some(d) = var("DISPLAY") else {
+        return Err("no display available: neither WAYLAND_DISPLAY nor DISPLAY is set".into());
+    };
+    // Only local displays (":N[.screen]") can be probed; remote ones are left to gpui.
+    let Some(num) = d.strip_prefix(':').and_then(|r| r.split('.').next()).filter(|n| n.chars().all(|c| c.is_ascii_digit())) else {
+        return Ok(());
+    };
+    let path = format!("/tmp/.X11-unix/X{num}");
+    let file = UnixStream::connect(&path);
+    let abstract_ok = || SocketAddr::from_abstract_name(path.as_bytes()).and_then(|a| UnixStream::connect_addr(&a)).is_ok();
+    match file {
+        Ok(_) => Ok(()),
+        Err(_) if abstract_ok() => Ok(()),
+        Err(e) => Err(format!("cannot connect to X display {d} ({path}: {e})")),
+    }
+}
+
 /// Process start, for `PATCHOPS_TRACE_STARTUP=1` (prints time-to-first-render to stderr).
 pub static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
 
@@ -85,6 +121,12 @@ fn main() {
     if args.iter().any(|a| a == "--rpc-stdio") {
         rpc::run_headless();
         return;
+    }
+
+    #[cfg(target_os = "linux")]
+    if let Err(e) = check_display() {
+        eprintln!("patchops: {e}");
+        std::process::exit(1);
     }
 
     let core = Arc::new(Core::new());

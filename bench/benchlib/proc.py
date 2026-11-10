@@ -5,6 +5,7 @@ import os
 import shutil
 import signal
 import socket
+import struct
 import subprocess
 import threading
 import time
@@ -151,6 +152,25 @@ class ManagedProcess:
         return {"needed_sigkill": len(leftovers), "tag_swept": len(tagged), "still_alive_after": len(still)}
 
 
+def _x_handshake(sock_path: str) -> bool:
+    """True once the X server behind `sock_path` completes the connection setup (reply byte 1 = Success).
+
+    The socket file appears (and even accepts connections) before the server has finished initialising, and under load a
+    client that connects in that window (gpui's x11rb: "Failed to initialize X11 client ... Unknown connection error")
+    can fail. Waiting for a real handshake replaces the former blind 150 ms sleep; it runs before the target is spawned, so
+    it does not enter any startup timing."""
+    s = socket.socket(socket.AF_UNIX)
+    s.settimeout(2.0)
+    try:
+        s.connect(sock_path)
+        s.sendall(struct.pack("<BxHHHHxx", 0x6C, 11, 0, 0, 0))  # little-endian, protocol 11.0, no auth
+        return s.recv(1) == b"\x01"
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
 class Xvfb:
     def __init__(self, tag: str, size="1920x1080x24"):
         self.tag = tag
@@ -174,11 +194,10 @@ class Xvfb:
             while time.monotonic() < end:
                 if self.proc.poll() is not None:
                     break
-                if os.path.exists(sock):
-                    time.sleep(0.15)
+                if os.path.exists(sock) and _x_handshake(sock):
                     self.display = f":{num}"
                     return self.display
-                time.sleep(0.05)
+                time.sleep(0.01)
             self.stop()
         raise RuntimeError("could not start Xvfb")
 

@@ -204,8 +204,9 @@ def host_busy_percent(a: tuple[int, int], b: tuple[int, int]) -> float | None:
     return round(100.0 * (b[0] - a[0]) / dt, 2) if dt > 0 else None
 
 
-def steam_processes() -> list[tuple[int, bool]]:
-    """All processes whose name is exactly `steam`: (pid, carries a PATCHOPS_BENCH_TAG)."""
+def steam_processes(own_tags=None) -> list[tuple[int, bool]]:
+    """All processes whose name is exactly `steam`: (pid, is ours). "Ours" means it carries the PATCHOPS_BENCH_TAG of a run
+    of *this* harness process (`own_tags`); a process tagged by another harness instance is foreign."""
     out = []
     for name in os.listdir("/proc"):
         if not name.isdigit():
@@ -216,26 +217,20 @@ def steam_processes() -> list[tuple[int, bool]]:
         tagged = False
         try:
             with open(f"/proc/{name}/environ", "rb") as fh:
-                tagged = b"PATCHOPS_BENCH_TAG=" in fh.read()
+                env = fh.read().split(b"\0")
+            tagged = any(f"PATCHOPS_BENCH_TAG={t}".encode() in env for t in (own_tags or ()))
         except OSError:
             pass
         out.append((int(name), tagged))
     return out
 
 
-def all_tagged_pids() -> list[int]:
-    """Every live process (any tag) that carries PATCHOPS_BENCH_TAG in its environment."""
+def all_tagged_pids(tags) -> list[int]:
+    """Every live process carrying PATCHOPS_BENCH_TAG=<t> for one of `tags` (the tags of this harness process's own runs).
+    Never matches other tags: other agents/harness instances may be running on the same machine."""
     out = []
-    for name in os.listdir("/proc"):
-        if name.isdigit():
-            try:
-                with open(f"/proc/{name}/environ", "rb") as fh:
-                    if b"PATCHOPS_BENCH_TAG=" in fh.read():
-                        st = read_stat(int(name))
-                        if st and st[4] != "Z" and int(name) != os.getpid():
-                            out.append(int(name))
-            except OSError:
-                pass
+    for t in tags:
+        out.extend(p for p in tagged_pids(t) if p != os.getpid() and p not in out)
     return out
 
 

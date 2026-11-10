@@ -79,15 +79,19 @@ def make_target(a, run_as):
     return GpuiTarget(a.gpui_src, a.work_dir, a.gpui_bin, run_as, log=log)
 
 
+OWN_TAGS: set[str] = set()  # PATCHOPS_BENCH_TAG of every sandbox this harness process created: the only tags it may ever kill
+
+
 def one_run(a, target, kind: str, idx: int, guard, with_workload: bool, golden_mode: str, network: bool = False) -> dict:
     """One process-tree lifecycle: sandbox -> (Xvfb) -> launch -> readiness -> [idle -> workload -> final] -> stop."""
     sb_root = os.path.join(a.work_dir, "sandboxes", f"{kind}-{idx}")
     sb = Sandbox(sb_root, (65534, 65534) if (a.run_as == "auto") else None, network=network).build()
+    OWN_TAGS.add(sb.tag)
     run: dict = {"index": idx, "kind": kind, "sandbox_tag": sb.tag}
     xv = None
     inst = None
     try:
-        stale = procfs.steam_processes()
+        stale = procfs.steam_processes(OWN_TAGS)
         foreign = [pid for pid, tagged in stale if not tagged]
         if foreign and not a.allow_foreign_steam:
             raise RuntimeError(f"refusing to run: foreign process(es) named 'steam' exist {foreign}; the workload runs `pkill -x steam`. "
@@ -248,7 +252,7 @@ def main(argv=None):
         if reason and "headless" in phases:
             res["headless"] = {"skipped": reason}
     finally:
-        left = procfs.all_tagged_pids()
+        left = procfs.all_tagged_pids(OWN_TAGS)
         names = []
         for pid in left:
             st = procfs.read_stat(pid)
@@ -273,6 +277,7 @@ def shutil_which(x):
 def run_network(a, target, guard) -> dict:
     sb_root = os.path.join(a.work_dir, "sandboxes", "network-0")
     sb = Sandbox(sb_root, (65534, 65534) if a.run_as == "auto" else None, network=True).build()
+    OWN_TAGS.add(sb.tag)
     inst = None
     try:
         guard.wait("network")
