@@ -45,7 +45,7 @@ pub fn legacy_notice_text(l: &patchops_core::legacy_install::LegacyInstall) -> S
         Scope::Machine => "installed for all users",
     };
     let what = l.display_name.as_deref().map_or_else(|| scope.to_string(), |n| format!("{n}, {scope}"));
-    format!("An older PatchOpsIII install was found ({what}). Remove it from Windows Settings \u{2192} Apps to avoid duplicate shortcuts.")
+    format!("An older PatchOpsIII install was found ({what}). Close PatchOpsIII, then remove the old version from Windows Settings \u{2192} Apps to avoid duplicate shortcuts.")
 }
 
 /// Detect a leftover old install unless the user already dismissed the notice. Blocking (registry
@@ -74,5 +74,6 @@ mod tests {
         assert!(legacy_notice_text(&l).contains("(PatchOpsIII 1.3.4, installed for all users)"));
         let l = LegacyInstall { scope: Scope::User, display_name: None, install_dir: None };
         assert!(legacy_notice_text(&l).contains("(installed for this user)"));
+        assert!(legacy_notice_text(&l).contains("Close PatchOpsIII"));
     }
 }

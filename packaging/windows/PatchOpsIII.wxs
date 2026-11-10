@@ -63,6 +63,9 @@
           <Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="PatchOpsIII"
                     WorkingDirectory="INSTALLFOLDER" Advertise="yes" Icon="AppIcon.exe"/>
         </File>
+        <!-- Where this install lives (the wizard lets the user pick the folder). The app reads it so the
+             "old install found" notice never points at the folder holding the new app. -->
+        <RegistryValue Root="HKLM" Key="Software\PatchOpsIII" Name="InstallLocation" Type="string" Value="[INSTALLFOLDER]"/>
       </Component>
     </ComponentGroup>
   </Package>

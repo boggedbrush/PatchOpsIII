@@ -41,14 +41,22 @@ The MSI ProductVersion is the numeric `x.y.z.0` part.
 * Upgrading from the old NSIS installer: releases 1.3.0-1.3.4 also shipped an electron-builder NSIS installer named
   `PatchOpsIII.exe` (per-user by default, `%LOCALAPPDATA%\Programs\PatchOpsIII`; optionally all-users, `%ProgramFiles%\PatchOpsIII`).
   The MSI cannot replace it, so those users end up with two installs; `PatchOpsIII.exe` is now the portable app. Tell them to uninstall the
-  old one from Windows Settings → Apps (settings and logs are kept). The app shows a dismissible notice when it finds the old install
-  (`crates/patchops-core/src/legacy_install.rs`); it never runs the uninstaller itself.
-  * Uninstall key: `Software\Microsoft\Windows\CurrentVersion\Uninstall\a0f3b457-ab4b-5b70-97b3-7be0d5217bca` (no braces; uuid5 of appId
-    `com.patchopsiii.app` under electron-builder's namespace `50e065bc-3134-11e6-9bab-38c9862bdaf3`), in HKCU (per-user) or HKLM (all-users),
-    64-bit view. Values: `DisplayName` ("PatchOpsIII <ver>"), `InstallLocation`, `UninstallString`
-    (`"<dir>\Uninstall PatchOpsIII.exe" /currentuser` or `/allusers`), `QuietUninstallString`.
-  * An all-users NSIS install lives in the same folder as the MSI, which overwrites its files and leaves the NSIS entry stale. The app
-    stays silent when it runs from that folder (running that uninstaller would delete the new app).
+  old one **first** (Windows Settings → Apps; settings and logs are kept), then install the MSI. The old uninstaller matches running processes
+  by image name `PatchOpsIII.exe`, which is also the new app, so PatchOpsIII must be closed while it runs. The app shows a dismissible
+  notice when it finds the old install (`crates/patchops-core/src/legacy_install.rs`); it never runs the uninstaller itself.
+  * Registry written by the NSIS installer (electron-builder 26.8.1; HKCU per-user or HKLM all-users, 64-bit view):
+    `Software\Microsoft\Windows\CurrentVersion\Uninstall\a0f3b457-ab4b-5b70-97b3-7be0d5217bca` (no braces; uuid5 of appId
+    `com.patchopsiii.app` under electron-builder's namespace `50e065bc-3134-11e6-9bab-38c9862bdaf3`) holds `DisplayName`
+    ("PatchOpsIII <ver>"), `UninstallString` (`"<dir>\Uninstall PatchOpsIII.exe" /currentuser` or `/allusers`), `QuietUninstallString`,
+    `DisplayVersion`, `DisplayIcon`, `Publisher`, `EstimatedSize` and **no `InstallLocation`**; that is in `Software\<same GUID>`.
+  * An all-users NSIS install lives in the same folder as the MSI (`%ProgramFiles%\PatchOpsIII`). If the MSI is installed over it, the MSI
+    overwrites its files and the HKLM NSIS entry is stale; running that uninstaller (`RMDir /r $INSTDIR`) would delete the new app and its
+    all-users shortcuts. Users who did that should re-run the MSI (repair).
+  * The app shows the notice only when the NSIS folder is known (`InstallLocation`, else the folder of the quoted `UninstallString` path),
+    still contains `Uninstall PatchOpsIII.exe`, does not contain the running exe, and is not (and does not contain) the MSI's folder. The MSI
+    folder is read from `HKLM\Software\PatchOpsIII` value `InstallLocation` (written by `PatchOpsIII.wxs`; absent for older MSIs) and
+    `%ProgramFiles%\PatchOpsIII` is always checked as well. In any doubtful case it stays silent, including the stale all-users entry that
+    points at the MSI's folder (cosmetic: one extra Apps entry).
 * Release builds are GUI-subsystem; with command-line arguments (`--version`, `--rpc-stdio`, hidden CLI) the process attaches to the
   parent console and keeps inherited pipes untouched (`console` module in `crates/patchops/src/main.rs`).
 * Local build: `cargo build --release --locked -p patchops; dotnet tool install --global wix --version 5.0.2; ./packaging/windows/package.ps1`.
