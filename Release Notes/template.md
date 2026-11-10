@@ -84,6 +84,7 @@
 ## 📥 Downloads & Verification
 
 - **Windows**
+  - Upgrading on Windows: run the new `PatchOpsIII.msi`; it upgrades earlier MSI installs in place. If you installed an older version with the previous `PatchOpsIII.exe` installer, uninstall it from Windows Settings → Apps (settings and logs are kept). `PatchOpsIII.exe` is now the portable app.
   - Download: [PatchOpsIII {{VERSION}} for Windows]({{WINDOWS_DOWNLOAD_URL}})
   - SHA256: `{{WINDOWS_SHA256}}`
   - SHA256 file: [{{WINDOWS_SHA256_FILENAME}}]({{WINDOWS_SHA256_URL}})

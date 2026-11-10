@@ -137,11 +137,11 @@
           <div class="grid cards two">
             <article class="card">
               <h2>Windows</h2>
-              <p class="muted">Download the latest release asset, extract if needed, then run <code>PatchOpsIII.exe</code>.</p>
+              <p class="muted">Download and run the installer (<code>PatchOpsIII.msi</code>). Prefer no installation? The single-file portable app is <a href="https://github.com/boggedbrush/PatchOpsIII/releases/latest/download/PatchOpsIII.exe" rel="noreferrer">PatchOpsIII.exe</a>. If you used the old <code>PatchOpsIII.exe</code> installer, uninstall it from Windows Settings &rarr; Apps first.</p>
 	              <div class="cta-row card-cta">
 	                <a
 	                  class="btn primary"
-	                  href="https://github.com/boggedbrush/PatchOpsIII/releases/latest/download/PatchOpsIII.exe"
+	                  href="https://github.com/boggedbrush/PatchOpsIII/releases/latest/download/PatchOpsIII.msi"
                     data-download-windows
 	                  rel="noreferrer"
 	                >
@@ -191,7 +191,7 @@
                 <span>Windows (PowerShell)</span>
                 <button class="copy-btn" type="button" data-copy="#cmd-win-sha">Copy</button>
               </div>
-              <pre><code id="cmd-win-sha">Get-FileHash .\\PatchOpsIII.exe -Algorithm SHA256</code></pre>
+              <pre><code id="cmd-win-sha">Get-FileHash .\\PatchOpsIII.msi -Algorithm SHA256</code></pre>
             </div>
             <div class="code-block">
               <div class="code-head">

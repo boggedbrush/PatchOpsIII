@@ -342,7 +342,7 @@ function mapRelease(repoSlug, rel) {
     highlights: extractHighlights(body),
     downloads: {
       windows: {
-        url: pickAssetUrl(assets, "PatchOpsIII.exe", [".exe"]) || `${fallbackBase}/PatchOpsIII.exe`,
+        url: pickAssetUrl(assets, "PatchOpsIII.msi", [".msi"]) || `${fallbackBase}/PatchOpsIII.msi`,
       },
       linux: {
         url: pickAssetUrl(assets, "PatchOpsIII.AppImage", [".AppImage"]) || `${fallbackBase}/PatchOpsIII.AppImage`,
