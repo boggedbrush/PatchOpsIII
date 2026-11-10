@@ -307,16 +307,14 @@ impl Controller {
         .detach();
     }
 
-    /// Hide the strip and remember that for next time (the only settings write this feature makes).
+    /// Hide the strip and remember that for next time (a marker file; never waits on the operation lock).
     pub fn dismiss_legacy_notice(&mut self, cx: &mut Context<Self>) {
         self.legacy_notice = None;
         cx.notify();
         let core = self.core.clone();
         cx.background_executor()
             .spawn(async move {
-                let _ = core.update_settings(|s| {
-                    s.0.insert(crate::state::LEGACY_NOTICE_DISMISSED_KEY.into(), serde_json::Value::Bool(true));
-                });
+                let _ = crate::state::dismiss_legacy_notice(&core);
             })
             .detach();
     }
