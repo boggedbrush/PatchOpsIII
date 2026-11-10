@@ -26,7 +26,7 @@ impl Settings {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        std::fs::write(path, crate::pyjson::dumps_indent2(&Value::Object(self.0.clone())))
+        crate::fsutil::atomic_write(path, crate::pyjson::dumps_indent2(&Value::Object(self.0.clone())).as_bytes())
     }
 
     pub fn get_str(&self, key: &str) -> Option<&str> {

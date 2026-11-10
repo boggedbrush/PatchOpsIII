@@ -48,15 +48,12 @@ fn state_file(core: &Core, kind: &str) -> PathBuf {
 }
 
 fn save_json_atomic(core: &Core, path: &Path, payload: &Value, what: &str) -> bool {
-    let tmp = PathBuf::from(format!("{}.tmp", path.display()));
     let r = std::fs::create_dir_all(&core.paths.backups)
-        .and_then(|_| std::fs::write(&tmp, crate::pyjson::dumps_indent2(payload)))
-        .and_then(|_| std::fs::rename(&tmp, path));
+        .and_then(|_| crate::fsutil::atomic_write(path, crate::pyjson::dumps_indent2(payload).as_bytes()));
     match r {
         Ok(()) => true,
         Err(e) => {
-            core.log.error(format!("Failed to save {what}: {}", io_error_text(&e, Some(&tmp))));
-            let _ = std::fs::remove_file(&tmp);
+            core.log.error(format!("Failed to save {what}: {}", io_error_text(&e, Some(path))));
             false
         }
     }
@@ -241,7 +238,7 @@ fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
             #[cfg(not(unix))]
             fs::copy(e.path(), &to)?;
         } else {
-            crate::enhanced::files::copy2(&e.path(), &to)?;
+            crate::fsutil::copy2(&e.path(), &to)?;
         }
     }
     Ok(())
@@ -295,10 +292,10 @@ pub fn install_compatibility_tool(core: &Core, source: &Path, tool_name: &str) -
         write_compat_manifest(&staging.join("compatibilitytool.vdf"), tool_name)?;
         if destination.exists() {
             let backup = compat_dir.join(format!("{tool_name}.patchops.bak-{ts}"));
-            fs::rename(&destination, &backup).map_err(|e| crate::enhanced::files::rename_error_text(&e, &destination, &backup))?;
+            fs::rename(&destination, &backup).map_err(|e| crate::pyfmt::rename_error_text(&e, &destination, &backup))?;
             core.log.info(format!("Existing compatibility tool backed up to {}", backup.display()));
         }
-        fs::rename(&staging, &destination).map_err(|e| crate::enhanced::files::rename_error_text(&e, &staging, &destination))?;
+        fs::rename(&staging, &destination).map_err(|e| crate::pyfmt::rename_error_text(&e, &staging, &destination))?;
         core.log.success(format!("Installed compatibility tool '{tool_name}' to {}", destination.display()));
         Ok(())
     })();

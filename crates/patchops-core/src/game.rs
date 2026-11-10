@@ -67,5 +67,5 @@ pub fn read_exe_variant(game_dir: &Path) -> Option<String> {
 pub fn write_exe_variant(game_dir: &Path, variant: &str) {
     let v = serde_json::json!({ "variant": variant });
     let _ = std::fs::create_dir_all(game_dir);
-    let _ = std::fs::write(game_dir.join(EXE_VARIANT_FILE), crate::pyjson::dumps_indent2(&v));
+    let _ = crate::fsutil::atomic_write(&game_dir.join(EXE_VARIANT_FILE), crate::pyjson::dumps_indent2(&v).as_bytes());
 }

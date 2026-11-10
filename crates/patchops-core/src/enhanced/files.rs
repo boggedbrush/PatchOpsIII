@@ -5,6 +5,8 @@
 //! [`prepare_install`] -> [`install_enhanced_files`] -> [`finish_install`] is the whole local
 //! pipeline (Linux Proton-tool configuration is Steam/network territory and goes in between).
 
+use crate::fsutil::copy2;
+use crate::pyfmt::rename_error_text;
 use std::collections::BTreeSet;
 use std::fs::{self, File};
 use std::io;
@@ -18,7 +20,7 @@ use crate::backup;
 use crate::context::Core;
 use crate::log::Category;
 use crate::ops::enhanced::EXPECTED_ENHANCED_FILES;
-use crate::pyfmt::{abspath, io_error_text, normpath, repr_str};
+use crate::pyfmt::{abspath, io_error_text, normpath};
 
 pub const ENHANCED_ARCHIVE_NAME: &str = "BO3Enhanced_latest.zip";
 pub const DUMP_ARCHIVE_NAME: &str = "DUMP.zip";
@@ -35,11 +37,6 @@ pub const UWP_DUMP_WHITELIST: [&str; 8] = [
     "libScePad.dll",
     "XCurl.dll",
 ];
-
-/// Python `OSError` text of a failed rename: `[Errno 13] Permission denied: 'a' -> 'b'`.
-pub fn rename_error_text(e: &io::Error, src: &Path, dst: &Path) -> String {
-    format!("{}: {} -> {}", io_error_text(e, None), repr_str(&src.to_string_lossy()), repr_str(&dst.to_string_lossy()))
-}
 
 fn zip_err_text(e: &ZipError, path: &Path) -> String {
     match e {
@@ -156,17 +153,6 @@ pub fn validate_enhanced_archive(core: &Core, path: &Path) -> bool {
             false
         }
     }
-}
-
-/// `shutil.copy2`: contents, permissions and modification time.
-pub fn copy2(src: &Path, dst: &Path) -> io::Result<()> {
-    fs::copy(src, dst)?;
-    if let Ok(mtime) = fs::metadata(src).and_then(|m| m.modified()) {
-        if let Ok(f) = File::options().write(true).open(dst) {
-            let _ = f.set_modified(mtime);
-        }
-    }
-    Ok(())
 }
 
 // ---- install --------------------------------------------------------------------------------

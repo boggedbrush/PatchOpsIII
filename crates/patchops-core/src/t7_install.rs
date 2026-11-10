@@ -253,7 +253,7 @@ fn install_lpc_files(core: &Core, net: &Net, cache: &mut ReleaseCache, game: &Pa
             let name = e.file_name().to_string_lossy().into_owned();
             if name.ends_with(".ff") && e.path().is_file() {
                 let dst = lpc.join(&name);
-                crate::enhanced::files::copy2(&e.path(), &dst).map_err(|e| io_error_text(&e, Some(&dst)))?;
+                crate::fsutil::copy2(&e.path(), &dst).map_err(|e| io_error_text(&e, Some(&dst)))?;
             }
         }
         core.log.success("Installed LPC files successfully.");
@@ -345,7 +345,7 @@ fn copy_tree(src: &Path, dst_root: &Path) -> Result<(), String> {
             if name.to_string_lossy().eq_ignore_ascii_case("t7patch.conf") && dst.exists() {
                 continue;
             }
-            crate::enhanced::files::copy2(&e.path(), &dst).map_err(|e| io_error_text(&e, Some(&dst)))?;
+            crate::fsutil::copy2(&e.path(), &dst).map_err(|e| io_error_text(&e, Some(&dst)))?;
         }
         for s in subdirs {
             walk(src, &s, dst_root)?;

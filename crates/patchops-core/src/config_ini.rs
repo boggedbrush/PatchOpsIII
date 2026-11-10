@@ -177,7 +177,10 @@ pub fn write_values(game_dir: &Path, updates: &[(String, ConfigValue, String)]) 
         let replacement = format!("{key} = \"{}\" // {comment}", value.py_str());
         text = apply_update(&text, key, &replacement).map_err(AppError::new)?;
     }
-    std::fs::write(&config, text.as_bytes()).map_err(io_err)
+    // `atomic_write` would happily rename over a read-only file; an in-place open must fail first
+    // exactly as the legacy `open(path, "w")` did (`[Errno 13] Permission denied`), leaving the file untouched.
+    std::fs::OpenOptions::new().write(true).open(&config).map_err(io_err)?;
+    crate::fsutil::atomic_write(&config, text.as_bytes()).map_err(io_err)
 }
 
 /// Python universal newlines on read: `\r\n` and lone `\r` become `\n`.
@@ -483,6 +486,23 @@ impl<'a> Tokenizer<'a> {
 #[cfg(test)]
 mod write_tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn write_values_is_atomic_and_keeps_the_file_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let game = std::env::temp_dir().join(format!("patchops-ini-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&game);
+        let cfg = crate::game::config_path(&game);
+        std::fs::create_dir_all(cfg.parent().unwrap()).unwrap();
+        std::fs::write(&cfg, "FOV = \"80\" // x\n").unwrap();
+        std::fs::set_permissions(&cfg, std::fs::Permissions::from_mode(0o640)).unwrap();
+        write_values(&game, &[("FOV".into(), ConfigValue::Str("90".into()), "c".into())]).unwrap();
+        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), "FOV = \"90\" // c\n");
+        assert_eq!(std::fs::metadata(&cfg).unwrap().permissions().mode() & 0o777, 0o640);
+        assert_eq!(std::fs::read_dir(cfg.parent().unwrap()).unwrap().count(), 1, "no temp file left");
+        let _ = std::fs::remove_dir_all(&game);
+    }
 
     /// Same replacement string as the legacy `_write_config_values` (comment fixed to `c`).
     fn set(text: &str, key: &str, value: &str) -> Result<String, String> {

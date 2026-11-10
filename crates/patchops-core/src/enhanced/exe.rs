@@ -14,8 +14,8 @@ use std::time::SystemTime;
 
 use serde_json::Value;
 
-use super::files::rename_error_text;
 use crate::fsutil::copy2;
+use crate::pyfmt::rename_error_text;
 use super::hashcache;
 use crate::backup;
 use crate::context::Core;

@@ -28,7 +28,7 @@ pub fn load_state(core: &Core) -> StateMap {
 pub fn save_state(core: &Core, state: &StateMap) {
     let path = state_path(core);
     let r = std::fs::create_dir_all(&core.paths.app_data)
-        .and_then(|_| std::fs::write(&path, crate::pyjson::dumps_indent2(&Value::Object(state.clone()))));
+        .and_then(|_| crate::fsutil::atomic_write(&path, crate::pyjson::dumps_indent2(&Value::Object(state.clone())).as_bytes()));
     if let Err(e) = r {
         core.log.log_file_only(crate::log::Category::Warning, format!("Failed to persist BO3 Enhanced state: {}", crate::pyfmt::io_error_text(&e, Some(&path))));
     }

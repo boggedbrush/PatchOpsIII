@@ -14,7 +14,7 @@ use super::{state_reply, Args, Group};
 use crate::context::Core;
 use crate::error::{AppError, AppResult, OpError};
 use crate::net::{no_progress, Net, ProgressFn};
-use crate::pyfmt::{io_error_text, repr_str};
+use crate::pyfmt::io_error_text;
 use crate::state::{State, StateCx};
 
 pub const OPS: &[&str] = &["t7-config", "t7-install", "t7-uninstall"];
@@ -159,7 +159,12 @@ pub fn update_t7patch_conf(core: &Core, game_dir: &Path, edit: &ConfEdit) {
             return;
         }
     };
-    if let Err(e) = std::fs::write(&conf, edit_conf(&text, edit)) {
+    // A read-only conf must fail like the in-place write did (rename would replace it).
+    let written = std::fs::OpenOptions::new()
+        .write(true)
+        .open(&conf)
+        .and_then(|_| crate::fsutil::atomic_write(&conf, edit_conf(&text, edit).as_bytes()));
+    if let Err(e) = written {
         core.log.error(conf_error_text(&e, &conf));
         return;
     }
@@ -347,9 +352,7 @@ fn restore_lpc_inner(lpc: &Path) -> Result<usize, String> {
         if dst.exists() {
             std::fs::remove_file(&dst).map_err(|e| io_error_text(&e, Some(&dst)))?;
         }
-        std::fs::rename(&src, &dst).map_err(|e| {
-            format!("{}: {} -> {}", io_error_text(&e, None), repr_str(&src.to_string_lossy()), repr_str(&dst.to_string_lossy()))
-        })?;
+        std::fs::rename(&src, &dst).map_err(|e| crate::pyfmt::rename_error_text(&e, &src, &dst))?;
         restored += 1;
     }
     Ok(restored)

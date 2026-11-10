@@ -351,7 +351,7 @@ fn install_inner(core: &Core, net: &Net, game: &Path, settings: DxvkSettings, pr
         let source = find_dll_dir(&extract_dir).ok_or("Required DXVK files were not found in the archive.")?;
         for file in DXVK_ASYNC_FILES {
             let dst = game.join(file);
-            crate::enhanced::files::copy2(&source.join(file), &dst).map_err(|e| io_error_text(&e, Some(&dst)))?;
+            crate::fsutil::copy2(&source.join(file), &dst).map_err(|e| io_error_text(&e, Some(&dst)))?;
             core.log.success(format!("Installed {file}."));
         }
         write_conf(core, game, &settings.normalized(), supports_gpl_async_cache(DXVK_VERSION))?;

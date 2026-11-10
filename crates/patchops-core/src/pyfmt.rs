@@ -20,6 +20,11 @@ pub fn path_str(p: impl AsRef<Path>) -> String {
     }
 }
 
+/// Python's `OSError` text for `Path.rename` / `os.rename`: `[Errno 13] Permission denied: 'a' -> 'b'`.
+pub fn rename_error_text(e: &std::io::Error, src: &Path, dst: &Path) -> String {
+    format!("{}: {} -> {}", io_error_text(e, None), repr_str(&src.to_string_lossy()), repr_str(&dst.to_string_lossy()))
+}
+
 /// Python `os.path.normpath` (lexical; POSIX flavour, also fine for Windows drive paths).
 pub fn normpath(p: &str) -> String {
     if p.is_empty() {

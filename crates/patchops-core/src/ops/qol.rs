@@ -14,7 +14,7 @@ use super::{state_reply, Args, Group};
 use crate::backup;
 use crate::context::Core;
 use crate::error::{AppError, AppResult, OpError};
-use crate::pyfmt::{io_error_text, repr_str};
+use crate::pyfmt::io_error_text;
 use crate::state::{State, StateCx};
 
 pub const OPS: &[&str] = &["intro-skip", "all-intros-skip", "d3dcompiler"];
@@ -55,13 +55,8 @@ fn fail(core: &Core, prefix: &str, msg: String) -> AppError {
     AppError::new(msg)
 }
 
-/// Python's `OSError` text for `Path.rename`: `[Errno 13] Permission denied: 'a' -> 'b'`.
-fn rename_text(e: &std::io::Error, from: &Path, to: &Path) -> String {
-    format!("{}: {} -> {}", io_error_text(e, None), repr_str(&from.to_string_lossy()), repr_str(&to.to_string_lossy()))
-}
-
 fn rename(from: &Path, to: &Path) -> Result<(), String> {
-    std::fs::rename(from, to).map_err(|e| rename_text(&e, from, to))
+    std::fs::rename(from, to).map_err(|e| crate::pyfmt::rename_error_text(&e, from, to))
 }
 
 fn remove(path: &Path) -> Result<(), String> {

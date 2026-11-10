@@ -84,7 +84,7 @@ fn save_checksum(core: &Core, storage_dir: &Path, file_name: &str, sha: &str) {
         std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
     map.insert(file_name.to_string(), json!(sha));
     let text = crate::pyjson::dumps_indent2(&Value::Object(map));
-    let res = std::fs::create_dir_all(storage_dir).and_then(|_| std::fs::write(&path, text));
+    let res = std::fs::create_dir_all(storage_dir).and_then(|_| crate::fsutil::atomic_write(&path, text.as_bytes()));
     if let Err(e) = res {
         core.log.log_file_only(Category::Warning, format!("Failed to save checksum cache: {e}"));
     }

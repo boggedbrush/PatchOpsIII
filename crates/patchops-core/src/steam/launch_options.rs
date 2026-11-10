@@ -166,17 +166,6 @@ pub fn merge_launch_options(current: &str, requested: &str, preserve_fs_game: bo
 
 // ---- backup / restore -----------------------------------------------------------------------
 
-/// `shutil.copy2`: contents, permissions and modification time.
-fn copy2(from: &Path, to: &Path) -> std::io::Result<()> {
-    std::fs::copy(from, to)?;
-    if let Ok(m) = std::fs::metadata(from).and_then(|m| m.modified()) {
-        if let Ok(f) = std::fs::OpenOptions::new().write(true).open(to) {
-            let _ = f.set_modified(m);
-        }
-    }
-    Ok(())
-}
-
 /// Legacy `_backup_file`: copy `config_path` to `<appdata>/backups/<backup_name>`.
 pub fn backup_file(core: &Core, config_path: &Path, backup_name: &str) -> bool {
     let dir = &core.paths.backups;
@@ -185,7 +174,7 @@ pub fn backup_file(core: &Core, config_path: &Path, backup_name: &str) -> bool {
         return false;
     }
     let dest = dir.join(backup_name);
-    match copy2(config_path, &dest) {
+    match crate::fsutil::copy2(config_path, &dest) {
         Ok(()) => {
             core.log.success(format!("Config backup created at {}", dest.display()));
             true
@@ -204,7 +193,7 @@ pub fn restore_file(core: &Core, config_path: &Path, backup_name: &str) -> bool 
         core.log.warning("No backup file found");
         return false;
     }
-    match copy2(&src, config_path) {
+    match crate::fsutil::copy2(&src, config_path) {
         Ok(()) => {
             core.log.success("Config restored from backup");
             true
