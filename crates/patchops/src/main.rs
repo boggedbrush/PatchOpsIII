@@ -1,6 +1,8 @@
-#![allow(dead_code)] // foundation crate: some APIs are not used by the demo yet
+#![allow(dead_code)] // some controller / widget APIs are only used by views that are still being filled in
 
+mod actions;
 mod app;
+mod controller;
 mod rpc;
 mod state;
 mod theme;
@@ -9,7 +11,7 @@ mod widgets;
 
 use std::sync::Arc;
 
-use state::SharedState;
+use patchops_core::Core;
 
 /// Process start, for `PATCHOPS_TRACE_STARTUP=1` (prints time-to-first-render to stderr).
 pub static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
@@ -29,10 +31,10 @@ fn main() {
         return;
     }
 
-    let shared = Arc::new(SharedState::new());
-    let ui_rx = shared.attach_ui();
+    let core = Arc::new(Core::new());
+    let (ui_tx, ui_rx) = async_channel::unbounded();
     if std::env::var_os("PATCHOPS_BENCH_RPC").is_some_and(|v| v == "1") {
-        rpc::spawn_in_gui(shared.core.clone());
+        rpc::spawn_in_gui(core.clone(), ui_tx);
     }
-    app::run(shared, ui_rx);
+    app::run(core, ui_rx);
 }

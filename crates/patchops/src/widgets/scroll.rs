@@ -265,7 +265,6 @@ impl RenderOnce for ScrollArea {
             .relative()
             .flex_1()
             .min_h_0()
-            .min_w_0()
             .w_full()
             .child(
                 div()

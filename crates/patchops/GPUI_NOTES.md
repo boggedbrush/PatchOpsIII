@@ -10,15 +10,18 @@ vendored source: `~/.cargo/registry/src/*/gpui-0.2.2/` (`examples/` has `input.r
 | path | purpose |
 |---|---|
 | `src/main.rs` | arg parsing; `--rpc-stdio` runs headless (no GPUI init), else GUI |
-| `src/app.rs` | `Nav` enum, `AppView` root view (sidebar + content), `run()` bootstrap, global actions |
-| `src/state.rs` | `SharedState` (`Arc`, parking_lot mutex) shared by views and RPC; `UiEvent` channel to wake UI |
-| `src/rpc.rs` | JSON-lines RPC: `handle_line`, `serve_stdio`, `run_headless`, `spawn_in_gui` |
+| `src/app.rs` | `Nav` enum, `run()` bootstrap (window, key bindings) |
+| `src/controller.rs` | `Controller` entity: core + state snapshot + busy flags + error + dialogs + log feed (see "Writing a view") |
+| `src/actions.rs` | `Action` enum (one per op) + blocking `exec` |
+| `src/state.rs` | `Boot`, `UiEvent`, log subscription helper |
+| `src/rpc.rs` | bench RPC entry points (`run_headless`, `spawn_in_gui`; the GUI variant pings the UI after mutating ops) |
 | `src/theme.rs` | `Theme` global, `cx.theme()` |
 | `src/widgets/*.rs` | one file per widget: button, toggle, slider, text_input, modal (+ `init` for key bindings) |
-| `src/views/*.rs` | one file per sidebar tab (all demo content is PLACEHOLDER) |
+| `src/views/shell.rs` | window chrome: header, directory row, error strip, sidebar, Activity Log, dialogs, toasts |
+| `src/views/*.rs` | one file per sidebar tab (`dashboard` is the reference implementation) |
 
-To add a tab: add a variant to `Nav` (+ label), add `views/foo.rs`, add the entity field in
-`AppView` and a match arm in `render`. To add a widget: new file in `widgets/`, `pub mod` it.
+To add a tab: add a variant to `Nav` (+ `ALL`, label, icon), add `views/foo.rs`, add the entity field in
+`Shell` and a match arm in `Shell::content`. To add a widget: new file in `widgets/`, `pub mod` it.
 
 ## Entry point
 
@@ -374,3 +377,132 @@ Scrollbar::new("bar", scroll_handle)               // overlay for your own scrol
   subscription (registered lazily in `render` because `new` has no `Window`).
 * Popups: `deferred(anchored().position(window_point).anchor(..).child(..)).with_priority(n)` with an explicit window-space position.
 * No dep on gpui-component; do not add one.
+
+
+---
+
+# Writing a view
+
+Everything a tab needs is already in the controller layer; a view file should never need to touch
+`app.rs`, `shell.rs`, `controller.rs` or `actions.rs`. `views/dashboard.rs` is the reference.
+
+## Skeleton
+
+```rust
+pub struct FooView { c: Entity<Controller>, /* local UI state only */ _sub: Subscription }
+
+impl FooView {
+    pub fn new(controller: Entity<Controller>, cx: &mut Context<Self>) -> Self {
+        let _sub = views::watch(&controller, cx);      // re-render on every controller change
+        Self { c: controller, _sub }
+    }
+}
+impl Render for FooView {
+    fn render(&mut self, _w: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let ctl = self.c.read(cx);
+        let Some(state) = ctl.state().cloned() else { return div().into_any_element() };   // Arc<State>, free to clone
+        let busy = |k: &'static str| ctl.is_busy(k);
+        let c = self.c.clone();
+        /* build elements; ScrollArea::new("foo").gap(px(views::PANEL_GAP)).child(..) is the usual root */
+    }
+}
+```
+The view root is placed in a flex column that fills the content area (right of the sidebar, above the
+Activity Log). Do not call `cx.new` / `cx.subscribe` inside `render`.
+
+## Reading state
+
+`controller.state() -> Option<&Arc<State>>` is the typed `patchops_core::State` (snake_case fields:
+`state.qol.all_intros`, `state.t7.conf_exists`, `state.launch_profiles`, ...). It is replaced wholesale after every
+action, so compare/seed local state from it in a `cx.observe(&controller, ..)` callback, not per frame.
+Never clone big parts of it per frame; borrow from the `Arc`.
+
+## Triggering an action
+
+One line per button; the action enum has a variant per op (`actions.rs`), the busy key is `action.busy_key()`:
+
+```rust
+Button::new("launch", "Launch Game").primary().busy(busy("launch")).on_click(views::run(&c, Action::Launch))
+Checkbox::new("intro", state.qol.intro).label("Skip Intro").on_change(views::run_bool(&c, Action::IntroSkip))
+Button::new("un", "Uninstall").disabled(!state.t7.installed).busy(busy("t7-uninstall"))
+    .on_click(views::run_confirmed(&c, Action::T7Uninstall))        // legacy confirm prompt first
+// inside any closure that has `cx: &mut App`:
+c.update(cx, |c, cx| c.run(Action::SetConfig(ConfigId::Fov, ConfigInput::Int(90)), cx));
+```
+`run` marks the busy key, clears the error strip, executes on the background executor (queued: one op at a
+time), applies the returned state, shows a failure in the error strip, and emits `ControllerEvent::Finished`.
+Config writes: `Action::SetConfig(ConfigId::Vsync, ConfigInput::Bool(true))` does the legacy normalisation
+("1"/"0", inverted unlock, "2" for reduce CPU) and sends the legacy comment.
+
+Button state conventions (as in the legacy `busy` / `disabled` props): `.busy(ctl.is_busy(key))` shows the spinner and
+makes the button inert; `.disabled(..)` for preconditions (`!state.game_detected`, `!state.t7.conf_exists`, ...).
+
+## Getting the result of an action (validation message, directory chosen, ...)
+
+```rust
+cx.subscribe(&controller, |this, _c, ev: &ControllerEvent, cx| match ev {
+    ControllerEvent::Finished(f) if f.key == "enhanced-validate" => {
+        if let ReplyData::Validated { valid, message } = &f.data { this.validation = (*valid, message.clone()); cx.notify(); }
+    }
+    ControllerEvent::DirSelected { target: BrowseTarget::DumpFolder, path } => { /* set input text */ }
+    _ => {}
+}).detach();           // or keep the Subscription in a field
+```
+
+## Shared services on the controller (all `controller.update(cx, |c, cx| ..)`)
+
+| need | call |
+|---|---|
+| confirm then run | `c.run_confirmed(action, cx)` (legacy prompts for uninstalls / clear mod files / reset), or `c.confirm(Confirm::new(title, msg, "OK", action).destructive(), cx)` |
+| toast | `c.toast_success("..", cx)`, `c.toast_error(..)`, `c.toast(ToastKind::Warning, .., cx)` |
+| error strip | `c.set_error("..", cx)` (cleared automatically by the next `run`) |
+| clipboard | `c.copy_text(text, Some("Copied"), cx)` |
+| external URL | `c.open_url("https://..", cx)` / `steam://..` (core `open_external_url`) |
+| directory browser | `c.open_browser(BrowseTarget::DumpFolder, Some(current_path), cx)`; result as `ControllerEvent::DirSelected` (GameDir is handled by the controller itself) |
+| navigate | `c.navigate(Nav::ExeSwapper, cx)` |
+| download progress | `c.progress("t7-install")` -> `Option<u8>` percent while that network install runs (`dxvk-install`, `enhanced-install`; `None` = unknown size -> `ProgressBar::new(..).value(None)`) |
+| logs | `c.log_count(cx)`, `c.last_error_log()`; the Activity Log is fed by the controller |
+
+The controller owns the overlays (confirm dialog, depot prompt, DirBrowser, toasts); the shell renders them as the
+last children of the window root, so a view never renders full-window dialogs itself.
+
+## Local form state with dirty tracking (T7 gamertag pattern)
+
+Text inputs are `Entity<TextInput>` owned by the view; the *saved* value lives in `State`. Keep only the edit buffer
+locally and derive `pending` by comparison:
+
+```rust
+struct T7View { c, name: Entity<TextInput>, color: String, seeded: Option<(String, String)>, _subs: Vec<Subscription> }
+// new(): observe the controller and re-seed the buffers when the SAVED value changed (not on every notify):
+cx.observe(&controller, |this, c, cx| {
+    let Some(s) = c.read(cx).state().cloned() else { return };
+    let saved = (s.t7.plain_name.clone(), s.t7.color_code.clone());
+    if this.seeded.as_ref() != Some(&saved) {                       // legacy useEffect([state.t7])
+        this.name.update(cx, |i, cx| i.set_text(&saved.0, cx));
+        this.color = saved.1.clone();
+        this.seeded = Some(saved);
+    }
+    cx.notify();
+}).detach();
+// render():
+let pending = name_input.read(cx).text() != state.t7.plain_name || self.color != state.t7.color_code;
+Button::new("reset", "Reset Edits").disabled(!pending || busy("t7-gamertag"))   // re-seed buffers from state
+Button::new("save", "Update Gamertag").disabled(!state.t7.conf_exists).busy(busy("t7-gamertag"))
+    .on_click(cx.listener(|this, _, _, cx| {
+        let name = this.name.read(cx).text().to_string(); let color = this.color.clone();
+        this.c.update(cx, |c, cx| c.run(Action::T7Gamertag { name, color_code: color }, cx));
+    }))
+```
+For a live preview / dirty indicator subscribe to `TextInputEvent::Changed` and call `cx.notify()` (the owner view is not
+re-rendered by typing otherwise), then read `input.read(cx).text()` in render. Password-style fields: `set_masked(!show, cx)` + an `IconButton` reveal toggle. A field that
+must not be clobbered by refreshes while the user types (legacy `t7PasswordTouched`) is a `touched: bool` flag checked
+in the re-seed callback.
+
+## Rules of thumb
+
+* Never block in `render` or in click handlers; anything slow is an `Action` (runs on the background executor).
+* No timers or animations while idle (spinners are only drawn while `.busy(true)`).
+* Do not store `State` pieces in the view; store the edit buffer and selection only.
+* New op or new busy key: add the `Action` variant + `busy_key` + `exec` arm in `actions.rs` (one place).
+* Env aids for screenshots: `PATCHOPS_BOOT_DELAY_MS`, `PATCHOPS_BOOT_FAIL=1` (startup screens), `PATCHOPS_TRACE_STARTUP=1`.
+* Keyboard: Tab / Shift-Tab focus, Ctrl-Tab / Ctrl-Shift-Tab and Ctrl-1..6 switch tabs, F5 refreshes, Ctrl-Q quits.

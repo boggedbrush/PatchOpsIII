@@ -1,107 +1,193 @@
-use std::sync::Arc;
+//! Dashboard tab (legacy `activeView === "dashboard"`): Status Overview, Quality of Life
+//! checkboxes (incl. "Apply All") and Launch Options. This file is the REFERENCE for the view
+//! conventions described in `GPUI_NOTES.md` ("Writing a view"):
+//!
+//! * the view struct holds `Entity<Controller>` + only *local UI state* (here: the selected
+//!   radio); everything else is read from the controller's `Arc<State>` in `render`;
+//! * `views::watch` re-renders the view on every controller change;
+//! * buttons / checkboxes are one-liners through `views::run` / `views::run_bool`;
+//! * `.busy(c.is_busy("key"))` shows the legacy busy state.
 
-use gpui::{div, prelude::*, px, Context, Entity, Render, Window};
+use gpui::{div, prelude::*, px, Context, Entity, FontWeight, IntoElement, Render, SharedString, Subscription, Window};
 
-use super::{heading, page, row};
-use crate::state::SharedState;
+use crate::actions::Action;
+use crate::controller::Controller;
 use crate::theme::ActiveTheme;
-use crate::widgets::{modal::modal, Button, Slider, SliderEvent, TextInput, TextInputEvent, Toggle};
+use crate::views::{self, PANEL_GAP};
+use crate::widgets::{Button, Checkbox, Panel, Radio, ScrollArea, StatusRow, Tone};
 
-/// PLACEHOLDER: exercises button, toggle, slider, text input and modal.
 pub struct DashboardView {
-    shared: Arc<SharedState>,
-    slider: Entity<Slider>,
-    input: Entity<TextInput>,
-    modal_open: bool,
+    c: Entity<Controller>,
+    /// Selected launch profile id (radio). Follows `state.active_launch_profile` whenever that
+    /// changes (legacy effect on `[state.activeLaunchProfile]`; "custom" selects "default").
+    selected: String,
+    synced_active: Option<String>,
+    _sub: Subscription,
 }
 
 impl DashboardView {
-    pub fn new(shared: Arc<SharedState>, cx: &mut Context<Self>) -> Self {
-        let init = shared.with(|d| d.slider);
-        let slider = cx.new(|cx| Slider::new(0.0, 1.0, init, cx).step(0.01));
-        cx.subscribe(&slider, |this, _, ev: &SliderEvent, cx| {
-            if let SliderEvent::Changed(v) = ev {
-                this.shared.with(|d| d.slider = *v);
-                cx.notify();
-            }
-        })
-        .detach();
-
-        let input = cx.new(|cx| TextInput::new("Type something...", cx));
-        cx.subscribe(&input, |this, _, ev: &TextInputEvent, cx| {
-            match ev {
-                TextInputEvent::Changed(s) => this.shared.with(|d| d.text = s.to_string()),
-                TextInputEvent::Submit(s) => this.shared.push_log(format!("submitted: {s}")),
-                TextInputEvent::Blurred(_) => {}
+    pub fn new(controller: Entity<Controller>, cx: &mut Context<Self>) -> Self {
+        // State -> local selection sync happens when the controller notifies, not in render.
+        let _sub = cx.observe(&controller, |this, c, cx| {
+            let active = c.read(cx).state().map(|s| s.active_launch_profile.clone());
+            if active != this.synced_active {
+                if let Some(a) = &active {
+                    this.selected = if a == "custom" { "default".into() } else { a.clone() };
+                }
+                this.synced_active = active;
             }
             cx.notify();
-        })
-        .detach();
-
-        Self { shared, slider, input, modal_open: false }
+        });
+        let mut this = Self { c: controller, selected: "default".into(), synced_active: None, _sub };
+        let active = this.c.read(cx).state().map(|s| s.active_launch_profile.clone());
+        if let Some(a) = &active {
+            this.selected = if a == "custom" { "default".into() } else { a.clone() };
+        }
+        this.synced_active = active;
+        this
     }
+}
+
+/// Legacy `StatusRow`: value is the detail (default "Configured") when ok, else "Not configured".
+fn status_row(label: &str, ok: bool, detail: Option<String>) -> StatusRow {
+    StatusRow::new(label.to_string(), Tone::from_ok(ok))
+        .value(if ok { detail.unwrap_or_else(|| "Configured".into()) } else { "Not configured".into() })
 }
 
 impl Render for DashboardView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = *cx.theme();
-        let data = self.shared.snapshot();
-        // Pick up changes made elsewhere (e.g. via RPC) without emitting events.
-        self.slider.update(cx, |s, _| {
-            if (s.value() - data.slider).abs() > f32::EPSILON {
-                s.set_value_silent(data.slider);
-            }
-        });
+        let ctl = self.c.read(cx);
+        let Some(state) = ctl.state().cloned() else {
+            return div().into_any_element();
+        };
+        let busy = |k: &'static str| ctl.is_busy(k);
+        let c = self.c.clone();
 
-        // Handlers get `&mut App`, not `&mut Context<Self>`. Use `cx.listener(..)` when the
-        // callback type allows, or capture `cx.entity()` and `.update()` it otherwise.
-        let click = Button::new("inc", format!("Clicked {} times", data.counter))
-            .primary()
-            .on_click(cx.listener(|this, _, _, cx| {
-                this.shared.with(|d| d.counter += 1);
-                cx.notify();
-            }));
+        // ---- Status Overview --------------------------------------------------------------
+        let active_label = match state.active_launch_profile.as_str() {
+            "custom" => Some("Custom".to_string()),
+            "default" => None,
+            id => state.launch_profiles.iter().find(|p| p.id == id).map(|p| p.label.clone()),
+        };
+        let qol = &state.qol;
+        let status = Panel::new("Status Overview")
+            .child(status_row("T7 Patch", state.mods.t7_patch, None))
+            .child(status_row("DXVK-GPLAsync", state.mods.dxvk, None))
+            .child(status_row("BO3 Enhanced", state.mods.enhanced, None))
+            .child(status_row("Launch Option", state.active_launch_profile != "default", active_label))
+            .child(status_row("Quality of Life", qol.d3dcompiler || qol.intro || qol.all_intros, None).last());
 
-        let this = cx.entity();
-        let toggle = Toggle::new("toggle", data.toggle).on_change(move |v, _, cx| {
-            this.update(cx, |this, cx| {
-                this.shared.with(|d| d.toggle = v);
-                cx.notify();
-            })
-        });
-
-        page(&t)
-            .child(heading(&t, "Dashboard"))
-            .child(row(&t, "Button", click))
-            .child(row(&t, "Toggle", div().flex().gap_3().items_center().child(toggle).child(if data.toggle { "on" } else { "off" })))
-            .child(row(
-                &t,
-                "Slider",
-                div().flex().gap_3().items_center().child(self.slider.clone()).child(format!("{:.0}%", data.slider * 100.0)),
+        // ---- Quality of Life --------------------------------------------------------------
+        let all_on = qol.d3dcompiler && qol.intro && qol.all_intros;
+        let check_row = |id: &'static str, on: bool, label: &'static str, make: fn(bool) -> Action| {
+            div().min_h(px(34.)).flex().items_center().child(
+                Checkbox::new(id, on).label(label).on_change(views::run_bool(&c, make)),
+            )
+        };
+        let qol_panel = Panel::new("Quality of Life")
+            .child(check_row("qol-all", all_on, "Apply All", Action::QolAll))
+            .child(check_row(
+                "qol-d3d",
+                qol.d3dcompiler,
+                "Use latest d3dcompiler (d3dcompiler_46.dll)",
+                Action::D3dCompiler,
             ))
-            .child(row(&t, "Text input", div().w(px(320.)).child(self.input.clone())))
-            .child(row(&t, "You typed", div().child(format!("{:?}", data.text))))
-            .child(row(
-                &t,
-                "Modal",
-                Button::new("open-modal", "Open modal").on_click(cx.listener(|this, _, _, cx| {
-                    this.modal_open = true;
-                    cx.notify();
-                })),
+            .child(check_row(
+                "qol-intro",
+                qol.intro,
+                "Skip Intro (BO3_Global_Logo_LogoSequence.mkv)",
+                Action::IntroSkip,
             ))
-            .when(self.modal_open, |d| {
-                let this = cx.entity();
-                d.child(modal(
-                    "Confirm",
-                    "This is an in-window modal dialog.",
-                    move |_, cx| {
-                        this.update(cx, |v, cx| {
-                            v.modal_open = false;
-                            cx.notify();
-                        })
-                    },
-                    cx,
-                ))
-            })
+            .child(check_row(
+                "qol-all-intros",
+                qol.all_intros,
+                "Skip All Intros (Campaign, Zombies, etc.)",
+                Action::AllIntrosSkip,
+            ));
+
+        // ---- Launch Options ---------------------------------------------------------------
+        let selected = state.launch_profiles.iter().find(|p| p.id == self.selected);
+        let installable = selected.is_some_and(|p| p.id != "default" && p.id != "offline");
+        let option = selected.map(|p| p.option.clone()).unwrap_or_default();
+        let n = state.launch_profiles.len();
+        let rows = state.launch_profiles.iter().enumerate().map(|(i, p)| {
+            let this = cx.entity();
+            let id = p.id.clone();
+            let tag = (p.id != "default" && p.id != "offline").then(|| {
+                let tone = if p.installed {
+                    Tone::Ok
+                } else if p.subscribed {
+                    Tone::Warn
+                } else {
+                    Tone::Danger
+                };
+                div()
+                    .flex_none()
+                    .max_w(px(160.))
+                    .truncate()
+                    .text_size(px(t.font_sm))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(tone.color(&t))
+                    .child(SharedString::from(p.state.clone()))
+            });
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .min_h(px(32.))
+                .when(i + 1 < n, |d| d.border_b_1().border_color(t.border))
+                .child(
+                    div().flex_1().min_w_0().child(
+                        Radio::new(("profile", i), self.selected == p.id).label(p.label.clone()).on_select(
+                            move |_, cx| {
+                                this.update(cx, |v, cx| {
+                                    v.selected = id.clone();
+                                    cx.notify();
+                                })
+                            },
+                        ),
+                    ),
+                )
+                .children(tag)
+        });
+        let btn = |b: Button| div().flex_1().min_w_0().child(b.small().full_width());
+        let launch_panel = Panel::new("Launch Options")
+            .child(div().flex().flex_col().children(rows))
+            .child(
+                div()
+                    .flex()
+                    .gap(px(10.))
+                    .pt(px(12.))
+                    .child(btn(
+                        Button::new("profile-install", "Install Selected Mod")
+                            .disabled(!installable)
+                            .busy(busy("workshop-install"))
+                            .on_click(views::run(&c, Action::WorkshopInstall(self.selected.clone()))),
+                    ))
+                    .child(btn(
+                        Button::new("profile-refresh", "Refresh")
+                            .busy(busy("refresh"))
+                            .on_click(views::run(&c, Action::Refresh)),
+                    ))
+                    .child(btn(
+                        Button::new("profile-apply", "Apply")
+                            .busy(busy("launch-options"))
+                            .on_click(views::run(&c, Action::LaunchOptions { options: option, preserve_fs_game: false })),
+                    )),
+            );
+
+        ScrollArea::new("dashboard-scroll").gap(px(PANEL_GAP))
+            .child(div().min_h(px(190.)).child(status))
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .items_end()
+                    .gap(px(PANEL_GAP))
+                    .child(div().flex_1().min_w(px(360.)).child(qol_panel))
+                    .child(div().flex_1().min_w(px(360.)).child(launch_panel)),
+            )
+            .into_any_element()
     }
 }

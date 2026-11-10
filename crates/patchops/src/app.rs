@@ -1,32 +1,41 @@
-//! Root view, navigation and application bootstrap.
+//! Application bootstrap: global setup, key bindings, the main window.
 
 use std::sync::Arc;
 
 use gpui::{
-    actions, div, prelude::*, px, size, App, Application, Bounds, Context, Entity, FocusHandle,
-    Focusable, KeyBinding, SharedString, TitlebarOptions, Window, WindowBounds, WindowOptions,
+    actions, prelude::*, px, size, App, Application, Bounds, KeyBinding, Size, TitlebarOptions, WindowBounds,
+    WindowOptions,
 };
+use patchops_core::Core;
 
-use crate::state::{SharedState, UiEvent};
-use crate::theme::{ActiveTheme, Theme};
-use crate::views::{gallery, AboutView, DashboardView, GalleryView, LogsView, TasksView};
-use crate::widgets::{self, TabNav};
+use crate::controller::Controller;
+use crate::state::{subscribe_logs, UiEvent};
+use crate::theme::Theme;
+use crate::views::{gallery, Shell};
+use crate::widgets::{self, Icon};
 
-actions!(patchops, [Quit, NextView, PrevView]);
+actions!(
+    patchops,
+    [Quit, NextView, PrevView, Go1, Go2, Go3, Go4, Go5, Go6, RefreshState]
+);
 
-/// Sidebar entries. Add a variant + a view file under `views/` to add a tab.
+/// Sidebar entries (legacy `navItems`). To add a tab: variant + `ALL` + label/icon here, a file in
+/// `views/`, a field + match arm in `views/shell.rs`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Nav {
     Dashboard,
-    Logs,
-    Tasks,
-    About,
+    T7,
+    ExeSwapper,
+    Enhanced,
+    Graphics,
+    Tools,
     /// Widget gallery; only listed when `PATCHOPS_GALLERY=1`.
     Gallery,
 }
 
 impl Nav {
-    pub const ALL: [Nav; 5] = [Nav::Dashboard, Nav::Logs, Nav::Tasks, Nav::About, Nav::Gallery];
+    pub const ALL: [Nav; 7] =
+        [Nav::Dashboard, Nav::T7, Nav::ExeSwapper, Nav::Enhanced, Nav::Graphics, Nav::Tools, Nav::Gallery];
 
     pub fn visible(self) -> bool {
         self != Nav::Gallery || gallery::enabled()
@@ -35,10 +44,24 @@ impl Nav {
     pub fn label(self) -> &'static str {
         match self {
             Nav::Dashboard => "Dashboard",
-            Nav::Logs => "Logs",
-            Nav::Tasks => "Tasks",
-            Nav::About => "About",
+            Nav::T7 => "T7 Patch",
+            Nav::ExeSwapper => "EXE Swapper",
+            Nav::Enhanced => "Enhanced",
+            Nav::Graphics => "Graphics",
+            Nav::Tools => "Tools",
             Nav::Gallery => "Gallery",
+        }
+    }
+
+    pub fn icon(self) -> Icon {
+        match self {
+            Nav::Dashboard => Icon::LayoutDashboard,
+            Nav::T7 => Icon::ShieldCheck,
+            Nav::ExeSwapper => Icon::RefreshCw,
+            Nav::Enhanced => Icon::Gem,
+            Nav::Graphics => Icon::Image,
+            Nav::Tools => Icon::Wrench,
+            Nav::Gallery => Icon::Eye,
         }
     }
 
@@ -47,7 +70,19 @@ impl Nav {
     }
 }
 
-pub fn run(shared: Arc<SharedState>, ui_rx: async_channel::Receiver<UiEvent>) {
+/// Legacy window: 1320x860 (clamped to the primary display), minimum 800x600.
+fn window_size(cx: &App) -> (Size<gpui::Pixels>, Size<gpui::Pixels>) {
+    let display = cx.primary_display().map(|d| d.bounds().size);
+    let clamp = |w: f32, h: f32| {
+        let (dw, dh) = display.map(|s| (f32::from(s.width), f32::from(s.height))).unwrap_or((w, h));
+        size(px(w.min(dw)), px(h.min(dh)))
+    };
+    (clamp(1320., 860.), clamp(800., 600.))
+}
+
+pub fn run(core: Arc<Core>, ui_rx: async_channel::Receiver<UiEvent>) {
+    // Subscribe before anything can log so no entry is missed by the Activity Log.
+    let log_rx = subscribe_logs(&core);
     Application::new().with_assets(widgets::Assets).run(move |cx: &mut App| {
         cx.set_global(Theme::dark());
         widgets::init(cx);
@@ -55,6 +90,13 @@ pub fn run(shared: Arc<SharedState>, ui_rx: async_channel::Receiver<UiEvent>) {
             KeyBinding::new("ctrl-q", Quit, None),
             KeyBinding::new("ctrl-tab", NextView, None),
             KeyBinding::new("ctrl-shift-tab", PrevView, None),
+            KeyBinding::new("ctrl-1", Go1, None),
+            KeyBinding::new("ctrl-2", Go2, None),
+            KeyBinding::new("ctrl-3", Go3, None),
+            KeyBinding::new("ctrl-4", Go4, None),
+            KeyBinding::new("ctrl-5", Go5, None),
+            KeyBinding::new("ctrl-6", Go6, None),
+            KeyBinding::new("f5", RefreshState, None),
         ]);
         cx.on_action(|_: &Quit, cx| cx.quit());
         // Quit when the last window closes.
@@ -65,170 +107,30 @@ pub fn run(shared: Arc<SharedState>, ui_rx: async_channel::Receiver<UiEvent>) {
         })
         .detach();
 
-        let bounds = Bounds::centered(None, size(px(1000.), px(680.)), cx);
+        let (win, min) = window_size(cx);
+        let bounds = Bounds::centered(None, win, cx);
         let window = cx
             .open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    titlebar: Some(TitlebarOptions {
-                        title: Some("PatchOpsIII".into()),
-                        ..Default::default()
-                    }),
+                    window_min_size: Some(min),
+                    titlebar: Some(TitlebarOptions { title: Some("PatchOpsIII".into()), ..Default::default() }),
+                    // Lets a `.desktop` file (with the icon) match the window; gpui 0.2.2 has no
+                    // runtime window-icon API.
+                    app_id: Some("PatchOpsIII".into()),
                     ..Default::default()
                 },
-                move |_, cx| cx.new(|cx| AppView::new(shared, ui_rx, cx)),
+                move |_, cx| {
+                    let controller = cx.new(|cx| Controller::new(core, ui_rx, log_rx, cx));
+                    cx.new(|cx| Shell::new(controller, cx))
+                },
             )
             .expect("open main window");
         window
             .update(cx, |view, window, cx| {
-                window.focus(&view.focus_handle(cx));
+                window.focus(&gpui::Focusable::focus_handle(view, cx));
                 cx.activate(true);
             })
             .ok();
     });
-}
-
-fn trace_first_render() {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        if std::env::var_os("PATCHOPS_TRACE_STARTUP").is_some() {
-            if let Some(t0) = crate::START.get() {
-                eprintln!("first render at {:?} after process start", t0.elapsed());
-            }
-        }
-    });
-}
-
-pub struct AppView {
-    nav: Nav,
-    focus_handle: FocusHandle,
-    dashboard: Entity<DashboardView>,
-    logs: Entity<LogsView>,
-    tasks: Entity<TasksView>,
-    about: Entity<AboutView>,
-    gallery: Entity<GalleryView>,
-}
-
-impl Focusable for AppView {
-    fn focus_handle(&self, _: &App) -> FocusHandle {
-        self.focus_handle.clone()
-    }
-}
-
-impl AppView {
-    fn new(
-        shared: Arc<SharedState>,
-        ui_rx: async_channel::Receiver<UiEvent>,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        // Background-thread -> UI bridge: the RPC thread / workers push `UiEvent`s
-        // into a channel; this foreground task awaits them and updates the view.
-        cx.spawn(async move |this, cx| {
-            while let Ok(ev) = ui_rx.recv().await {
-                let res = this.update(cx, |this, cx| {
-                    if let UiEvent::Navigate(i) = ev {
-                        this.nav = Nav::ALL[i.min(Nav::ALL.len() - 1)];
-                    }
-                    cx.notify();
-                });
-                if res.is_err() {
-                    break; // view dropped
-                }
-            }
-        })
-        .detach();
-
-        Self {
-            nav: if gallery::enabled() { Nav::Gallery } else { Nav::Dashboard },
-            focus_handle: cx.focus_handle(),
-            dashboard: cx.new(|cx| DashboardView::new(shared.clone(), cx)),
-            logs: cx.new(|cx| LogsView::new(shared.clone(), cx)),
-            tasks: cx.new(|cx| TasksView::new(shared.clone(), cx)),
-            about: cx.new(|_| AboutView),
-            gallery: cx.new(GalleryView::new),
-        }
-    }
-
-    fn go(&mut self, nav: Nav, cx: &mut Context<Self>) {
-        self.nav = nav;
-        cx.notify();
-    }
-
-    fn step(&mut self, delta: isize, cx: &mut Context<Self>) {
-        let n = Nav::ALL.len() as isize;
-        let mut i = self.nav.index() as isize;
-        loop {
-            i = (i + delta).rem_euclid(n);
-            if Nav::ALL[i as usize].visible() {
-                break;
-            }
-        }
-        self.go(Nav::ALL[i as usize], cx);
-    }
-}
-
-impl Render for AppView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        trace_first_render();
-        let t = *cx.theme();
-        let nav = self.nav;
-        let sidebar = div()
-            .w(px(180.))
-            .h_full()
-            .flex_none()
-            .flex()
-            .flex_col()
-            .gap_1()
-            .p_2()
-            .bg(t.sidebar)
-            .border_r_1()
-            .border_color(t.border)
-            .child(
-                div()
-                    .px_2()
-                    .py_2()
-                    .text_lg()
-                    .text_color(t.text)
-                    .child("PatchOpsIII"),
-            )
-            .children(Nav::ALL.into_iter().filter(|n| n.visible()).map(|item| {
-                let active = item == nav;
-                let hover = t.hover;
-                div()
-                    .id(SharedString::from(format!("nav-{}", item.label())))
-                    .px_3()
-                    .py_2()
-                    .rounded(px(6.))
-                    .cursor_pointer()
-                    .text_color(if active { t.text } else { t.text_muted })
-                    .when(active, |d| d.bg(t.panel))
-                    .when(!active, |d| d.hover(move |s| s.bg(hover)))
-                    .child(item.label())
-                    .on_click(cx.listener(move |this, _, _, cx| this.go(item, cx)))
-            }));
-
-        let content = div().relative().flex_1().h_full().overflow_hidden().child(match nav {
-            Nav::Dashboard => self.dashboard.clone().into_any_element(),
-            Nav::Logs => self.logs.clone().into_any_element(),
-            Nav::Tasks => self.tasks.clone().into_any_element(),
-            Nav::About => self.about.clone().into_any_element(),
-            Nav::Gallery => self.gallery.clone().into_any_element(),
-        });
-
-        div()
-            .key_context("Root")
-            .tab_nav()
-            .track_focus(&self.focus_handle)
-            .on_action(cx.listener(|this, _: &NextView, _, cx| this.step(1, cx)))
-            .on_action(cx.listener(|this, _: &PrevView, _, cx| this.step(-1, cx)))
-            .size_full()
-            .flex()
-            .flex_row()
-            .bg(t.bg)
-            .text_color(t.text)
-            .font_family(t.font_ui)
-            .text_sm()
-            .child(sidebar)
-            .child(content)
-    }
 }
