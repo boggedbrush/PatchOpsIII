@@ -275,14 +275,26 @@ fn install_lpc_files(core: &Core, net: &Net, cache: &mut ReleaseCache, game: &Pa
 
 static DEFENDER_WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-fn powershell(script: &str) -> Option<String> {
-    let out = crate::proc::command("powershell").args(["-Command", script]).output().ok()?;
+/// Run a fixed PowerShell script. Data never goes into the script text: it is handed over in
+/// environment variables (`$env:NAME`), so no quoting/escaping can be got wrong or injected.
+fn powershell(script: &str, env: &[(&str, &std::ffi::OsStr)]) -> Option<String> {
+    let mut cmd = crate::proc::command("powershell");
+    cmd.args(["-NoProfile", "-NonInteractive", "-Command", script]);
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let out = cmd.output().ok()?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// Environment variable carrying the folder to exclude.
+const DEFENDER_PATH_ENV: &str = "PATCHOPS_DEFENDER_PATH";
+/// The (constant) exclusion script; the path is read from the environment.
+const DEFENDER_EXCLUDE_SCRIPT: &str = "Add-MpPreference -ExclusionPath $env:PATCHOPS_DEFENDER_PATH";
+
 /// Legacy `add_defender_exclusion` (Windows only; elsewhere never called).
 pub fn add_defender_exclusion(core: &Core, path: &Path) -> bool {
-    let active = powershell("Get-MpComputerStatus").is_some_and(|o| o.contains("AntivirusEnabled") && o.contains("True"));
+    let active = powershell("Get-MpComputerStatus", &[]).is_some_and(|o| o.contains("AntivirusEnabled") && o.contains("True"));
     if !active {
         if !DEFENDER_WARNED.swap(true, std::sync::atomic::Ordering::SeqCst) {
             core.log.warning("Windows Defender is not active or accessible.");
@@ -291,7 +303,7 @@ pub fn add_defender_exclusion(core: &Core, path: &Path) -> bool {
         return false;
     }
     let p = path.display();
-    if powershell(&format!("Add-MpPreference -ExclusionPath '{p}'")).is_some() {
+    if powershell(DEFENDER_EXCLUDE_SCRIPT, &[(DEFENDER_PATH_ENV, path.as_os_str())]).is_some() {
         core.log.success(format!("Added Windows Defender exclusion to {p}."));
         true
     } else {
@@ -422,6 +434,14 @@ pub fn install_t7_patch(core: &Core, net: &Net, game: &Path, progress: ProgressF
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn defender_script_is_constant_and_never_embeds_the_path() {
+        // Hostile paths travel in the environment only; the script text has no interpolation at all.
+        assert!(!DEFENDER_EXCLUDE_SCRIPT.contains('{'));
+        assert_eq!(DEFENDER_EXCLUDE_SCRIPT, "Add-MpPreference -ExclusionPath $env:PATCHOPS_DEFENDER_PATH");
+        assert!(DEFENDER_EXCLUDE_SCRIPT.contains(DEFENDER_PATH_ENV));
+    }
     use crate::net::testserver::{serve, Route};
     use crate::net::no_progress;
     use crate::paths::Paths;
