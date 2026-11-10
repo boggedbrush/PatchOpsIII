@@ -17,6 +17,7 @@ pub mod elevate;
 pub mod enhanced;
 pub mod enhanced_net;
 pub mod error;
+pub mod fsutil;
 pub mod game;
 pub mod hash;
 pub mod log;
