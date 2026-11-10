@@ -19,6 +19,8 @@ pub enum ButtonKind {
     Secondary,
     /// Red-tinted destructive action.
     Danger,
+    /// Raised grey with a faint gradient and a lighter border (legacy `.tool-button.install-primary`).
+    Subtle,
     /// Transparent until hovered.
     #[allow(dead_code)]
     Ghost,
@@ -86,7 +88,7 @@ impl Button {
         self.busy = busy;
         self
     }
-    /// 30px high instead of 36px.
+    /// 34px high, 12px side padding instead of 36px / 14px (legacy `.small-button`).
     pub fn small(mut self) -> Self {
         self.small = true;
         self
@@ -109,6 +111,7 @@ impl RenderOnce for Button {
         let (border, text) = match self.kind {
             ButtonKind::Primary => (t.accent.opacity(0.42), t.text),
             ButtonKind::Secondary => (t.border_strong, t.text),
+            ButtonKind::Subtle => (gpui::white().opacity(0.24), t.text),
             ButtonKind::Danger => (t.accent.opacity(0.42), gpui::rgb(0xffd8d4).into()),
             ButtonKind::Ghost => (gpui::transparent_black(), t.text_strong),
         };
@@ -119,13 +122,13 @@ impl RenderOnce for Button {
             .items_center()
             .justify_center()
             .gap(px(7.))
-            .h(px(if self.small { 30. } else { t.control_h }))
-            .px(px(14.))
+            .h(px(if self.small { 34. } else { t.control_h }))
+            .px(px(if self.small { 12. } else { 14. }))
             .rounded(px(t.radius_sm))
             .border_1()
             .border_color(border)
             .text_color(text)
-            .text_size(px(if self.small { t.font_sm } else { t.font_md }))
+            .text_size(px(t.font_md))
             .font_weight(FontWeight::BOLD)
             .whitespace_nowrap()
             // Inert buttons are not tab stops (nothing to activate).
@@ -145,11 +148,16 @@ impl RenderOnce for Button {
                     linear_color_stop(t.accent_dark, 1.),
                 )),
                 ButtonKind::Secondary => d.bg(t.panel_strong),
+                ButtonKind::Subtle => d.bg(linear_gradient(
+                    135.,
+                    linear_color_stop(gpui::white().opacity(0.14), 0.),
+                    linear_color_stop(gpui::white().opacity(0.08), 1.),
+                )),
                 ButtonKind::Danger => d.bg(t.danger_bg),
                 ButtonKind::Ghost => d,
             });
         if inert {
-            el = el.opacity(0.55).cursor(if self.busy {
+            el = el.opacity(0.62).cursor(if self.busy {
                 CursorStyle::Arrow
             } else {
                 CursorStyle::OperationNotAllowed

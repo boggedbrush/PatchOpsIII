@@ -15,6 +15,8 @@ type ChangeHandler = Box<dyn Fn(usize, &mut Window, &mut App) + 'static>;
 enum Style {
     Segmented,
     Tabs,
+    /// `Tabs`, stretched over the whole row.
+    TabsFull,
 }
 
 fn strip(
@@ -27,6 +29,8 @@ fn strip(
     cx: &App,
 ) -> impl IntoElement {
     let t = *cx.theme();
+    let full = style == Style::TabsFull;
+    let style = if full { Style::Tabs } else { style };
     let on_change = on_change.map(std::rc::Rc::new);
     div()
         .id(id.clone())
@@ -41,7 +45,8 @@ fn strip(
             t.radius_sm
         }))
         .bg(gpui::white().opacity(0.035))
-        .when(style == Style::Tabs, |d| d.flex_none())
+        .when(style == Style::Tabs && !full, |d| d.flex_none())
+        .when(full, |d| d.w_full())
         .when(style == Style::Segmented, |d| d.w_full())
         .children(items.into_iter().enumerate().map(|(i, label)| {
             let active = i == selected;
@@ -52,8 +57,8 @@ fn strip(
                 .items_center()
                 .justify_center()
                 .h(px(if style == Style::Segmented { 26. } else { 34. }))
-                .when(style == Style::Segmented, |d| d.flex_1().min_w_0())
-                .when(style == Style::Tabs, |d| d.px(px(18.)).min_w(px(100.)))
+                .when(style == Style::Segmented || full, |d| d.flex_1().min_w_0())
+                .when(style == Style::Tabs && !full, |d| d.px(px(18.)).min_w(px(100.)))
                 .rounded(px(t.radius_xs + 1.))
                 .border_1()
                 .border_color(if active && style == Style::Tabs {
@@ -159,6 +164,7 @@ pub struct SubTabs {
     id: ElementId,
     items: Vec<SharedString>,
     selected: usize,
+    full: bool,
     on_change: Option<ChangeHandler>,
 }
 
@@ -171,11 +177,17 @@ impl SubTabs {
             id: id.into(),
             items: items.into_iter().map(Into::into).collect(),
             selected: 0,
+            full: false,
             on_change: None,
         }
     }
     pub fn selected(mut self, ix: usize) -> Self {
         self.selected = ix;
+        self
+    }
+    /// Full-width bar with equal-width halves (legacy `.content-panel > .subtab-bar`).
+    pub fn full_width(mut self) -> Self {
+        self.full = true;
         self
     }
     pub fn on_change(mut self, f: impl Fn(usize, &mut Window, &mut App) + 'static) -> Self {
@@ -191,7 +203,7 @@ impl RenderOnce for SubTabs {
             self.items,
             self.selected,
             false,
-            Style::Tabs,
+            if self.full { Style::TabsFull } else { Style::Tabs },
             self.on_change,
             cx,
         ))

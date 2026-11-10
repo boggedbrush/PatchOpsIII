@@ -45,6 +45,15 @@ pub fn content_width(window: &Window) -> f32 {
     f32::from(window.viewport_size().width) - 232.0
 }
 
+/// Legacy `minmax(0, Nfr)` grid track as a flex item: grows `grow`-proportionally from a zero
+/// basis (so ratios hold regardless of content); add `.min_w(..)` for `minmax(N px, ..)`.
+pub fn fr(d: gpui::Div, grow: f32) -> gpui::Div {
+    let mut d = d.flex_basis(px(0.));
+    d.style().flex_grow = Some(grow);
+    d.style().flex_shrink = Some(1.0);
+    d
+}
+
 /// Page title (legacy `.panel h2`), drawn above the body without a frame.
 pub fn heading(cx: &App, title: &'static str) -> impl IntoElement {
     let t = *cx.theme();

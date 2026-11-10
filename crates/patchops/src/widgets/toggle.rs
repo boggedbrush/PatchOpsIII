@@ -2,8 +2,8 @@
 //! value and flips it in `on_change`. Focusable; Space/Enter toggles.
 
 use gpui::{
-    div, prelude::*, px, App, ClickEvent, CursorStyle, ElementId, InteractiveElement, IntoElement,
-    SharedString, Window,
+    div, prelude::*, px, App, ClickEvent, CursorStyle, ElementId, FontWeight,
+    InteractiveElement, IntoElement, SharedString, Window,
 };
 
 use super::icon::{icon, Icon};
@@ -54,9 +54,9 @@ impl RenderOnce for Toggle {
             .flex()
             .flex_none()
             .items_center()
-            .w(px(46.))
-            .h(px(26.))
-            .px(px(3.))
+            .w(px(52.))
+            .h(px(28.))
+            .px(px(4.))
             .rounded_full()
             .border_1()
             .border_color(if checked {
@@ -76,7 +76,7 @@ impl RenderOnce for Toggle {
             )
             .map(|d| {
                 if self.disabled {
-                    d.opacity(0.55).cursor(CursorStyle::OperationNotAllowed)
+                    d.opacity(0.62).cursor(CursorStyle::OperationNotAllowed)
                 } else {
                     d.cursor_pointer().when_some(self.on_change, move |d, f| {
                         d.on_click(move |_: &ClickEvent, w, cx| f(!checked, w, cx))
@@ -92,6 +92,7 @@ fn box_shell(
     disabled: bool,
     mark: impl IntoElement,
     on_click: Option<super::ClickFn>,
+    strong: bool,
     cx: &App,
 ) -> impl IntoElement {
     let t = *cx.theme();
@@ -100,14 +101,23 @@ fn box_shell(
         .flex()
         .items_center()
         .gap(px(10.))
-        .min_h(px(32.))
+        .min_h(px(30.))
         .text_color(t.text)
         .text_size(px(t.font_md))
         .tab_index(0)
         .rounded(px(t.radius_xs))
         .focus(move |s| s.bg(t.hover))
         .child(mark)
-        .when_some(label, |d, l| d.child(div().min_w_0().child(l)))
+        .when_some(label, |d, l| {
+            d.child(
+                div()
+                    .min_w_0()
+                    // Legacy `.check-row` / `.radio-row`: weight 560; `.apply-all-row`: 760, muted-strong.
+                    .font_weight(if strong { FontWeight::BOLD } else { FontWeight::MEDIUM })
+                    .when(strong, |d| d.text_color(t.text_strong))
+                    .child(l),
+            )
+        })
         .map(|d| {
             if disabled {
                 d.opacity(0.55).cursor(CursorStyle::OperationNotAllowed)
@@ -128,6 +138,7 @@ pub struct Checkbox {
     checked: bool,
     label: Option<SharedString>,
     disabled: bool,
+    strong: bool,
     on_change: Option<ChangeHandler>,
 }
 
@@ -138,11 +149,17 @@ impl Checkbox {
             checked,
             label: None,
             disabled: false,
+            strong: false,
             on_change: None,
         }
     }
     pub fn label(mut self, label: impl Into<SharedString>) -> Self {
         self.label = Some(label.into());
+        self
+    }
+    /// Bold, slightly muted label (legacy `.apply-all-row`).
+    pub fn strong(mut self) -> Self {
+        self.strong = true;
         self
     }
     #[allow(dead_code)] // kit API
@@ -183,6 +200,7 @@ impl RenderOnce for Checkbox {
                 Box::new(move |_: &ClickEvent, w: &mut Window, cx: &mut App| f(!checked, w, cx))
                     as _
             }),
+            self.strong,
             cx,
         )
     }
@@ -258,6 +276,7 @@ impl RenderOnce for Radio {
                     }
                 }) as _
             }),
+            false,
             cx,
         )
     }

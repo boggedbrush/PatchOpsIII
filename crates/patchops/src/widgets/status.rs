@@ -51,6 +51,8 @@ pub struct StatusRow {
     value: SharedString,
     tone: Tone,
     last: bool,
+    min_h: f32,
+    grow: bool,
 }
 
 impl StatusRow {
@@ -60,7 +62,19 @@ impl StatusRow {
             value: "".into(),
             tone,
             last: false,
+            min_h: 30.,
+            grow: false,
         }
+    }
+    /// Minimum row height (default 30).
+    pub fn min_h(mut self, h: f32) -> Self {
+        self.min_h = h;
+        self
+    }
+    /// Share the free height of a column equally with the other growing rows.
+    pub fn grow(mut self) -> Self {
+        self.grow = true;
+        self
     }
     pub fn value(mut self, v: impl Into<SharedString>) -> Self {
         self.value = v.into();
@@ -86,9 +100,10 @@ impl RenderOnce for StatusRow {
             .items_center()
             .justify_between()
             .gap(px(14.))
-            .min_h(px(30.))
+            .min_h(px(self.min_h))
+            .when(self.grow, |d| d.flex_grow())
             .when(!self.last, |d| d.border_b_1().border_color(t.border))
-            .child(div().min_w_0().text_color(t.text_strong).child(self.label))
+            .child(div().min_w_0().whitespace_nowrap().text_color(t.text_strong).child(self.label))
             .child(
                 div()
                     .flex()
@@ -113,6 +128,8 @@ pub struct StatusPill {
     label: SharedString,
     value: SharedString,
     tone: Tone,
+    inline: Option<bool>,
+    min_h: f32,
 }
 
 impl StatusPill {
@@ -121,20 +138,70 @@ impl StatusPill {
             label: label.into(),
             value: value.into(),
             tone,
+            inline: None,
+            min_h: 56.,
         }
+    }
+    /// One line: label left, value right (legacy `.dxvk-control-bar .status-pill` when `bordered`,
+    /// `.t7-overview-grid .status-pill` when not).
+    pub fn inline(mut self, bordered: bool) -> Self {
+        self.inline = Some(bordered);
+        self
+    }
+    pub fn min_h(mut self, h: f32) -> Self {
+        self.min_h = h;
+        self
     }
 }
 
 impl RenderOnce for StatusPill {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = *cx.theme();
+        let value_color = if self.tone == Tone::Neutral { t.text_strong } else { self.tone.color(&t) };
+        if let Some(bordered) = self.inline {
+            return div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap(px(12.))
+                .w_full()
+                .min_w_0()
+                .min_h(px(self.min_h))
+                .px(px(14.))
+                .when(bordered, |d| {
+                    d.border_1()
+                        .border_color(t.border)
+                        .rounded(px(t.radius - 4.))
+                        .bg(gpui::white().opacity(0.03))
+                })
+                .child(
+                    div()
+                        .flex_none()
+                        .whitespace_nowrap()
+                        .text_size(px(t.font_xs))
+                        .font_weight(FontWeight::BOLD)
+                        .text_color(t.text_muted)
+                        .child(self.label),
+                )
+                .child(
+                    div()
+                        .min_w_0()
+                        .text_right()
+                        .text_size(px(t.font_md))
+                        .font_weight(FontWeight::BOLD)
+                        .text_color(value_color)
+                        .child(self.value),
+                )
+                .into_any_element();
+        }
         div()
             .flex()
             .flex_col()
+            .flex_grow()
             .justify_center()
             .gap(px(4.))
             .min_w_0()
-            .min_h(px(56.))
+            .min_h(px(self.min_h))
             .px(px(14.))
             .py(px(6.))
             .border_1()
@@ -153,13 +220,10 @@ impl RenderOnce for StatusPill {
                 div()
                     .text_size(px(t.font_sm))
                     .font_weight(FontWeight::BOLD)
-                    .text_color(if self.tone == Tone::Neutral {
-                        t.text_strong
-                    } else {
-                        self.tone.color(&t)
-                    })
+                    .text_color(value_color)
                     .child(self.value),
             )
+            .into_any_element()
     }
 }
 
@@ -366,6 +430,8 @@ pub struct Chip {
     swatch: Option<Hsla>,
     active: bool,
     disabled: bool,
+    dim: bool,
+    height: f32,
     on_click: Option<super::ClickFn>,
 }
 
@@ -377,8 +443,19 @@ impl Chip {
             swatch: None,
             active: false,
             disabled: false,
+            dim: false,
+            height: 32.,
             on_click: None,
         }
+    }
+    /// Muted text (legacy `.recommended-chip.secondary`), still brightens when active.
+    pub fn dim(mut self, d: bool) -> Self {
+        self.dim = d;
+        self
+    }
+    pub fn height(mut self, h: f32) -> Self {
+        self.height = h;
+        self
     }
     pub fn swatch(mut self, c: Hsla) -> Self {
         self.swatch = Some(c);
@@ -407,7 +484,7 @@ impl RenderOnce for Chip {
             .flex()
             .items_center()
             .gap(px(8.))
-            .h(px(32.))
+            .h(px(self.height))
             .px(px(10.))
             .border_1()
             .border_color(if active {
@@ -421,7 +498,13 @@ impl RenderOnce for Chip {
             } else {
                 gpui::white().opacity(0.04)
             })
-            .text_color(if active { t.text } else { t.text_strong })
+            .text_color(if active {
+                t.text
+            } else if self.dim {
+                t.text_muted
+            } else {
+                t.text_strong
+            })
             .text_size(px(t.font_xs))
             .font_weight(FontWeight::BOLD)
             .tab_index(0)

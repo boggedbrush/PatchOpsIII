@@ -24,6 +24,10 @@ pub struct SettingRow {
     control: Option<AnyElement>,
     last: bool,
     boxed: bool,
+    /// `Some(r)`: label column and control column split `r : 1` and the control fills its column.
+    fill: Option<f32>,
+    /// Control sits right after the label instead of at the far edge (legacy `ToggleRow`).
+    start: bool,
 }
 
 impl SettingRow {
@@ -34,7 +38,20 @@ impl SettingRow {
             control: None,
             last: false,
             boxed: false,
+            fill: None,
+            start: false,
         }
+    }
+    /// Label and control columns split `label_ratio : 1` (legacy `.number-row`, `.slider-row`,
+    /// quick tiles); the control fills its column.
+    pub fn fill(mut self, label_ratio: f32) -> Self {
+        self.fill = Some(label_ratio);
+        self
+    }
+    /// Keep the control next to the label (legacy toggle rows), not at the right edge.
+    pub fn control_start(mut self) -> Self {
+        self.start = true;
+        self
     }
     /// Secondary line under the label.
     pub fn help(mut self, h: impl Into<SharedString>) -> Self {
@@ -60,14 +77,23 @@ impl SettingRow {
 impl RenderOnce for SettingRow {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let t = *cx.theme();
+        let (fill, start) = (self.fill, self.start);
+        let label_col = div().flex().flex_col().min_w_0();
+        let label_col = match (fill, start) {
+            (Some(r), _) => crate::views::fr(label_col, r),
+            (None, true) => label_col.flex_none(),
+            (None, false) => label_col.flex_1(),
+        };
         div()
             .flex()
             .items_center()
-            .justify_between()
-            .gap(px(14.))
-            .min_h(px(t.row_h))
+            .when(fill.is_none() && !start, |d| d.justify_between())
+            .gap(px(if self.boxed || fill.is_some() || start { 10. } else { 14. }))
+            .min_h(px(if self.boxed { 50. } else { 38. }))
+            .when(self.boxed, |d| d.flex_grow())
+            .when(fill.is_some(), |d| d.w_full())
             .px(px(14.))
-            .py(px(4.))
+            .py(px(if self.boxed { 4. } else { 7. }))
             .min_w_0()
             .when(!self.last && !self.boxed, |d| {
                 d.border_b_1().border_color(t.border)
@@ -79,11 +105,7 @@ impl RenderOnce for SettingRow {
                     .bg(gpui::white().opacity(0.03))
             })
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_w_0()
+                label_col
                     .child(
                         div()
                             .text_size(px(t.font_md))
@@ -99,7 +121,13 @@ impl RenderOnce for SettingRow {
                         )
                     }),
             )
-            .children(self.control.map(|c| div().flex_none().child(c)))
+            .children(self.control.map(|c| {
+                if fill.is_some() {
+                    crate::views::fr(div(), 1.0).min_w(px(96.)).flex().flex_col().child(c)
+                } else {
+                    div().flex_none().child(c)
+                }
+            }))
     }
 }
 
