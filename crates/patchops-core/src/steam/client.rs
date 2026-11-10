@@ -38,6 +38,8 @@ const POLL: Duration = Duration::from_millis(25);
 pub const CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
 /// Extra wait after SIGKILL.
 const KILL_TIMEOUT: Duration = Duration::from_secs(3);
+/// Grace period for hand-off launchers (`steam -applaunch`, `xdg-open`) to finish.
+const HANDOFF_SETTLE: Duration = Duration::from_millis(250);
 /// Total time `open_steam` waits for the process to show up (legacy: 15 s).
 pub const OPEN_TIMEOUT: Duration = Duration::from_secs(15);
 /// The process must be present this long without interruption.
@@ -109,6 +111,18 @@ where
     I: IntoIterator<Item = S>,
     S: Into<OsString>,
 {
+    spawn_settled(cmd, args, Duration::ZERO)
+}
+
+/// Like [`spawn_detached`], but also gives a short-lived launcher up to `settle` to exit before
+/// returning (a hand-off such as `steam -applaunch` / `xdg-open` finishes in a few ms; a process
+/// that becomes the long-running client simply outlives the grace period). This makes the effects
+/// of the hand-off (e.g. the recorded call) visible to whoever looks right after we return.
+pub fn spawn_settled<I, S>(cmd: &Path, args: I, settle: Duration) -> std::io::Result<()>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<OsString>,
+{
     let mut c = Command::new(cmd);
     c.args(args.into_iter().map(Into::into)).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     #[cfg(unix)]
@@ -123,9 +137,14 @@ where
         c.creation_flags(0x0000_0008 | 0x0000_0200 | 0x0800_0000);
     }
     let mut child = c.spawn()?;
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
     std::thread::Builder::new().name("steam-reaper".into()).spawn(move || {
         let _ = child.wait();
+        let _ = tx.send(());
     })?;
+    if !settle.is_zero() {
+        let _ = rx.recv_timeout(settle);
+    }
     Ok(())
 }
 
@@ -356,7 +375,7 @@ pub fn launch_game(core: &Core, app_id: &str) {
     #[cfg(windows)]
     {
         let r = match steam_command(core) {
-            Some(exe) => spawn_detached(&exe, ["-applaunch", app_id]),
+            Some(exe) => spawn_settled(&exe, ["-applaunch", app_id], HANDOFF_SETTLE),
             None => {
                 core.log.warning("Steam executable path not found; attempting to use system URI handler.");
                 spawn_detached(Path::new("cmd"), ["/c", "start", "", &uri])
@@ -371,7 +390,7 @@ pub fn launch_game(core: &Core, app_id: &str) {
     #[cfg(target_os = "macos")]
     {
         let _ = ok_msg;
-        match spawn_detached(Path::new("open"), [uri.as_str()]) {
+        match spawn_settled(Path::new("open"), [uri.as_str()], HANDOFF_SETTLE) {
             Ok(()) => core.log.success(format!("Launched Black Ops III via Steam (AppID: {app_id})")),
             Err(e) => core.log.error(format!("Error launching game via Steam: {e}")),
         }
@@ -403,7 +422,7 @@ pub fn launch_game(core: &Core, app_id: &str) {
                     code == 0
                 })
             } else {
-                spawn_detached(&cmd, args.iter().map(String::as_str)).map(|_| true)
+                spawn_settled(&cmd, args.iter().map(String::as_str), HANDOFF_SETTLE).map(|_| true)
             };
             match res {
                 Ok(true) => {
@@ -437,6 +456,6 @@ pub fn open_external_url(url: &str) -> Result<(), String> {
     #[cfg(all(unix, not(target_os = "macos")))]
     {
         let launcher = which("xdg-open").or_else(|| which("steam")).ok_or_else(|| "No system URL launcher was found.".to_string())?;
-        spawn_detached(&launcher, [url]).map_err(|e| io_error_text(&e, Some(&launcher)))
+        spawn_settled(&launcher, [url], HANDOFF_SETTLE).map_err(|e| io_error_text(&e, Some(&launcher)))
     }
 }

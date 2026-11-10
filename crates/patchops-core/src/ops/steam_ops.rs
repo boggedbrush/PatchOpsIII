@@ -2,22 +2,18 @@
 //! state (read side implemented; `steamUserId`/`currentLaunchOptions` are assembled in
 //! `State::build` from `crate::steam`).
 //!
-//! TODO(steam agent) - port from `utils.py` + `backend/api.py`: `launch_game_via_steam`,
-//! `apply_launch_options`/`set_launch_options` (merge algorithm in OPS.md), `close_steam`,
-//! `open_steam` (process control: `pgrep`/`pkill -x steam`, PATH lookup of `steam`),
-//! `workshop_install`, `_open_external_url`, plus the localconfig VDF *write* (use
-//! `crate::steam::vdf`; `dump_pretty` is a first cut whose separator/escaping must be verified
-//! against the launch-options goldens - the `vdf` Python version recorded them with
-//! `"key"\t\t"value"`). Steam control helpers (`close_steam`/`open_steam`, config.vdf
-//! compat-tool mapping) are also needed by `enhanced` and `maintenance`: expose them as `pub fn` here.
+//! Legacy reference: `backend/api.py` (`launch_game`, `launch_options`, `workshop_install`,
+//! `_open_external_url`) and `utils.py`. The process/VDF machinery is in [`crate::steam`]
+//! (`client`, `launch_options`); the shared helpers for other groups are re-exported there
+//! (`close_steam`, `open_steam`, `apply_launch_options`, `clear_launch_options`, ...).
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 
-use super::{not_implemented, Args, Group};
+use super::{state_reply, to_json, Args, Group};
 use crate::context::Core;
-use crate::error::OpError;
-use crate::state::StateCx;
+use crate::error::{AppError, AppResult, OpError};
+use crate::state::{State, StateCx};
 use crate::steam;
 
 pub const OPS: &[&str] = &["launch", "launch-options", "workshop-install"];
@@ -33,9 +29,81 @@ pub const WORKSHOP_PROFILES: [(&str, &str, &str, &str); 3] = [
     ("reforged", "BO3 Reforged", "3667377161", "+set fs_game 3667377161"),
 ];
 
-fn call(core: &Core, op: &str, args: &Args) -> Result<Value, OpError> {
-    // TODO(steam agent)
-    not_implemented(core, op, args)
+fn call(core: &Core, op: &str, a: &Args) -> Result<Value, OpError> {
+    match op {
+        "launch" => {
+            launch(core);
+            Ok(json!({"ok": true}))
+        }
+        "launch-options" => {
+            let options = a.str_or("options", "")?;
+            let preserve = a.bool_or("preserve_fs_game", false)?;
+            match set_launch_options(core, &options, preserve) {
+                Ok(r) => to_json(&r),
+                // The legacy route has no handler for the missing-user exception: HTTP 500.
+                Err(e) if e.state.is_none() => Err(OpError::Internal(e.message)),
+                Err(e) => Ok(e.to_json()),
+            }
+        }
+        "workshop-install" => {
+            let profile = a.str_req("profileId", 1)?;
+            state_reply(workshop_install(core, &profile))
+        }
+        _ => Err(OpError::UnknownOp(op.to_string())),
+    }
+}
+
+/// Launch Black Ops III through Steam; failures are only logged (`{"ok": true}` always).
+pub fn launch(core: &Core) {
+    steam::launch_game(core, steam::BO3_APP_ID);
+}
+
+/// `launch-options` result: `ok` is whether `localconfig.vdf` was written (no `error` key).
+#[derive(Debug, Clone, Serialize)]
+pub struct LaunchOptionsResult {
+    pub ok: bool,
+    pub state: State,
+}
+
+/// Apply one of the supported launch option strings (full Steam close/edit/open cycle).
+///
+/// Errors: `Unsupported launch option.` carries the current state; `Steam user ID not found!`
+/// has no state (the op layer maps it to an `internal:` envelope error).
+pub fn set_launch_options(core: &Core, options: &str, preserve_fs_game: bool) -> AppResult<LaunchOptionsResult> {
+    if !is_supported_option(options) {
+        core.log.warning("Unsupported launch option.");
+        return Err(AppError::new("Unsupported launch option.").with_state(State::build(core)));
+    }
+    let ok = steam::apply_launch_options(core, options, preserve_fs_game)?;
+    Ok(LaunchOptionsResult { ok, state: State::build(core) })
+}
+
+fn is_supported_option(options: &str) -> bool {
+    options.is_empty() || options == OFFLINE_OPTION || WORKSHOP_PROFILES.iter().any(|p| p.3 == options)
+}
+
+/// Apply a Workshop profile's launch option, then open its Workshop page in Steam.
+pub fn workshop_install(core: &Core, profile_id: &str) -> AppResult<State> {
+    let Some((_, name, workshop_id, option)) = WORKSHOP_PROFILES.iter().find(|p| p.0 == profile_id) else {
+        return Err(AppError::new("Select an installable Workshop mod."));
+    };
+    let ok = match steam::apply_launch_options(core, option, false) {
+        Ok(ok) => ok,
+        Err(e) => {
+            core.log.error(format!("Workshop install flow failed: {}", e.message));
+            return Err(e);
+        }
+    };
+    if !ok {
+        return Err(AppError::new("Failed to apply launch options."));
+    }
+    let url = format!("steam://openurl/https://steamcommunity.com/sharedfiles/filedetails/?id={workshop_id}");
+    if let Err(e) = steam::open_external_url(&url) {
+        core.log.error(format!("Workshop install flow failed: {e}"));
+        return Err(AppError::new(e));
+    }
+    core.log.info(format!("Opened {name} Workshop page in Steam."));
+    Ok(State::build(core))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
