@@ -9,8 +9,6 @@
 //! (`t7-uninstall`) go through `ops::dispatch` with the documented JSON argument shape and parse
 //! the reply back (see [`via_json`]); switching one to a typed call later only touches [`exec`].
 
-use std::panic::AssertUnwindSafe;
-
 use patchops_core::config_ini::ConfigValue;
 use patchops_core::net::{Net, Transfer};
 use patchops_core::ops::dxvk::DxvkSettings;
@@ -191,6 +189,12 @@ pub enum Action {
 }
 
 impl Action {
+    /// Non-mutating actions that do not touch the files the queued ops work on: they start
+    /// immediately instead of waiting in the serial queue behind e.g. a download.
+    pub fn is_independent(&self) -> bool {
+        matches!(self, Action::OpenUrl(_) | Action::Launch | Action::CopyLogs | Action::Refresh)
+    }
+
     /// The key for [`Controller::is_busy`](crate::controller::Controller::is_busy); equals the
     /// legacy `busy` id of the same button.
     pub fn busy_key(&self) -> &'static str {
@@ -248,8 +252,6 @@ pub enum ReplyData {
     DepotAvailable(bool),
     /// `CopyLogs`.
     Payload(String),
-    /// Anything else the op returned (e.g. the `update-check` body).
-    Json(Value),
 }
 
 /// Result of [`exec`].
@@ -259,6 +261,15 @@ pub struct Reply {
     pub error: Option<String>,
     pub state: Option<State>,
     pub data: ReplyData,
+    /// Ordering stamp taken right after the op produced `state` (see [`next_seq`]); the
+    /// controller never applies a state older than the newest one it already has.
+    pub seq: u64,
+}
+
+/// Monotonic stamp for state snapshots (higher = read later).
+pub fn next_seq() -> u64 {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
 }
 
 impl Reply {
@@ -278,7 +289,7 @@ impl Reply {
         }
     }
     fn from_err(e: patchops_core::AppError) -> Reply {
-        Reply { ok: false, error: Some(e.message), state: e.state.map(|s| *s), data: ReplyData::None }
+        Reply { ok: false, error: Some(e.message), state: e.state.map(|s| *s), data: ReplyData::None, seq: 0 }
     }
 }
 
@@ -303,12 +314,10 @@ fn via_json(core: &Core, op: &str, args: Value) -> Reply {
         }
     } else if let Some(av) = v.get("available").and_then(Value::as_bool) {
         ReplyData::DepotAvailable(av)
-    } else if let Some(u) = v.get("update") {
-        ReplyData::Json(u.clone())
     } else {
         ReplyData::None
     };
-    Reply { ok, error, state, data }
+    Reply { ok, error, state, data, seq: 0 }
 }
 
 /// Forward a transfer as a percent; only when the whole percent changed would be nicer, but the
@@ -327,22 +336,19 @@ fn t7_config(core: &Core, gamertag: Option<&str>, color: &str, password: Option<
 pub type Progress<'a> = &'a mut dyn FnMut(u8);
 
 /// Run one action to completion. Blocking (some ops take seconds); call from a background thread.
-/// A panic inside an op becomes an error reply instead of taking the UI down. `progress` receives
-/// the download percent of the network installers (`T7Install`, `DxvkInstall`, `EnhancedInstall`).
+/// `progress` receives the download percent of the network installers (`T7Install`,
+/// `DxvkInstall`, `EnhancedInstall`).
+///
+/// A panic inside an op is NOT caught: the release profile is `panic = "abort"` (unwinding costs
+/// ~1.7 MB of binary, see the root `Cargo.toml`), so it ends the process after the panic hook in
+/// `main.rs` has written message + location to the PatchOpsIII log file.
 pub fn exec(core: &Core, action: &Action, progress: Progress<'_>) -> Reply {
-    let r = std::panic::catch_unwind(AssertUnwindSafe(|| exec_inner(core, action, progress)));
-    let mut reply = r.unwrap_or_else(|p| {
-        let msg = p
-            .downcast_ref::<&str>()
-            .map(|s| s.to_string())
-            .or_else(|| p.downcast_ref::<String>().cloned())
-            .unwrap_or_else(|| "unknown panic".into());
-        Reply::err(format!("Internal error: {msg}"))
-    });
+    let mut reply = exec_inner(core, action, progress);
     // Legacy `runAction`: a successful result without a state is followed by a refresh.
     if reply.ok && reply.state.is_none() && !matches!(action, Action::OpenUrl(_) | Action::CopyLogs) {
-        reply.state = std::panic::catch_unwind(AssertUnwindSafe(|| basics::status(core))).ok();
+        reply.state = Some(basics::status(core));
     }
+    reply.seq = next_seq();
     reply
 }
 
@@ -363,8 +369,9 @@ fn exec_inner(core: &Core, action: &Action, progress: Progress<'_>) -> Reply {
             Ok(r) => Reply {
                 ok: true,
                 state: Some(r.state),
-                data: ReplyData::Json(serde_json::to_value(&r.update).unwrap_or(Value::Null)),
+                data: ReplyData::None,
                 error: None,
+                seq: 0,
             },
             Err(e) => Reply::from_err(e),
         },
@@ -377,6 +384,7 @@ fn exec_inner(core: &Core, action: &Action, progress: Progress<'_>) -> Reply {
                     error: Some("Failed to apply launch options.".into()),
                     state: Some(r.state),
                     data: ReplyData::None,
+                    seq: 0,
                 },
                 Err(e) => Reply::from_err(e),
             }
@@ -421,6 +429,7 @@ fn exec_inner(core: &Core, action: &Action, progress: Progress<'_>) -> Reply {
                 error: None,
                 state: Some(r.state),
                 data: ReplyData::Validated { valid: r.valid, message: r.message },
+                seq: 0,
             },
             Err(e) => Reply::from_err(e),
         },
@@ -446,7 +455,7 @@ fn exec_inner(core: &Core, action: &Action, progress: Progress<'_>) -> Reply {
         Action::ExeCurrent => Reply::from_app(enhanced::restore_current_exe_op(core)),
         Action::ExeEnhanced => Reply::from_app(enhanced::restore_enhanced_exe_op(core)),
         Action::ExeDepotCheck => match enhanced::compatible_depot_status(core) {
-            Ok(d) => Reply { ok: d.ok, error: None, state: Some(d.state), data: ReplyData::DepotAvailable(d.available) },
+            Ok(d) => Reply { ok: d.ok, error: None, state: Some(d.state), data: ReplyData::DepotAvailable(d.available), seq: 0 },
             Err(e) => Reply::from_err(e),
         },
         Action::CopyLogs => Reply { ok: true, data: ReplyData::Payload(basics::log_payload(core)), ..Reply::default() },

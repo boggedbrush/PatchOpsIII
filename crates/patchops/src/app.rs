@@ -11,7 +11,7 @@ use patchops_core::Core;
 use crate::controller::Controller;
 use crate::state::{subscribe_logs, UiEvent};
 use crate::theme::Theme;
-use crate::views::{gallery, Shell};
+use crate::views::Shell;
 use crate::widgets::{self, Icon};
 
 actions!(
@@ -29,16 +29,24 @@ pub enum Nav {
     Enhanced,
     Graphics,
     Tools,
-    /// Widget gallery; only listed when `PATCHOPS_GALLERY=1`.
+    /// Widget gallery; debug builds only, listed when `PATCHOPS_GALLERY=1`.
+    #[cfg(debug_assertions)]
     Gallery,
 }
 
 impl Nav {
+    #[cfg(debug_assertions)]
     pub const ALL: [Nav; 7] =
         [Nav::Dashboard, Nav::T7, Nav::ExeSwapper, Nav::Enhanced, Nav::Graphics, Nav::Tools, Nav::Gallery];
+    #[cfg(not(debug_assertions))]
+    pub const ALL: [Nav; 6] = [Nav::Dashboard, Nav::T7, Nav::ExeSwapper, Nav::Enhanced, Nav::Graphics, Nav::Tools];
 
     pub fn visible(self) -> bool {
-        self != Nav::Gallery || gallery::enabled()
+        match self {
+            #[cfg(debug_assertions)]
+            Nav::Gallery => crate::views::gallery::enabled(),
+            _ => true,
+        }
     }
 
     pub fn label(self) -> &'static str {
@@ -49,6 +57,7 @@ impl Nav {
             Nav::Enhanced => "Enhanced",
             Nav::Graphics => "Graphics",
             Nav::Tools => "Tools",
+            #[cfg(debug_assertions)]
             Nav::Gallery => "Gallery",
         }
     }
@@ -61,6 +70,7 @@ impl Nav {
             Nav::Enhanced => Icon::Gem,
             Nav::Graphics => Icon::Image,
             Nav::Tools => Icon::Wrench,
+            #[cfg(debug_assertions)]
             Nav::Gallery => Icon::Eye,
         }
     }

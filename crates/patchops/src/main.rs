@@ -4,8 +4,6 @@
 // to the launching terminal when the process is started with arguments. Debug builds keep the
 // console subsystem so `cargo run` output works as usual.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
-#![allow(dead_code)] // some controller / widget APIs are only used by views that are still being filled in
-
 mod actions;
 mod app;
 mod controller;
@@ -97,11 +95,33 @@ fn check_display() -> Result<(), String> {
     }
 }
 
+/// Append panics (message, location, thread) to the PatchOpsIII log file before the default hook
+/// runs, in GUI and RPC modes alike. Uses a fresh file-only `Logger` on the core's log path rather
+/// than a `Core`: the hook can run while the panicking thread holds one of core's locks.
+fn install_panic_hook() {
+    let log_path = patchops_core::paths::Paths::from_env().log;
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let msg = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|s| s.to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "non-string panic payload".into());
+        let at = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_else(|| "unknown location".into());
+        let thread = std::thread::current();
+        let line = format!("panic in thread '{}': {msg} at {at}", thread.name().unwrap_or("<unnamed>"));
+        patchops_core::log::Logger::new(log_path.clone()).log_file_only(patchops_core::log::Category::Error, line);
+        default(info);
+    }));
+}
+
 /// Process start, for `PATCHOPS_TRACE_STARTUP=1` (prints time-to-first-render to stderr).
 pub static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
 
 fn main() {
     START.get_or_init(std::time::Instant::now);
+    install_panic_hook();
     #[cfg(feature = "debug-log")]
     env_logger::init();
     let args: Vec<String> = std::env::args().skip(1).collect();

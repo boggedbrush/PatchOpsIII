@@ -9,16 +9,18 @@
 //! * the global dialogs (confirm, depot prompt, directory browser) which the shell renders,
 //! * the navigation selection.
 //!
-//! Actions run one at a time on the background executor (some ops take seconds); the result is
-//! applied on the UI thread in [`Controller::run`]'s completion. There is no polling: the state
-//! is re-read after each action (the op returns it), on the Refresh button, and when the in-GUI
-//! bench RPC mutated something. The only timer that can exist is the 5 s depot watch while the
-//! depot prompt is open.
+//! Mutating actions run strictly one at a time on the background executor (some ops take
+//! seconds); the independent, non-mutating ones ([`Action::is_independent`]: open URL, launch,
+//! copy logs, refresh) start immediately so they never wait behind a download. Results are
+//! applied on the UI thread; a state older than the newest one already applied is dropped (every
+//! [`Reply`](crate::actions::Reply) carries a sequence stamp). There is no polling: the state is
+//! re-read after each action (the op returns it), on the Refresh button, and when the in-GUI bench
+//! RPC mutated something. The only timer that can exist is the 5 s depot watch while the depot
+//! prompt is open; its mutating swap goes through the same queue.
 //!
 //! See `GPUI_NOTES.md` section "Writing a view" for the conventions.
 
 use std::collections::VecDeque;
-use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -30,7 +32,7 @@ use patchops_core::log::LogEntry;
 use patchops_core::ops::basics;
 use patchops_core::{Core, State};
 
-use crate::actions::{exec, Action, ReplyData};
+use crate::actions::{exec, next_seq, Action, ReplyData};
 use crate::app::Nav;
 use crate::state::{Boot, UiEvent};
 use crate::widgets::{BrowseData, BrowseEntry, BrowseLocation, DirBrowser, DirBrowserEvent, LogList, ToastHost, ToastKind};
@@ -110,7 +112,6 @@ pub struct Finished {
     /// [`Action::busy_key`] of the action.
     pub key: &'static str,
     pub ok: bool,
-    pub error: Option<SharedString>,
     pub data: ReplyData,
 }
 
@@ -124,7 +125,6 @@ pub enum ControllerEvent {
 }
 
 struct Browser {
-    target: BrowseTarget,
     view: Entity<DirBrowser>,
     _sub: Subscription,
 }
@@ -133,6 +133,8 @@ pub struct Controller {
     core: Arc<Core>,
     boot: Boot,
     state: Option<Arc<State>>,
+    /// Stamp of the newest applied state (see `apply_state`).
+    state_seq: u64,
     nav: Nav,
     /// Keys of queued + running actions (a key may appear more than once).
     busy: Vec<&'static str>,
@@ -151,6 +153,9 @@ pub struct Controller {
     depot: Option<DepotPrompt>,
     depot_task: Option<Task<()>>,
     browser: Option<Browser>,
+    /// The next directory-browser navigation is the dialog's initial one (a missing start folder
+    /// silently falls back to `$HOME` instead of showing an error).
+    browse_initial: bool,
     _tasks: Vec<Task<()>>,
 }
 
@@ -163,6 +168,14 @@ impl Controller {
         log_rx: async_channel::Receiver<LogEntry>,
         cx: &mut Context<Self>,
     ) -> Self {
+        // Exact hand-off of the early log: snapshot the ring first, then drain what the
+        // subscription already buffered; entries in both are listed once, none are lost.
+        let ring = core.log.recent(LOG_LINES);
+        let mut buffered = Vec::new();
+        while let Ok(e) = log_rx.try_recv() {
+            buffered.push(e);
+        }
+        let early = merge_early_logs(ring, buffered);
         let toasts = cx.new(|_| ToastHost::new());
         let logs = cx.new(|cx| LogList::new(cx).max_lines(LOG_LINES));
         let mut tasks = Vec::new();
@@ -199,6 +212,7 @@ impl Controller {
             core: core.clone(),
             boot: Boot::Starting,
             state: None,
+            state_seq: 0,
             nav: Nav::Dashboard,
             busy: Vec::new(),
             queue: VecDeque::new(),
@@ -215,20 +229,16 @@ impl Controller {
             depot: None,
             depot_task: None,
             browser: None,
+            browse_initial: false,
             _tasks: tasks,
         };
         // Entries logged before the UI existed (settings migration, ...).
-        let early = core.log.recent(LOG_LINES);
         this.push_logs(early, cx);
         this.boot(cx);
         this
     }
 
     // ---- reading -------------------------------------------------------------------------
-
-    pub fn core(&self) -> &Arc<Core> {
-        &self.core
-    }
 
     /// Latest state; `None` only before the first load finished (the shell shows the startup
     /// screen then, so views can normally `let Some(s) = c.state() else { return empty }`).
@@ -310,10 +320,21 @@ impl Controller {
             return;
         }
         self.error = None;
+        // Busy from the moment of the click (queued counts): the triggering control shows its
+        // spinner / disabled state immediately, not only once the op starts.
         self.busy.push(action.busy_key());
-        self.queue.push_back(action);
+        if action.is_independent() {
+            self.spawn_exec(action, false, cx);
+        } else {
+            self.queue.push_back(action);
+            self.pump(cx);
+        }
         cx.notify();
-        self.pump(cx);
+    }
+
+    /// Mutating actions waiting behind the running one.
+    pub fn queued(&self) -> usize {
+        self.queue.len()
     }
 
     /// Like [`run`](Self::run), but first asks the legacy confirmation if the action had one
@@ -340,11 +361,6 @@ impl Controller {
         cx.notify();
     }
 
-    pub fn set_error(&mut self, msg: impl Into<SharedString>, cx: &mut Context<Self>) {
-        self.error = Some(msg.into());
-        cx.notify();
-    }
-
     pub fn dismiss_error(&mut self, cx: &mut Context<Self>) {
         self.error = None;
         cx.notify();
@@ -353,22 +369,6 @@ impl Controller {
     pub fn toast(&mut self, kind: ToastKind, msg: impl Into<SharedString>, cx: &mut Context<Self>) {
         let msg = msg.into();
         self.toasts.update(cx, |t, cx| t.push(kind, msg, cx));
-    }
-
-    pub fn toast_success(&mut self, msg: impl Into<SharedString>, cx: &mut Context<Self>) {
-        self.toast(ToastKind::Success, msg, cx);
-    }
-
-    pub fn toast_error(&mut self, msg: impl Into<SharedString>, cx: &mut Context<Self>) {
-        self.toast(ToastKind::Error, msg, cx);
-    }
-
-    /// Copy `text` to the clipboard and (if given) confirm with a toast.
-    pub fn copy_text(&mut self, text: impl Into<String>, toast: Option<&str>, cx: &mut Context<Self>) {
-        cx.write_to_clipboard(ClipboardItem::new_string(text.into()));
-        if let Some(t) = toast {
-            self.toast(ToastKind::Success, t.to_string(), cx);
-        }
     }
 
     /// Open `https://...` / `steam://...` with the system handler (core's `open_external_url`).
@@ -420,7 +420,8 @@ impl Controller {
             .filter(|s| !s.is_empty())
             .or_else(|| self.state.as_ref().and_then(|s| s.game_dir.clone()))
             .unwrap_or_default();
-        self.browser = Some(Browser { target, view: view.clone(), _sub: sub });
+        self.browser = Some(Browser { view: view.clone(), _sub: sub });
+        self.browse_initial = true;
         view.update(cx, |b, cx| b.navigate(start, cx));
         cx.notify();
     }
@@ -436,14 +437,15 @@ impl Controller {
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
             let s = cx
                 .background_executor()
-                .spawn(async move { std::panic::catch_unwind(AssertUnwindSafe(|| basics::status(&core))).ok() })
+                .spawn(async move {
+                    let s = basics::status(&core);
+                    (s, next_seq())
+                })
                 .await;
             this.update(cx, |this, cx| {
                 this.refreshing = false;
-                if let Some(s) = s {
-                    this.state = Some(Arc::new(s));
-                    cx.notify();
-                }
+                this.apply_state(s.0, s.1);
+                cx.notify();
                 if std::mem::take(&mut this.refresh_again) {
                     this.refresh_silent(cx);
                 }
@@ -488,64 +490,59 @@ impl Controller {
         cx.notify();
     }
 
+    /// The loop in `start_depot_watch` notices `watching == false` and exits by itself.
     fn stop_depot_watch(&mut self) {
         if let Some(d) = self.depot.as_mut() {
             d.watching = false;
         }
-        // Dropping the task from inside its own update would cancel it mid-poll; the loop exits
-        // by itself instead (see `start_depot_watch`).
     }
 
     /// Legacy `pollCompatibleDepot` every 5 s while the prompt is watching: when the depot is
-    /// there, run the compatible swap and close the prompt. The only timer in the app.
+    /// there, queue the compatible swap (the prompt closes when it succeeds, see `finish`). The
+    /// only timer in the app. A tick is skipped while anything is queued or running, and the
+    /// swap itself goes through the serial queue, so it can never run concurrently with another
+    /// exe operation or Reset to Stock on the same files.
     fn start_depot_watch(&mut self, cx: &mut Context<Self>) {
         let core = self.core.clone();
         self.depot_task = Some(cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
             loop {
-                let c = core.clone();
-                let step = cx
-                    .background_executor()
-                    .spawn(async move {
-                        let check = exec(&c, &Action::ExeDepotCheck, &mut |_| {});
-                        let available = matches!(check.data, ReplyData::DepotAvailable(true)) && check.ok;
-                        let swap = available.then(|| exec(&c, &Action::ExeCompatible, &mut |_| {}));
-                        (check, swap)
-                    })
-                    .await;
-                let (check, swap) = step;
-                let Ok(done) = this.update(cx, |this, cx| {
-                    if this.depot.as_ref().map(|d| d.watching) != Some(true) {
-                        return true;
-                    }
-                    if let Some(s) = check.state {
-                        this.state = Some(Arc::new(s));
-                    }
-                    let mut done = false;
-                    if let Some(r) = swap {
-                        if let Some(s) = r.state {
-                            this.state = Some(Arc::new(s));
-                        }
-                        if r.ok {
-                            this.depot = None;
-                            this.nav = Nav::ExeSwapper;
-                            done = true;
-                        } else if !matches!(r.data, ReplyData::DepotRequired { .. }) {
-                            this.error = Some(r.error.unwrap_or_else(|| "Compatible EXE swap failed.".into()).into());
-                            this.stop_depot_watch();
-                            done = true;
-                        }
-                    }
-                    cx.notify();
-                    done
+                let Ok(idle) = this.update(cx, |t, _| match t.depot.as_ref().map(|d| d.watching) {
+                    Some(true) => Some(!t.running && t.queue.is_empty()),
+                    _ => None,
                 }) else {
                     break;
                 };
-                if done {
-                    break;
+                match idle {
+                    None => break, // prompt closed or no longer watching
+                    Some(true) => {
+                        let c = core.clone();
+                        // The depot check only reads; it may overlap with the UI.
+                        let check = cx
+                            .background_executor()
+                            .spawn(async move { exec(&c, &Action::ExeDepotCheck, &mut |_| {}) })
+                            .await;
+                        let applied = this.update(cx, |t, cx| {
+                            if t.depot.as_ref().map(|d| d.watching) != Some(true) {
+                                return;
+                            }
+                            let available = check.ok && matches!(check.data, ReplyData::DepotAvailable(true));
+                            if let Some(s) = check.state {
+                                t.apply_state(s, check.seq);
+                            }
+                            // Something may have been queued while the check ran.
+                            if available && !t.running && t.queue.is_empty() {
+                                t.run(Action::ExeCompatible, cx);
+                            }
+                            cx.notify();
+                        });
+                        if applied.is_err() {
+                            break;
+                        }
+                    }
+                    Some(false) => {}
                 }
                 cx.background_executor().timer(Duration::from_secs(5)).await;
             }
-            this.update(cx, |this, _| this.depot_task = None).ok();
         }));
     }
 
@@ -555,31 +552,37 @@ impl Controller {
         self.boot = Boot::Starting;
         cx.notify();
         let core = self.core.clone();
-        // Dev aids for looking at the startup screens: PATCHOPS_BOOT_DELAY_MS=3000, PATCHOPS_BOOT_FAIL=1.
+        // Dev aids for looking at the startup screens (debug builds only):
+        // PATCHOPS_BOOT_DELAY_MS=3000, PATCHOPS_BOOT_FAIL=1.
+        #[cfg(debug_assertions)]
         let delay = std::env::var("PATCHOPS_BOOT_DELAY_MS").ok().and_then(|v| v.parse::<u64>().ok());
+        #[cfg(debug_assertions)]
         let fail = std::env::var_os("PATCHOPS_BOOT_FAIL").is_some_and(|v| v == "1");
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            #[cfg(debug_assertions)]
             if let Some(ms) = delay {
                 cx.background_executor().timer(Duration::from_millis(ms)).await;
             }
-            let res = cx
+            // `basics::status` cannot fail; the Failed screen is only reachable through the
+            // debug-only PATCHOPS_BOOT_FAIL switch.
+            let res: Result<(State, u64), ()> = cx
                 .background_executor()
                 .spawn(async move {
-                    std::panic::catch_unwind(AssertUnwindSafe(|| {
-                        if fail {
-                            panic!("PATCHOPS_BOOT_FAIL");
-                        }
-                        basics::status(&core)
-                    }))
+                    #[cfg(debug_assertions)]
+                    if fail {
+                        return Err(());
+                    }
+                    let s = basics::status(&core);
+                    Ok((s, next_seq()))
                 })
                 .await;
             this.update(cx, |this, cx| {
                 match res {
-                    Ok(s) => {
-                        this.state = Some(Arc::new(s));
+                    Ok((s, seq)) => {
+                        this.apply_state(s, seq);
                         this.boot = Boot::Ready;
                     }
-                    Err(_) => {
+                    Err(()) => {
                         this.boot = Boot::Failed("PatchOpsIII could not read its state. Restart PatchOpsIII and try again.".into())
                     }
                 }
@@ -590,16 +593,31 @@ impl Controller {
         .detach();
     }
 
+    /// Keep the newest snapshot: a state stamped older than the one already applied (a slow
+    /// refresh finishing after a later op) is dropped.
+    fn apply_state(&mut self, s: State, seq: u64) {
+        if seq >= self.state_seq {
+            self.state_seq = seq;
+            self.state = Some(Arc::new(s));
+        }
+    }
+
     fn pump(&mut self, cx: &mut Context<Self>) {
         if self.running {
             return;
         }
         let Some(action) = self.queue.pop_front() else { return };
         self.running = true;
+        self.progress = None;
+        self.spawn_exec(action, true, cx);
+    }
+
+    /// Run `action` on the background executor. `serial` = it holds the queue slot (`running`),
+    /// and the next queued action starts when it completes.
+    fn spawn_exec(&mut self, action: Action, serial: bool, cx: &mut Context<Self>) {
         let core = self.core.clone();
         let a = action.clone();
         let key = action.busy_key();
-        self.progress = None;
         cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
             // Download percent of the network installers; the worker only does a channel send per
             // percent change. The forwarding task is dropped (cancelled) when the op returns.
@@ -632,10 +650,14 @@ impl Controller {
                 .await;
             drop(forward);
             this.update(cx, |this, cx| {
-                this.progress = None;
-                this.running = false;
+                if serial {
+                    this.progress = None;
+                    this.running = false;
+                }
                 this.finish(action, reply, cx);
-                this.pump(cx);
+                if serial {
+                    this.pump(cx);
+                }
             })
             .ok();
         })
@@ -656,25 +678,34 @@ impl Controller {
                 self.logs.update(cx, |l, cx| l.clear(cx));
                 self.push_logs(entries, cx);
             }
-            self.state = Some(Arc::new(s));
+            self.apply_state(s, reply.seq);
         }
-        let mut error = None;
         if !reply.ok {
             match (&action, &reply.data) {
-                (Action::ExeCompatible, ReplyData::DepotRequired { command }) => {
-                    self.depot = Some(DepotPrompt { command: command.clone().into(), copied: false, watching: false });
-                }
+                (Action::ExeCompatible, ReplyData::DepotRequired { command }) => match self.depot.as_mut() {
+                    // Still not downloaded while the prompt watches: keep prompt and watch as they are.
+                    Some(d) => d.command = command.clone().into(),
+                    None => {
+                        self.depot = Some(DepotPrompt { command: command.clone().into(), copied: false, watching: false })
+                    }
+                },
                 _ => {
+                    if matches!(action, Action::ExeCompatible) {
+                        self.stop_depot_watch();
+                    }
                     let msg: SharedString = reply.error.clone().unwrap_or_else(|| "Action failed".into()).into();
-                    self.error = Some(msg.clone());
-                    error = Some(msg);
+                    self.error = Some(msg);
                 }
             }
+        } else if matches!(action, Action::ExeCompatible) && self.depot.take().is_some() {
+            // The depot watch (or the prompt's own Continue) finished the swap.
+            self.depot_task = None;
+            self.nav = Nav::ExeSwapper;
         } else if let (Action::CopyLogs, ReplyData::Payload(p)) = (&action, &reply.data) {
             cx.write_to_clipboard(ClipboardItem::new_string(p.clone()));
             self.toast(ToastKind::Success, "Logs copied to clipboard", cx);
         }
-        cx.emit(ControllerEvent::Finished(Finished { key, ok: reply.ok, error, data: reply.data }));
+        cx.emit(ControllerEvent::Finished(Finished { key, ok: reply.ok, data: reply.data }));
         cx.notify();
     }
 
@@ -693,28 +724,106 @@ impl Controller {
 
     fn browse_to(&mut self, path: String, view: WeakEntity<DirBrowser>, cx: &mut Context<Self>) {
         let core = self.core.clone();
+        let initial = std::mem::take(&mut self.browse_initial);
         cx.spawn(async move |_this: WeakEntity<Self>, cx: &mut AsyncApp| {
-            let payload = cx
-                .background_executor()
-                .spawn(async move { basics::browse(&core, (!path.is_empty()).then_some(path.as_str())) })
-                .await;
-            let loc = |r: Vec<basics::Root>| {
-                r.into_iter().map(|r| BrowseLocation { label: r.label, path: r.path }).collect::<Vec<_>>()
-            };
-            let data = BrowseData {
-                path: payload.path,
-                parent: payload.parent,
-                has_game_executable: payload.has_game_executable,
-                roots: loc(payload.roots),
-                shortcuts: loc(payload.shortcuts),
-                entries: payload
-                    .entries
-                    .into_iter()
-                    .map(|e| BrowseEntry { name: e.name, path: e.path, has_game_executable: e.has_game_executable })
-                    .collect(),
-            };
-            view.update(cx, |b, cx| b.set_data(data, cx)).ok();
+            let result = cx.background_executor().spawn(async move { browse_listing(&core, &path, initial) }).await;
+            view.update(cx, |b, cx| match result {
+                Ok(data) => b.set_data(data, cx),
+                Err(msg) => b.set_error(msg, cx),
+            })
+            .ok();
         })
         .detach();
+    }
+}
+
+/// List `path` through core's `browse` op. Core silently falls back to `$HOME` for a missing path,
+/// which is right for the dialog's initial folder but wrong for a path the user typed or clicked:
+/// those are checked here first so the dialog can say so instead of jumping to the home folder.
+fn browse_listing(core: &Core, path: &str, initial: bool) -> Result<BrowseData, String> {
+    if !path.is_empty() && !initial {
+        let dir = patchops_core::pyfmt::expanduser(path, &core.paths.home);
+        if !dir.is_dir() {
+            return Err(format!("Folder not found: {path}"));
+        }
+        if let Err(e) = std::fs::read_dir(&dir) {
+            return Err(format!("Cannot open {path}: {e}"));
+        }
+    }
+    let payload = basics::browse(core, (!path.is_empty()).then_some(path));
+    let loc = |r: Vec<basics::Root>| r.into_iter().map(|r| BrowseLocation { label: r.label, path: r.path }).collect::<Vec<_>>();
+    Ok(BrowseData {
+        path: payload.path,
+        parent: payload.parent,
+        has_game_executable: payload.has_game_executable,
+        roots: loc(payload.roots),
+        shortcuts: loc(payload.shortcuts),
+        entries: payload
+            .entries
+            .into_iter()
+            .map(|e| BrowseEntry { name: e.name, path: e.path, has_game_executable: e.has_game_executable })
+            .collect(),
+    })
+}
+
+/// Combine the core log ring (snapshot taken first) with the entries the log subscription
+/// buffered meanwhile. The newest ring entries are normally also in the buffer: they are listed
+/// once; everything older in the ring (logged before the subscription) is kept.
+fn merge_early_logs(ring: Vec<LogEntry>, buffered: Vec<LogEntry>) -> Vec<LogEntry> {
+    let keep = (0..=ring.len())
+        .find(|&i| {
+            let tail = &ring[i..];
+            tail.is_empty() || buffered.windows(tail.len()).any(|w| w == tail)
+        })
+        .unwrap_or(ring.len());
+    let mut out = ring;
+    out.truncate(keep);
+    out.extend(buffered);
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn e(m: &str) -> LogEntry {
+        LogEntry { message: m.into(), category: "Info".into(), line: format!("t - Info: {m}") }
+    }
+    fn msgs(v: &[LogEntry]) -> Vec<&str> {
+        v.iter().map(|e| e.message.as_str()).collect()
+    }
+
+    #[test]
+    fn overlap_is_listed_once() {
+        // ring = a b | c d (c d also buffered), then e arrived after the snapshot.
+        let out = merge_early_logs(vec![e("a"), e("b"), e("c"), e("d")], vec![e("c"), e("d"), e("e")]);
+        assert_eq!(msgs(&out), ["a", "b", "c", "d", "e"]);
+    }
+
+    #[test]
+    fn nothing_buffered_keeps_the_ring() {
+        assert_eq!(msgs(&merge_early_logs(vec![e("a"), e("b")], vec![])), ["a", "b"]);
+    }
+
+    #[test]
+    fn everything_buffered_is_not_duplicated() {
+        assert_eq!(msgs(&merge_early_logs(vec![e("a"), e("b")], vec![e("a"), e("b")])), ["a", "b"]);
+    }
+
+    #[test]
+    fn no_overlap_concatenates() {
+        assert_eq!(msgs(&merge_early_logs(vec![e("a")], vec![e("b")])), ["a", "b"]);
+    }
+
+    #[test]
+    fn empty_ring_returns_buffer() {
+        assert_eq!(msgs(&merge_early_logs(vec![], vec![e("b")])), ["b"]);
+    }
+
+    #[test]
+    fn ring_wrapped_inside_the_buffered_run() {
+        // The ring only holds the tail of what the subscription buffered.
+        let out = merge_early_logs(vec![e("c"), e("d")], vec![e("a"), e("b"), e("c"), e("d"), e("e")]);
+        assert_eq!(msgs(&out), ["a", "b", "c", "d", "e"]);
     }
 }

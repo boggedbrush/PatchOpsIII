@@ -7,15 +7,6 @@
 
 use gpui::{hsla, rgb, App, Global, Hsla};
 
-/// Spacing scale (px). `--app-pad` 14, `--panel-gap` 12, `--app-gap` 10.
-pub mod space {
-    pub const XS: f32 = 4.0;
-    pub const SM: f32 = 8.0;
-    pub const MD: f32 = 12.0;
-    pub const LG: f32 = 16.0;
-    pub const XL: f32 = 24.0;
-}
-
 #[derive(Clone, Copy)]
 pub struct Theme {
     // surfaces
@@ -72,7 +63,6 @@ pub struct Theme {
     pub font_sm: f32,
     pub font_md: f32,
     pub font_lg: f32,
-    pub font_xl: f32,
     pub font_ui: &'static str,
     pub font_mono: &'static str,
 }
@@ -137,7 +127,6 @@ impl Theme {
             font_sm: 13.0,
             font_md: 14.0,
             font_lg: 16.0,
-            font_xl: 24.0,
             font_ui: "Inter",
             font_mono: "JetBrains Mono",
         }

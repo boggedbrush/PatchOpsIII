@@ -28,6 +28,9 @@ opt-level = 2
 #   opt-level=3 fat/cgu1: 12.4 MB, 353 s clean, 118 s incremental
 #   opt-level=s fat/cgu1:  9.6 MB, 290 s clean   <- chosen for shipping
 #   opt-level=3 thin/cgu16: 16.1 MB, 255 s clean, 64 s incremental  (profile `release-fast`)
+# panic = "abort" is deliberate: `panic = "unwind"` measured 15,779,688 B vs 14,064,104 B stripped
+# (+1.72 MB, over the 1.5 MB budget). Consequently a panic in an op ends the process; the hook in
+# crates/patchops/src/main.rs first appends message + location to the PatchOpsIII log file.
 [profile.release]
 opt-level = "s"
 lto = "fat"
