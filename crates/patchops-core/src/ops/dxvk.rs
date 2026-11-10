@@ -195,6 +195,7 @@ fn fail(core: &Core, prefix: &str, msg: String) -> AppError {
 
 /// Legacy `dxvk_config`: writes `dxvk.conf` even when DXVK is not installed.
 pub fn set_dxvk_config(core: &Core, settings: DxvkSettings) -> AppResult<State> {
+    let _op = core.lock_ops();
     let game = game_dir(core)?;
     let settings = settings.normalized();
     write_conf(core, &game, &settings, true).map_err(|e| fail(core, "Failed to update DXVK settings", e))?;
@@ -204,6 +205,7 @@ pub fn set_dxvk_config(core: &Core, settings: DxvkSettings) -> AppResult<State> 
 /// Legacy `_uninstall_dxvk`: remove the DLLs and `dxvk.conf` that exist, logging each removal.
 /// Shared with reset-to-stock.
 pub fn uninstall(core: &Core, game_dir: &Path) -> Result<(), String> {
+    let _op = core.lock_ops();
     let mut changed = false;
     for file in DXVK_ASYNC_FILES {
         let target = game_dir.join(file);
@@ -233,6 +235,7 @@ fn remove(path: &Path) -> Result<(), String> {
 
 /// Legacy `uninstall_dxvk` endpoint.
 pub fn dxvk_uninstall(core: &Core) -> AppResult<State> {
+    let _op = core.lock_ops();
     let game = game_dir(core)?;
     uninstall(core, &game).map_err(|e| fail(core, "DXVK-GPLAsync uninstall failed", e))?;
     Ok(State::build(core))
@@ -318,6 +321,7 @@ pub fn dxvk_install(core: &Core, settings: DxvkSettings) -> AppResult<State> {
 /// Legacy `install_dxvk`: download + unpack the pinned DXVK-GPLAsync, copy the two DLLs, write
 /// `dxvk.conf`. `progress` receives the download progress.
 pub fn dxvk_install_with(core: &Core, net: &Net, settings: DxvkSettings, progress: ProgressFn<'_>) -> AppResult<State> {
+    let _op = core.lock_ops();
     let game = game_dir(core)?;
     install_inner(core, net, &game, settings, progress).map_err(|e| fail(core, "DXVK-GPLAsync install failed", e))?;
     Ok(State::build(core))

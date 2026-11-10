@@ -37,6 +37,7 @@ fn call(core: &Core, op: &str, _args: &Args) -> Result<Value, OpError> {
 
 /// Legacy `reset_stock`: every step is isolated and only logs a Warning when it fails.
 pub fn reset_stock(core: &Core) -> AppResult<State> {
+    let _op = core.lock_ops();
     let game_dir = core.game_dir().ok_or_else(|| AppError::new("Game directory is not set."))?;
     reset_to_stock(core, Path::new(&game_dir));
     Ok(State::build(core))
@@ -44,6 +45,7 @@ pub fn reset_stock(core: &Core) -> AppResult<State> {
 
 /// Legacy `_reset_to_stock`.
 pub fn reset_to_stock(core: &Core, game: &Path) {
+    let _op = core.lock_ops();
     use super::enhanced::{active_exe_profile, detect_enhanced_install, restore_current_exe, uninstall_enhanced};
 
     if detect_enhanced_install(game) {

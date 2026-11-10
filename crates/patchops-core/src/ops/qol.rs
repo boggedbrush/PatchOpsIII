@@ -88,6 +88,7 @@ fn glob_suffix(dir: &Path, suffix: &str) -> Result<Vec<PathBuf>, String> {
 /// logging `success_message` on success. `Ok(false)` when there is no backup. Errors are the
 /// Python exception text.
 pub fn restore_backup(core: &Core, target: &Path, success_message: &str) -> Result<bool, String> {
+    let _op = core.lock_ops();
     let Some(existing) = backup::existing(target) else { return Ok(false) };
     if target.exists() {
         remove(target)?;
@@ -100,6 +101,7 @@ pub fn restore_backup(core: &Core, target: &Path, success_message: &str) -> Resu
 /// Legacy `_restore_intro_videos`: rename every `*.mkv.patchops.bak` / `*.mkv.bak` in `<game>/video`
 /// back to its original name unless that name exists. Logs the count when anything was restored.
 pub fn restore_intro_videos(core: &Core, game_dir: &Path) -> Result<(), String> {
+    let _op = core.lock_ops();
     let video = game_dir.join(VIDEO_DIR);
     if !video.exists() {
         return Ok(());
@@ -132,6 +134,7 @@ fn intro_skip_files(core: &Core, video: &Path, enabled: bool) -> Result<(), Stri
 
 /// Legacy `intro_skip`: the intro is skipped even when it is already missing (logs success either way).
 pub fn set_intro_skip(core: &Core, enabled: bool) -> AppResult<State> {
+    let _op = core.lock_ops();
     let game = game_dir(core)?;
     intro_skip_files(core, &game.join(VIDEO_DIR), enabled).map_err(|e| fail(core, "Failed to update intro video", e))?;
     Ok(State::build(core))
@@ -170,6 +173,7 @@ fn unskip_intro_files(video: &Path) -> Result<usize, String> {
 }
 
 pub fn set_all_intros_skip(core: &Core, enabled: bool) -> AppResult<State> {
+    let _op = core.lock_ops();
     let game = game_dir(core)?;
     let video = game.join(VIDEO_DIR);
     if !video.exists() {
@@ -188,6 +192,7 @@ pub fn set_all_intros_skip(core: &Core, enabled: bool) -> AppResult<State> {
 // ---- d3dcompiler ----------------------------------------------------------------------------
 
 pub fn set_d3dcompiler(core: &Core, enabled: bool) -> AppResult<State> {
+    let _op = core.lock_ops();
     let game = game_dir(core)?;
     let dll = game.join(D3DCOMPILER_DLL);
     if enabled {

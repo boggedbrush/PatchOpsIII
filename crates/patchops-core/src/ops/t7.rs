@@ -55,6 +55,7 @@ pub fn t7_install(core: &Core) -> AppResult<State> {
 /// itself elevated (hidden CLI command, see [`crate::cli`]) and waits for it; elsewhere the install
 /// runs in-process. `progress` receives download progress (not available for the elevated child).
 pub fn t7_install_with(core: &Core, net: &Net, progress: ProgressFn<'_>) -> AppResult<State> {
+    let _op = core.lock_ops();
     let game_dir = core.game_dir().ok_or_else(|| AppError::new("Game directory is not set."))?;
     let result = if crate::paths::system_name() == "Windows" && !crate::elevate::is_admin() {
         install_elevated(core, &game_dir)
@@ -102,6 +103,7 @@ pub fn set_t7_config(
     network_password: Option<&str>,
     friends_only: Option<bool>,
 ) -> AppResult<State> {
+    let _op = core.lock_ops();
     let game_dir = core.game_dir().ok_or_else(|| AppError::new("Game directory is not set."))?;
     let game_dir = Path::new(&game_dir);
     let conf = game_dir.join("t7patch.conf");
@@ -144,6 +146,7 @@ pub fn set_t7_config(
 /// Legacy `update_t7patch_conf`. Never fails: problems are logged (as the legacy code did) and
 /// the caller carries on.
 pub fn update_t7patch_conf(core: &Core, game_dir: &Path, edit: &ConfEdit) {
+    let _op = core.lock_ops();
     let conf = game_dir.join("t7patch.conf");
     if !conf.exists() {
         core.log.warning(format!("t7patch.conf not found in {}.", game_dir.display()));
@@ -265,6 +268,7 @@ fn t7_uninstall(core: &Core) -> AppResult<State> {
 /// text); success messages are logged as they happen. Shared with the reset-to-stock flow, which
 /// decides itself how to log a failure.
 pub fn uninstall(core: &Core, game_dir: &Path) -> AppResult<()> {
+    let _op = core.lock_ops();
     let io_fail = |e: std::io::Error, p: &Path| AppError::new(io_error_text(&e, Some(p)));
 
     let mut removed_game = false;
@@ -304,6 +308,7 @@ pub fn uninstall(core: &Core, game_dir: &Path) -> AppResult<()> {
 /// Legacy `restore_lpc_backups`: `<name>.patchops.bak` wins over `<name>.bak`; each backup replaces
 /// its `<name>` in `LPC/`. Errors are logged, never returned (as in the legacy code).
 pub fn restore_lpc_backups(core: &Core, game_dir: &Path) {
+    let _op = core.lock_ops();
     let lpc = game_dir.join("LPC");
     if !lpc.exists() {
         return;

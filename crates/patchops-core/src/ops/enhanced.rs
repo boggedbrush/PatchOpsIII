@@ -87,6 +87,7 @@ pub struct ValidateReply {
 /// `enhanced-validate`: blank source -> `valid:false` without saving; otherwise remember the
 /// source in the settings and validate it (directory or zip).
 pub fn validate_enhanced(core: &Core, dump_source: &str) -> AppResult<ValidateReply> {
+    let _op = core.lock_ops();
     let source = dump_source.trim();
     if source.is_empty() {
         return Ok(ValidateReply { ok: true, valid: false, message: "Select a dump source first.".into(), state: State::build(core) });
@@ -114,6 +115,7 @@ pub fn install_enhanced(core: &Core, dump_source: &str) -> AppResult<State> {
 /// GDK-Proton tool and wire Steam up, then record the variant. `progress` receives the download
 /// progress of the Enhanced zip and (Linux, first install) the Proton archive.
 pub fn install_enhanced_with(core: &Core, net: &Net, dump_source: &str, progress: ProgressFn<'_>) -> AppResult<State> {
+    let _op = core.lock_ops();
     let game_dir = core.game_dir().ok_or_else(|| AppError::new(NO_GAME_DIR))?;
     match install_enhanced_inner(core, net, Path::new(&game_dir), dump_source, progress) {
         Ok(()) => Ok(State::build(core)),
@@ -157,6 +159,7 @@ fn install_enhanced_inner(core: &Core, net: &Net, game_dir: &Path, dump_source: 
 /// and mark the exe variant `default`. `Err` carries the legacy exception text. Also what
 /// reset-to-stock calls when Enhanced files are present.
 pub fn uninstall_enhanced(core: &Core, game_dir: &Path) -> Result<(), String> {
+    let _op = core.lock_ops();
     if !files::uninstall_enhanced_files(core, game_dir, &core.paths.mod_files) {
         return Err("BO3 Enhanced uninstall failed.".into());
     }
@@ -177,6 +180,7 @@ pub fn uninstall_enhanced(core: &Core, game_dir: &Path) -> Result<(), String> {
 }
 
 pub fn uninstall_enhanced_op(core: &Core) -> AppResult<State> {
+    let _op = core.lock_ops();
     let game_dir = core.game_dir().ok_or_else(|| AppError::new(NO_GAME_DIR))?;
     if let Err(e) = uninstall_enhanced(core, Path::new(&game_dir)) {
         core.log.error(format!("BO3 Enhanced uninstall failed: {e}"));
@@ -189,6 +193,7 @@ pub fn uninstall_enhanced_op(core: &Core) -> AppResult<State> {
 
 /// Shared endpoint skeleton: game dir check, run, log `<prefix> failed: <err>`.
 fn swap_op(core: &Core, failure_prefix: &str, run: impl FnOnce(&Swap, &Path) -> Result<(), SwapError>) -> AppResult<State> {
+    let _op = core.lock_ops();
     let game_dir = core.game_dir().ok_or_else(|| AppError::new(NO_GAME_DIR))?;
     let builds = KnownBuilds::production();
     let swap = Swap::for_op(core, &builds);
@@ -238,6 +243,7 @@ pub fn compatible_depot_status(core: &Core) -> AppResult<DepotStatus> {
 /// Reset-to-stock helper: the legacy `_restore_current_exe` (`Err` = exception text; the caller
 /// logs `Executable reset step failed: ...`).
 pub fn restore_current_exe(core: &Core, game_dir: &Path) -> Result<(), String> {
+    let _op = core.lock_ops();
     crate::enhanced::exe::restore_current_exe(core, game_dir)
 }
 

@@ -77,11 +77,18 @@ pub struct Summary {
 }
 
 /// Legacy `status_summary` (including its side effect of clearing a stale `installed` flag).
+///
+/// `status` must never wait behind a long download, so the write is only done when it can take
+/// the operation lock *without waiting* ([`Core::try_lock_ops`]). While another thread's op is in
+/// flight the files may be half-way through an install/uninstall (flag set, files not placed yet
+/// or already removed), so "stale" cannot be judged and clearing it would race the op's own state
+/// write: the read-only answer is returned and the cleanup is left for the next `status`.
 pub fn status_summary(core: &Core, game_dir: &std::path::Path) -> Summary {
+    let guard = core.try_lock_ops();
     let state = load_state(core);
     let mut detected = detect_enhanced_install(game_dir);
     if !detected && !truthy(state.get("installed_files")) {
-        if truthy(state.get("installed")) {
+        if guard.is_some() && truthy(state.get("installed")) {
             clear_enhanced_state(core);
         }
         detected = false;
@@ -121,6 +128,39 @@ pub fn format_utc(secs: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn status_does_not_write_while_another_op_is_in_flight() {
+        use crate::enhanced::testkit::Sandbox;
+        use std::sync::Arc;
+        let sb = Sandbox::new();
+        let core = Arc::new(Core::with_paths(sb.core.paths.clone(), "t".into()));
+        std::fs::create_dir_all(&core.paths.app_data).unwrap();
+        let mut st = StateMap::new();
+        st.insert("installed".into(), Value::Bool(true));
+        save_state(&core, &st);
+        // Another thread is "mid-install".
+        let (tx, rx) = std::sync::mpsc::channel::<()>();
+        let (tx2, rx2) = std::sync::mpsc::channel::<()>();
+        let c2 = core.clone();
+        let h = std::thread::spawn(move || {
+            let _g = c2.lock_ops();
+            tx.send(()).unwrap();
+            rx2.recv().unwrap();
+        });
+        rx.recv().unwrap();
+        let t = std::time::Instant::now();
+        let s = status_summary(&core, &sb.game);
+        assert!(t.elapsed() < std::time::Duration::from_secs(1), "status must not block");
+        assert!(!s.installed);
+        assert!(truthy(load_state(&core).get("installed")), "stale flag must be left alone during an op");
+        tx2.send(()).unwrap();
+        h.join().unwrap();
+        // Idle again: the cleanup happens.
+        status_summary(&core, &sb.game);
+        assert!(!truthy(load_state(&core).get("installed")));
+    }
 
     #[test]
     fn utc_format() {

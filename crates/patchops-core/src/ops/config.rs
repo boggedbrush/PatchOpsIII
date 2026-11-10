@@ -62,6 +62,7 @@ fn game_dir_or_err(core: &Core) -> AppResult<String> {
 
 /// `config`: set one key (legacy `set_config` + `_write_config_value`).
 pub fn set_config(core: &Core, key: &str, value: &ConfigValue, comment: &str) -> AppResult<State> {
+    let _op = core.lock_ops();
     let game_dir = game_dir_or_err(core)?;
     let updates = [update(key, value.clone(), comment)];
     if let Err(e) = ini::write_values(Path::new(&game_dir), &updates) {
@@ -75,6 +76,7 @@ pub fn set_config(core: &Core, key: &str, value: &ConfigValue, comment: &str) ->
 /// `vram-target`: `limited` writes `VideoMemory = target/100` (a Python float) and
 /// `StreamMinResident = "1"`; otherwise `VideoMemory = "1"` and `StreamMinResident = "0"`.
 pub fn set_vram_target(core: &Core, limited: bool, target: i64) -> AppResult<State> {
+    let _op = core.lock_ops();
     let game_dir = game_dir_or_err(core)?;
     let updates = if limited {
         vec![
@@ -105,6 +107,7 @@ pub fn set_vram_target(core: &Core, limited: bool, target: i64) -> AppResult<Sta
 
 /// `presets/apply` (legacy `apply_preset` + `_apply_preset_values`).
 pub fn apply_preset(core: &Core, name: &str) -> AppResult<State> {
+    let _op = core.lock_ops();
     let game_dir = game_dir_or_err(core)?;
     match apply_preset_values(core, Path::new(&game_dir), name) {
         Ok(()) => {
@@ -173,6 +176,7 @@ fn rename_error_text(e: &std::io::Error, from: &Path, to: &Path) -> String {
 /// `config-readonly`: chmod `players/config.ini` to `0400` (read-only) or `0600` (legacy
 /// `config_readonly`). Missing config is reported with its own message (no game-dir check).
 pub fn set_config_readonly(core: &Core, enabled: bool) -> AppResult<State> {
+    let _op = core.lock_ops();
     let path: Option<PathBuf> =
         core.game_dir().map(|g| game::config_path(Path::new(&g))).filter(|p| p.exists());
     let Some(path) = path else {

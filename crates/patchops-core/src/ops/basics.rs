@@ -207,6 +207,7 @@ pub fn browse(core: &Core, path: Option<&str>) -> BrowsePayload {
 
 /// Save `path` as the game directory if it contains a game executable.
 pub fn set_game_directory(core: &Core, path: &str) -> AppResult<State> {
+    let _op = core.lock_ops();
     if !has_game_executable(Path::new(path)) {
         core.log.error(format!("Selected directory is not a Black Ops III install: {path}"));
         return Err(AppError::new("BlackOps3.exe or BlackOpsIII.exe was not found."));
@@ -219,6 +220,7 @@ pub fn set_game_directory(core: &Core, path: &str) -> AppResult<State> {
 
 /// `channel` is trimmed + lower-cased; must be `stable` or `beta`.
 pub fn set_release_channel(core: &Core, channel: &str) -> AppResult<State> {
+    let _op = core.lock_ops();
     let channel = channel.trim().to_lowercase();
     if channel != "stable" && channel != "beta" {
         return Err(AppError::new("Release channel must be beta or stable."));
@@ -255,6 +257,7 @@ pub fn log_payload(core: &Core) -> String {
 
 /// Truncate the log file and the in-memory ring, then log `Logs cleared.`.
 pub fn clear_logs(core: &Core) -> AppResult<State> {
+    let _op = core.lock_ops();
     if !core.log.clear_file() {
         return Err(AppError::new("Failed to clear log file."));
     }
@@ -277,6 +280,7 @@ fn wipe_dir(dir: &Path) -> Result<(), (std::io::Error, PathBuf)> {
 
 /// Create `BO3 Mod Files` if needed and delete everything inside it.
 pub fn clear_mod_files(core: &Core) -> AppResult<State> {
+    let _op = core.lock_ops();
     let dir = &core.paths.mod_files;
     if let Err((e, p)) = wipe_dir(dir) {
         let msg = io_error_text(&e, Some(&p));

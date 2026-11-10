@@ -70,6 +70,7 @@ pub struct LaunchOptionsResult {
 /// Errors: `Unsupported launch option.` carries the current state; `Steam user ID not found!`
 /// has no state (the op layer maps it to an `internal:` envelope error).
 pub fn set_launch_options(core: &Core, options: &str, preserve_fs_game: bool) -> AppResult<LaunchOptionsResult> {
+    let _op = core.lock_ops();
     if !is_supported_option(options) {
         core.log.warning("Unsupported launch option.");
         return Err(AppError::new("Unsupported launch option.").with_state(State::build(core)));
@@ -94,6 +95,7 @@ fn is_supported_option(options: &str) -> bool {
 
 /// Apply a Workshop profile's launch option, then open its Workshop page in Steam.
 pub fn workshop_install(core: &Core, profile_id: &str) -> AppResult<State> {
+    let _op = core.lock_ops();
     let Some((_, name, workshop_id, option)) = WORKSHOP_PROFILES.iter().find(|p| p.0 == profile_id) else {
         return Err(AppError::new("Select an installable Workshop mod."));
     };
