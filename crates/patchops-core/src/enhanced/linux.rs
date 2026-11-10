@@ -14,7 +14,7 @@ use serde_json::{json, Map, Value};
 use crate::context::Core;
 use crate::pyfmt::io_error_text;
 use crate::steam::launch_options::{
-    backup_file, first_seen_note, modify_vdf_file, modify_vdf_file_if, normalize, preserve_first_seen, restore_file, set_launch_options_exact,
+    backup_file, first_seen_name, first_seen_note, modify_vdf_file, modify_vdf_file_if, normalize, preserve_first_seen, restore_file, set_launch_options_exact,
     steam_config_vdf_path, strip_token_ci,
 };
 use crate::steam::vdf::{Node, Obj};
@@ -23,7 +23,7 @@ use crate::steam::{self, BO3_APP_ID};
 pub const ENHANCED_TOOL_NAME: &str = "BO3 Enhanced";
 pub const ENHANCED_LAUNCH_OPTIONS: &str = "WINEDLLOVERRIDES=\"WindowsCodecs=n,b\" %command%";
 const CONFIG_BACKUP: &str = "steam_config_backup.vdf";
-const CONFIG_ORIGINAL: &str = "steam_config_original.vdf";
+const CONFIG_ORIGINAL_PREFIX: &str = "steam_config";
 
 fn is_linux() -> bool {
     crate::paths::system_name() == "Linux"
@@ -131,7 +131,7 @@ fn config_vdf(core: &Core) -> Option<(PathBuf, Option<PathBuf>)> {
         core.log.error(format!("Steam config not found at {}", path.display()));
         return None;
     }
-    let first_seen = preserve_first_seen(core, &path, CONFIG_ORIGINAL);
+    let first_seen = preserve_first_seen(core, &path, &first_seen_name(CONFIG_ORIGINAL_PREFIX, &path));
     if !backup_file(core, &path, CONFIG_BACKUP) {
         core.log.error("Aborting due to backup failure");
         return None;
@@ -530,7 +530,7 @@ mod tests {
         let first = "\"InstallConfigStore\"\n{\n\t\"Software\"\n\t{\n\t\t\"Valve\"\n\t\t{\n\t\t\t\"Steam\"\n\t\t\t{\n\t\t\t\t\"CompatToolMapping\"\n\t\t\t\t{\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n}\n";
         fs::write(&cfg, first).unwrap();
         assert!(set_compatibility_tool_mapping(&sb.core, ENHANCED_TOOL_NAME));
-        let copy = sb.core.paths.originals.join("steam_config_original.vdf");
+        let copy = sb.core.paths.originals.join(first_seen_name(CONFIG_ORIGINAL_PREFIX, &cfg));
         assert_eq!(fs::read(&copy).unwrap(), first.as_bytes());
         // A later op replaces the rolling backup but never the first copy.
         let newer = "\"InstallConfigStore\"\n{\n}\n";
@@ -551,6 +551,6 @@ mod tests {
         fs::create_dir_all(&sb.core.paths.app_data).unwrap();
         fs::write(&sb.core.paths.originals, b"in the way").unwrap();
         assert!(set_compatibility_tool_mapping(&sb.core, ENHANCED_TOOL_NAME));
-        assert!(!sb.log().contains("first copy"));
+        assert!(!sb.log().contains("earliest copy"));
     }
 }

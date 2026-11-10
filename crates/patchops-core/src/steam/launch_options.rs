@@ -207,33 +207,53 @@ pub fn restore_file(core: &Core, config_path: &Path, backup_name: &str) -> bool 
 
 // ---- first-seen copies ----------------------------------------------------------------------
 
+/// Temp files of an interrupted copy older than this are removed on the next call.
+const STALE_TMP: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// File name of the first-seen copy of `source`: `<prefix>_<8 hex of a stable hash of the canonical
+/// source path>_original.vdf`, so the same Steam user / file under two Steam roots (native and
+/// Flatpak, or two library roots) never share a copy.
+pub fn first_seen_name(prefix: &str, source: &Path) -> String {
+    let canon = std::fs::canonicalize(source).unwrap_or_else(|_| source.to_path_buf());
+    // FNV-1a 64, folded to 32 bits: stable across runs and platforms (unlike `DefaultHasher`).
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in canon.to_string_lossy().as_bytes() {
+        h = (h ^ u64::from(*b)).wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{prefix}_{:08x}_original.vdf", (h ^ (h >> 32)) as u32)
+}
+
 /// Write-once "first seen" copy of `source` at `<paths.originals>/<name>`.
 ///
 /// Unlike the rolling `backups/` slot this is never overwritten: if the destination already
-/// exists nothing happens, so it keeps the oldest content the app ever saw. The copy is made to a
-/// private temp file in the same directory and then `hard_link`ed into place (which fails instead
-/// of clobbering), and the final file is set read-only (0o444 on unix).
+/// holds a copy nothing happens, so it keeps the oldest content the app ever saw. The copy is made
+/// to a private temp file in the same directory and then placed with a link/rename that fails
+/// instead of clobbering ([`place_no_clobber`]); the final file is read-only (0o400 on unix) and
+/// the directory is created 0o700.
 ///
-/// Silent by design: it never logs and never fails the caller. Returns `Some(path)` when a
-/// first-seen copy exists afterwards (created now or from before), `None` otherwise.
+/// Silent by design: it never logs and never fails the caller. Returns `Some(path)` only when a
+/// regular file exists at the destination afterwards (created now or from before); anything else
+/// there (a directory, a dangling symlink) is left alone and yields `None`.
 pub fn preserve_first_seen(core: &Core, source: &Path, name: &str) -> Option<PathBuf> {
     let dir = &core.paths.originals;
+    sweep_stale_temps(dir);
     let dest = dir.join(name);
-    if std::fs::symlink_metadata(&dest).is_ok() {
-        return Some(dest);
+    match std::fs::symlink_metadata(&dest) {
+        Ok(m) if m.is_file() => return Some(dest),
+        Ok(_) => return None,
+        Err(_) => {}
     }
-    if std::fs::symlink_metadata(source).is_err() || std::fs::create_dir_all(dir).is_err() {
+    if std::fs::symlink_metadata(source).is_err() || create_private_dir(dir).is_err() {
         return None;
     }
     let tmp = dir.join(format!(".{name}.tmp-{}-{}", std::process::id(), tmp_nonce()));
-    let made = write_new_copy(source, &tmp)
-        .and_then(|()| set_read_only(&tmp))
-        .and_then(|()| std::fs::hard_link(&tmp, &dest));
-    let _ = std::fs::remove_file(&tmp);
+    let made = write_new_copy(source, &tmp).and_then(|()| set_read_only(&tmp)).and_then(|()| place_no_clobber(&tmp, &dest));
+    remove_temp(&tmp);
+    let exists_now = || std::fs::symlink_metadata(&dest).is_ok_and(|m| m.is_file());
     match made {
         Ok(()) => Some(dest),
         // Another writer won the race: their copy is the first-seen one.
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Some(dest),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && exists_now() => Some(dest),
         Err(_) => None,
     }
 }
@@ -241,7 +261,7 @@ pub fn preserve_first_seen(core: &Core, source: &Path, name: &str) -> Option<Pat
 /// Human-readable suffix for an error message: names the first-seen copy when there is one.
 pub fn first_seen_note(copy: Option<&Path>) -> String {
     match copy {
-        Some(p) => format!(" An untouched first copy is kept at {}.", p.display()),
+        Some(p) => format!(" The earliest copy PatchOpsIII saw is kept at {}.", p.display()),
         None => String::new(),
     }
 }
@@ -250,10 +270,128 @@ fn tmp_nonce() -> u128 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos())
 }
 
+/// `create_dir_all`, with mode 0o700 for the directories it creates on unix (the copies are the
+/// user's Steam config, which holds account names).
+fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+    let mut b = std::fs::DirBuilder::new();
+    b.recursive(true);
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+    b.create(dir)
+}
+
+/// Remove a temp file; clears the read-only attribute first (Windows refuses to delete a
+/// read-only file on older runtimes).
+fn remove_temp(path: &Path) {
+    #[cfg(windows)]
+    if let Ok(m) = std::fs::metadata(path) {
+        let mut p = m.permissions();
+        if p.readonly() {
+            #[allow(clippy::permissions_set_readonly_false)]
+            p.set_readonly(false);
+            let _ = std::fs::set_permissions(path, p);
+        }
+    }
+    let _ = std::fs::remove_file(path);
+}
+
+/// Remove `.<name>_original.vdf.tmp-*` leftovers (a crash between copy and link) older than a
+/// minute; younger ones may belong to a copy in flight in another process.
+fn sweep_stale_temps(dir: &Path) {
+    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    for e in rd.flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        if !(name.starts_with('.') && name.contains("_original.vdf.tmp-")) {
+            continue;
+        }
+        let old = e.metadata().ok().filter(|m| m.is_file()).and_then(|m| m.modified().ok()).and_then(|t| t.elapsed().ok()).is_some_and(|age| age > STALE_TMP);
+        if old {
+            remove_temp(&e.path());
+        }
+    }
+}
+
+/// Make `tmp` appear at `dest` without ever replacing something already there: a hard link first
+/// (atomic, fails with `AlreadyExists`); where links are unsupported (FAT/exFAT, some SMB/ReFS
+/// shares) a no-clobber rename of the complete temp file. The final name never holds partial
+/// content. The caller removes `tmp` afterwards (a no-op after a rename).
+fn place_no_clobber(tmp: &Path, dest: &Path) -> std::io::Result<()> {
+    match std::fs::hard_link(tmp, dest) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(e),
+        // Links unsupported (or refused): only fall back while the destination is still free.
+        Err(e) => match std::fs::symlink_metadata(dest) {
+            Err(m) if m.kind() == std::io::ErrorKind::NotFound => rename_no_replace(tmp, dest),
+            _ => Err(e),
+        },
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let c = |p: &Path| std::ffi::CString::new(p.as_os_str().as_bytes()).map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput));
+    let (f, t) = (c(from)?, c(to)?);
+    // SAFETY: both pointers are valid NUL-terminated strings for the duration of the call.
+    let rc = unsafe { libc::renameat2(libc::AT_FDCWD, f.as_ptr(), libc::AT_FDCWD, t.as_ptr(), libc::RENAME_NOREPLACE) };
+    if rc == 0 {
+        return Ok(());
+    }
+    let err = std::io::Error::last_os_error();
+    match err.raw_os_error() {
+        // The file system (or kernel) has no RENAME_NOREPLACE: check-then-rename, accepting the tiny
+        // window in which another writer could create `to` (it would then be replaced by an equally
+        // valid first-seen copy of the same source).
+        Some(libc::EINVAL) | Some(libc::ENOSYS) | Some(libc::ENOTSUP) => rename_if_absent(from, to),
+        _ => Err(err),
+    }
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+    rename_if_absent(from, to)
+}
+
+/// `MoveFileExW` without `MOVEFILE_REPLACE_EXISTING`: fails with `ERROR_ALREADY_EXISTS` instead of
+/// replacing (`std::fs::rename` replaces on Windows).
+#[cfg(windows)]
+fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn MoveFileExW(existing: *const u16, new: *const u16, flags: u32) -> i32;
+    }
+    let w = |p: &Path| p.as_os_str().encode_wide().chain(std::iter::once(0)).collect::<Vec<u16>>();
+    let (f, t) = (w(from), w(to));
+    // SAFETY: both buffers are NUL-terminated wide strings that outlive the call.
+    if unsafe { MoveFileExW(f.as_ptr(), t.as_ptr(), 0) } != 0 {
+        return Ok(());
+    }
+    let e = std::io::Error::last_os_error();
+    // ERROR_ALREADY_EXISTS (183) / ERROR_FILE_EXISTS (80)
+    Err(match e.raw_os_error() {
+        Some(183) | Some(80) => std::io::Error::from(std::io::ErrorKind::AlreadyExists),
+        _ => e,
+    })
+}
+
+/// Existence check followed by a plain rename; only used where no atomic no-clobber rename exists.
+#[allow(dead_code)]
+fn rename_if_absent(from: &Path, to: &Path) -> std::io::Result<()> {
+    if std::fs::symlink_metadata(to).is_ok() {
+        return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists));
+    }
+    std::fs::rename(from, to)
+}
+
 /// Byte copy into a file that must not exist yet (`create_new`), so a stray temp is never reused.
 fn write_new_copy(src: &Path, dst: &Path) -> std::io::Result<()> {
     let mut input = std::fs::File::open(src)?;
-    let mut out = std::fs::OpenOptions::new().write(true).create_new(true).open(dst)?;
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o600);
+    let mut out = o.open(dst)?;
     std::io::copy(&mut input, &mut out)?;
     Ok(())
 }
@@ -263,7 +401,7 @@ fn set_read_only(path: &Path) -> std::io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        perms.set_mode(0o444);
+        perms.set_mode(0o400);
     }
     #[cfg(not(unix))]
     perms.set_readonly(true);
@@ -290,7 +428,7 @@ fn update_localconfig(core: &Core, user_id: &str, edit: impl FnOnce(&mut Obj) ->
         core.log.error("localconfig.vdf not found!");
         return false;
     }
-    let first_seen = preserve_first_seen(core, &path, &format!("localconfig_{user_id}_original.vdf"));
+    let first_seen = preserve_first_seen(core, &path, &first_seen_name(&format!("localconfig_{user_id}"), &path));
     if !backup_file(core, &path, LOCALCONFIG_BACKUP) {
         core.log.error("Aborting due to backup failure");
         return false;
@@ -455,7 +593,7 @@ mod first_seen_tests {
     }
 
     fn first_copy(core: &Core) -> PathBuf {
-        core.paths.originals.join(format!("localconfig_{USER}_original.vdf"))
+        core.paths.originals.join(first_seen_name(&format!("localconfig_{USER}"), &localconfig_path(core, USER)))
     }
 
     #[test]
@@ -467,7 +605,7 @@ mod first_seen_tests {
         assert_eq!(std::fs::read(first_copy(&sb.core)).unwrap(), pre.as_bytes());
         let mode = std::fs::metadata(first_copy(&sb.core)).unwrap().permissions();
         #[cfg(unix)]
-        assert_eq!(std::os::unix::fs::PermissionsExt::mode(&mode) & 0o777, 0o444);
+        assert_eq!(std::os::unix::fs::PermissionsExt::mode(&mode) & 0o777, 0o400);
         #[cfg(not(unix))]
         assert!(mode.readonly());
     }
@@ -523,8 +661,104 @@ mod first_seen_tests {
         assert_eq!(first_seen_note(None), "");
         assert_eq!(
             first_seen_note(Some(Path::new("/x/y.vdf"))),
-            " An untouched first copy is kept at /x/y.vdf."
+            " The earliest copy PatchOpsIII saw is kept at /x/y.vdf."
         );
     }
-}
 
+    #[test]
+    fn existing_non_file_at_the_destination_is_not_a_copy_and_is_left_alone() {
+        let sb = Sandbox::new();
+        let src = sb.root.join("src.vdf");
+        std::fs::write(&src, "data").unwrap();
+        std::fs::create_dir_all(&sb.core.paths.originals).unwrap();
+        let dir_dest = sb.core.paths.originals.join("d.vdf");
+        std::fs::create_dir(&dir_dest).unwrap();
+        assert!(preserve_first_seen(&sb.core, &src, "d.vdf").is_none());
+        assert!(dir_dest.is_dir());
+        #[cfg(unix)]
+        {
+            let link = sb.core.paths.originals.join("l.vdf");
+            std::os::unix::fs::symlink("/nonexistent/x", &link).unwrap();
+            assert!(preserve_first_seen(&sb.core, &src, "l.vdf").is_none());
+            assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+            assert!(!Path::new("/nonexistent/x").exists());
+        }
+        // A regular file is a copy, whatever its content.
+        std::fs::write(sb.core.paths.originals.join("f.vdf"), "older").unwrap();
+        assert_eq!(preserve_first_seen(&sb.core, &src, "f.vdf"), Some(sb.core.paths.originals.join("f.vdf")));
+        assert_eq!(std::fs::read(sb.core.paths.originals.join("f.vdf")).unwrap(), b"older");
+    }
+
+    #[test]
+    fn no_clobber_placement_and_rename_fallback() {
+        let sb = Sandbox::new();
+        let d = &sb.root;
+        let (tmp, dest) = (d.join("t1"), d.join("dest"));
+        std::fs::write(&tmp, "new").unwrap();
+        // The rename fallback (what runs where hard links are unsupported) moves into a free name...
+        rename_no_replace(&tmp, &dest).unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), b"new");
+        assert!(!tmp.exists());
+        // ...and refuses to replace an existing one, leaving both untouched.
+        std::fs::write(&tmp, "other").unwrap();
+        let e = rename_no_replace(&tmp, &dest).unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&dest).unwrap(), b"new");
+        assert_eq!(std::fs::read(&tmp).unwrap(), b"other");
+        // The check-then-rename variant (no atomic primitive available) behaves the same.
+        assert_eq!(rename_if_absent(&tmp, &dest).unwrap_err().kind(), std::io::ErrorKind::AlreadyExists);
+        std::fs::remove_file(&dest).unwrap();
+        rename_if_absent(&tmp, &dest).unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), b"other");
+        // The normal path links (both names then hold the data until the caller removes the temp).
+        let (tmp, dest) = (d.join("t2"), d.join("dest2"));
+        std::fs::write(&tmp, "x").unwrap();
+        place_no_clobber(&tmp, &dest).unwrap();
+        assert_eq!(place_no_clobber(&tmp, &dest).unwrap_err().kind(), std::io::ErrorKind::AlreadyExists);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_is_private_copy_is_0400_and_stale_temps_are_swept() {
+        use std::os::unix::fs::PermissionsExt;
+        let sb = Sandbox::new();
+        let src = sb.root.join("src.vdf");
+        std::fs::write(&src, "data").unwrap();
+        let dir = &sb.core.paths.originals;
+        let stale = dir.join(".a_original.vdf.tmp-1-2");
+        let fresh = dir.join(".b_original.vdf.tmp-1-3");
+        let other = dir.join(".unrelated.tmp-1-4");
+        std::fs::create_dir_all(dir).unwrap();
+        for f in [&stale, &fresh, &other] {
+            std::fs::write(f, "x").unwrap();
+        }
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
+        for f in [&stale, &other] {
+            std::fs::OpenOptions::new().write(true).open(f).unwrap().set_modified(old).unwrap();
+        }
+        std::fs::set_permissions(&stale, std::fs::Permissions::from_mode(0o400)).unwrap();
+        let dest = preserve_first_seen(&sb.core, &src, "c_original.vdf").unwrap();
+        assert!(!stale.exists(), "old temp swept");
+        assert!(fresh.exists(), "fresh temp may be in flight elsewhere");
+        assert!(other.exists(), "only our temp pattern is swept");
+        assert_eq!(std::fs::metadata(&dest).unwrap().permissions().mode() & 0o777, 0o400);
+        // Created from scratch: private directory.
+        let sb2 = Sandbox::new();
+        let src2 = sb2.root.join("s.vdf");
+        std::fs::write(&src2, "d").unwrap();
+        preserve_first_seen(&sb2.core, &src2, "c_original.vdf").unwrap();
+        assert_eq!(std::fs::metadata(&sb2.core.paths.originals).unwrap().permissions().mode() & 0o777, 0o700);
+        // No temp left behind by a normal run.
+        assert!(std::fs::read_dir(&sb2.core.paths.originals).unwrap().all(|e| !e.unwrap().file_name().to_string_lossy().contains(".tmp-")));
+    }
+
+    #[test]
+    fn copy_names_are_keyed_by_the_source_path() {
+        let a = first_seen_name("steam_config", Path::new("/home/u/.steam/steam/config/config.vdf"));
+        let b = first_seen_name("steam_config", Path::new("/home/u/.var/app/com.valvesoftware.Steam/.steam/steam/config/config.vdf"));
+        assert_ne!(a, b);
+        assert_eq!(a, first_seen_name("steam_config", Path::new("/home/u/.steam/steam/config/config.vdf")));
+        assert!(a.starts_with("steam_config_") && a.ends_with("_original.vdf"), "{a}");
+        assert_eq!(a.len(), "steam_config_".len() + 8 + "_original.vdf".len());
+    }
+}
