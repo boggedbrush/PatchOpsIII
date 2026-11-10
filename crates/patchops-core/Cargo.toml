@@ -3,7 +3,12 @@ name = "patchops-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Pure application logic for PatchOpsIII (no GUI dependencies)"
 
 [dependencies]
 serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["preserve_order"] }
+
+# Local time (log timestamps) and uname (log payload header). Already in Cargo.lock via gpui.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

@@ -6,7 +6,11 @@
 //! Views read it in `render`, mutate it from event handlers, and call
 //! `notify_ui` (or are woken by the RPC thread) so the root view re-renders.
 
+use std::sync::Arc;
+
 use parking_lot::Mutex;
+
+use patchops_core::Core;
 
 /// Events sent *to* the UI from non-UI threads (RPC thread, workers).
 #[derive(Debug, Clone)]
@@ -28,6 +32,9 @@ pub struct Data {
 
 #[derive(Default)]
 pub struct SharedState {
+    /// The application core (settings, log, ops). Views call typed `patchops_core::ops::*`
+    /// functions on it directly; the RPC thread serves the same instance.
+    pub core: Arc<Core>,
     data: Mutex<Data>,
     ui_tx: Mutex<Option<async_channel::Sender<UiEvent>>>,
 }
@@ -43,6 +50,7 @@ impl SharedState {
             .map(|i| format!("[{:05}] placeholder log line {i} - the quick brown fox jumps over the lazy dog", i))
             .collect();
         Self {
+            core: Arc::new(Core::new()),
             data: Mutex::new(data),
             ui_tx: Mutex::new(None),
         }

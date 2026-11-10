@@ -32,7 +32,7 @@ fn main() {
     let shared = Arc::new(SharedState::new());
     let ui_rx = shared.attach_ui();
     if std::env::var_os("PATCHOPS_BENCH_RPC").is_some_and(|v| v == "1") {
-        rpc::spawn_in_gui(shared.clone());
+        rpc::spawn_in_gui(shared.core.clone());
     }
     app::run(shared, ui_rx);
 }
