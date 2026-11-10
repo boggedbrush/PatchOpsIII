@@ -283,6 +283,17 @@ impl Default for Client {
     }
 }
 
+/// GitHub release-asset `digest` field (`sha256:<64 hex>`, prefix and hex case-insensitive) as a
+/// lower-case hex string; `None` for any other form.
+pub fn parse_sha256_digest(raw: &str) -> Option<String> {
+    let d = raw.trim();
+    if !d.to_ascii_lowercase().starts_with("sha256:") {
+        return None;
+    }
+    let c = d[7..].trim().to_ascii_lowercase();
+    (c.len() == 64 && c.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))).then_some(c)
+}
+
 /// What to enforce while downloading.
 #[derive(Debug, Clone)]
 pub struct DownloadOptions {
@@ -470,6 +481,17 @@ mod tests {
     use super::testserver::*;
     use super::*;
     use std::collections::HashMap;
+
+    #[test]
+    fn digest_parsing() {
+        let h = "ab".repeat(32);
+        assert_eq!(parse_sha256_digest(&format!("sha256:{h}")), Some(h.clone()));
+        assert_eq!(parse_sha256_digest(&format!("  SHA256: {} ", h.to_uppercase())), Some(h.clone()));
+        assert_eq!(parse_sha256_digest(&format!("sha1:{h}")), None);
+        assert_eq!(parse_sha256_digest("sha256:abc"), None);
+        assert_eq!(parse_sha256_digest(&format!("sha256:{}g", "a".repeat(63))), None);
+        assert_eq!(parse_sha256_digest(""), None);
+    }
 
     fn tmp(name: &str) -> std::path::PathBuf {
         let d = std::env::temp_dir().join(format!("patchops-net-{name}-{}", std::process::id()));

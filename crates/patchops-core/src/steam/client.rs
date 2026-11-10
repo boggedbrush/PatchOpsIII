@@ -586,7 +586,13 @@ mod tests {
             return;
         }
         let d = tmp("stubborn");
-        let mut c = fake_steam(&d, "trap '' TERM; while :; do sleep 0.1; done");
+        let ready = d.join("ready");
+        let mut c = fake_steam(&d, &format!("trap '' TERM; : > '{}'; while :; do sleep 0.1; done", ready.display()));
+        // SIGTERM must not arrive before the trap is installed.
+        let end = Instant::now() + Duration::from_secs(5);
+        while !ready.exists() && Instant::now() < end {
+            std::thread::sleep(Duration::from_millis(10));
+        }
         let pids = steam_pids();
         assert!(pids.contains(&c.id()));
         let t = Instant::now();

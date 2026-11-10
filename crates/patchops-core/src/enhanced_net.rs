@@ -3,8 +3,10 @@
 //! tool). The local half (dump validation, file placement, Steam wiring) is in [`crate::enhanced`].
 //!
 //! Integrity: the BO3 Enhanced zip is only used when the GitHub release metadata carries a SHA-256
-//! digest and the download matches it (the legacy behaviour); the GDK-Proton tarball is unpinned in
-//! the legacy code and stays so (extraction is hardened instead, see [`crate::archive`]).
+//! digest and the download matches it (the legacy behaviour). The GDK-Proton tarball (fixed tag,
+//! installed as a Steam compatibility tool and *executed*) is pinned by [`PROTON_SHA256`], both
+//! when downloaded and when a previously downloaded copy is reused; extraction is hardened on top
+//! (see [`crate::archive`]).
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -22,6 +24,12 @@ use crate::pyfmt::io_error_text;
 const CHECKSUMS_FILENAME: &str = "bo3_enhanced_checksums.json";
 const ENHANCED_REPO_API: &str = "/repos/shiversoftdev/BO3Enhanced/releases/latest";
 pub const PROTON_TAG: &str = "release10-32";
+/// SHA-256 of `GDK-Proton10-32.tar.gz` of the fixed tag [`PROTON_TAG`] (524,743,374 bytes).
+/// Pinned on 2026-11-10: computed from the release asset itself (downloaded twice independently
+/// through `net.rs`; both fetches gave this size and digest; the GitHub release metadata carries
+/// no digest for it). Like the DXVK pin it only applies to the production endpoint (tests serve
+/// their own bytes).
+pub const PROTON_SHA256: &str = "1e80f4e714f877f42101d5775bd38ca0a15a38d304e24af1f15c6deec4ebac2d";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnhancedRelease {
@@ -61,13 +69,7 @@ pub fn fetch_latest_release(core: &Core, net: &Net) -> Option<EnhancedRelease> {
         core.log.log_file_only(Category::Warning, "No downloadable asset found for BO3 Enhanced latest release");
         return None;
     };
-    let digest = asset.get("digest").and_then(Value::as_str).unwrap_or("").trim().to_string();
-    let asset_sha256 = if digest.to_ascii_lowercase().starts_with("sha256:") {
-        let c = digest[7..].trim().to_ascii_lowercase();
-        (c.len() == 64 && c.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())).then_some(c)
-    } else {
-        None
-    };
+    let asset_sha256 = crate::net::parse_sha256_digest(asset.get("digest").and_then(Value::as_str).unwrap_or(""));
     Some(EnhancedRelease {
         version: s(&data, "tag_name").or_else(|| s(&data, "name")).unwrap_or_else(|| "0.0.0".into()),
         asset_url: s(asset, "browser_download_url").unwrap_or_default(),
@@ -155,8 +157,22 @@ pub fn resolve_tool_source(core: &Core, net: &Net, progress: ProgressFn<'_>) -> 
     prepare_tool_cache(core, net, progress)
 }
 
-/// Legacy `_prepare_enhanced_tool_cache`.
+/// The digests the Proton archive must match: the pin on the real endpoint, nothing for tests.
+fn proton_pins(net: &Net) -> Vec<String> {
+    if net.endpoints.github_web == crate::net::Endpoints::production().github_web {
+        vec![PROTON_SHA256.to_string()]
+    } else {
+        Vec::new()
+    }
+}
+
+/// Legacy `_prepare_enhanced_tool_cache`, with the archive pinned by [`PROTON_SHA256`].
 pub fn prepare_tool_cache(core: &Core, net: &Net, progress: ProgressFn<'_>) -> Option<PathBuf> {
+    prepare_tool_cache_pinned(core, net, progress, &proton_pins(net))
+}
+
+/// [`prepare_tool_cache`] with explicit allowed digests (empty = unverified, tests only).
+pub fn prepare_tool_cache_pinned(core: &Core, net: &Net, progress: ProgressFn<'_>, pins: &[String]) -> Option<PathBuf> {
     let cache_root = core.paths.app_data.join("bo3-enhanced-proton-cache");
     if let Err(e) = std::fs::create_dir_all(&cache_root) {
         core.log.error(format!("Failed to prepare BO3 Enhanced Proton cache: {}", io_error_text(&e, Some(&cache_root))));
@@ -167,9 +183,17 @@ pub fn prepare_tool_cache(core: &Core, net: &Net, progress: ProgressFn<'_>) -> O
         return Some(target);
     }
     let archive = cache_root.join(format!("GDK-Proton-{PROTON_TAG}.tar.gz"));
+    if archive.exists() && !pins.is_empty() {
+        // A cached copy is only reused if it still matches the pin (partial / tampered / stale file).
+        let ok = crate::hash::file_sha256(&archive).is_some_and(|h| pins.iter().any(|p| p.eq_ignore_ascii_case(&h)));
+        if !ok {
+            core.log.warning("Cached BO3 Enhanced Proton archive failed integrity verification; downloading it again.");
+            let _ = std::fs::remove_file(&archive);
+        }
+    }
     if !archive.exists() {
         core.log.info(format!("Downloading BO3 Enhanced Proton ({PROTON_TAG})..."));
-        let opts = DownloadOptions::new(120);
+        let opts = DownloadOptions::new(120).verify(pins.iter().cloned());
         if let Err(e) = net.client.download(&proton_archive_url(net), &archive, &opts, progress) {
             core.log.error(format!("Failed to download BO3 Enhanced Proton archive: {e}"));
             return None;
@@ -357,6 +381,71 @@ mod tests {
         let names: Vec<_> = std::fs::read_dir(core.paths.app_data.join("bo3-enhanced-proton-cache")).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
         assert!(!names.iter().any(|n| n.starts_with("extract-") || n.ends_with(".tmp")), "{names:?}");
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn proton_tarball() -> Vec<u8> {
+        tar_gz(&[
+            TarMember::dir("GDK-Proton10-32/"),
+            TarMember { mode: 0o755, ..TarMember::file("GDK-Proton10-32/proton", b"#!/usr/bin/env python3\n") },
+            TarMember::file("GDK-Proton10-32/compatibilitytool.vdf", b"\"compatibilitytools\"\n{\n}\n"),
+        ])
+    }
+
+    fn proton_server(tarball: Vec<u8>) -> (Net, impl Sized) {
+        let a = addr();
+        let base = format!("http://{a}");
+        let mut routes = HashMap::new();
+        routes.insert("/Weather-OS/GDK-Proton/releases/download/release10-32/GDK-Proton10-32.tar.gz".to_string(), Route::bytes(tarball));
+        let srv = serve_on(a, routes);
+        (Net::local(&base), srv)
+    }
+
+    #[test]
+    fn pinned_proton_archive_is_verified_on_download_and_on_reuse() {
+        let tarball = proton_tarball();
+        let pin = vec![crate::hash::sha256_hex(&tarball)];
+
+        // Matching pin: installs.
+        let (core1, root) = core("proton-pin-ok");
+        let (net, _srv) = proton_server(tarball.clone());
+        assert!(prepare_tool_cache_pinned(&core1, &net, &mut no_progress, &pin).is_some());
+
+        // Wrong pin: refused, nothing cached, tool never prepared.
+        let (core2, root2) = core("proton-pin-bad");
+        let (net2, _srv2) = proton_server(tarball.clone());
+        assert!(prepare_tool_cache_pinned(&core2, &net2, &mut no_progress, &["0".repeat(64)]).is_none());
+        let cache = core2.paths.app_data.join("bo3-enhanced-proton-cache");
+        assert!(!cache.join("GDK-Proton-release10-32.tar.gz").exists());
+        assert!(!cache.join("BO3 Enhanced").exists());
+        assert!(core2.log.read_file().contains("Failed to download BO3 Enhanced Proton archive: "), "{}", core2.log.read_file());
+
+        // A cached archive that does not match the pin is not reused: it is downloaded again.
+        let (core3, root3) = core("proton-pin-cached");
+        let cache = core3.paths.app_data.join("bo3-enhanced-proton-cache");
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::write(cache.join("GDK-Proton-release10-32.tar.gz"), b"tampered").unwrap();
+        let (net3, _srv3) = proton_server(tarball.clone());
+        let dir = prepare_tool_cache_pinned(&core3, &net3, &mut no_progress, &pin).unwrap();
+        assert!(dir.join("proton").is_file());
+        assert!(core3.log.read_file().contains("Cached BO3 Enhanced Proton archive failed integrity verification; downloading it again."));
+
+        // A cached archive that does match is reused without a download (server has no route).
+        let (core4, root4) = core("proton-pin-reuse");
+        let cache = core4.paths.app_data.join("bo3-enhanced-proton-cache");
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::write(cache.join("GDK-Proton-release10-32.tar.gz"), &tarball).unwrap();
+        let dead = Net::local("http://127.0.0.1:9");
+        assert!(prepare_tool_cache_pinned(&core4, &dead, &mut no_progress, &pin).is_some());
+        for r in [root, root2, root3, root4] {
+            let _ = std::fs::remove_dir_all(r);
+        }
+    }
+
+    #[test]
+    fn production_pin_is_the_documented_digest() {
+        assert_eq!(PROTON_SHA256.len(), 64);
+        assert_eq!(proton_pins(&Net::production()), vec![PROTON_SHA256.to_string()]);
+        assert!(proton_pins(&Net::local("http://127.0.0.1:1")).is_empty());
     }
 
     #[test]

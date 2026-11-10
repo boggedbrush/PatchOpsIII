@@ -80,10 +80,6 @@ struct ReleaseAsset {
 #[derive(Default)]
 pub struct ReleaseCache(BTreeMap<String, BTreeMap<String, ReleaseAsset>>);
 
-fn is_hex64(s: &str) -> bool {
-    s.len() == 64 && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
-}
-
 /// Legacy `_fetch_t7patch_release_assets`: any failure yields an empty map (pinned hashes can
 /// still carry the install).
 fn fetch_release_assets<'c>(net: &Net, cache: &'c mut ReleaseCache, api: &str) -> &'c BTreeMap<String, ReleaseAsset> {
@@ -97,12 +93,8 @@ fn fetch_release_assets<'c>(net: &Net, cache: &'c mut ReleaseCache, api: &str) -
                     continue;
                 }
                 let mut info = ReleaseAsset { download_url: s("browser_download_url"), sha256: String::new() };
-                let digest = s("digest");
-                if digest.to_ascii_lowercase().starts_with("sha256:") {
-                    let cand = digest[7..].trim().to_ascii_lowercase();
-                    if is_hex64(&cand) {
-                        info.sha256 = cand;
-                    }
+                if let Some(d) = crate::net::parse_sha256_digest(&s("digest")) {
+                    info.sha256 = d;
                 }
                 out.insert(name, info);
             }
