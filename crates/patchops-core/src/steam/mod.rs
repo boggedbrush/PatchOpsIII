@@ -1,11 +1,20 @@
 //! Steam client discovery shared by several op groups: install roots, library folders,
 //! the active user id, workshop item state and launch-option *reads*.
 //!
-//! Writing (`localconfig.vdf` merges, closing/starting the client) belongs to `ops::steam_ops`.
+//! Writing (`localconfig.vdf` merges, closing/starting the client) lives in `launch_options` and `client`.
 //! Legacy reference: `utils.py` (`get_steam_paths`, `_candidate_steam_roots`,
 //! `get_steam_library_paths`, `find_steam_user_id`, `get_workshop_item_state`, `_read_launch_options`).
 
+pub mod client;
+pub mod launch_options;
 pub mod vdf;
+
+// Shared Steam control helpers (used by ops::steam_ops, enhanced, maintenance).
+pub use client::{close_steam, launch_game, open_external_url, open_steam};
+pub use launch_options::{
+    apply_launch_options, apply_launch_options_exact, clear_launch_options, merge_launch_options, modify_vdf_file,
+    set_launch_options, set_launch_options_exact, steam_config_vdf_path,
+};
 
 use std::path::{Path, PathBuf};
 

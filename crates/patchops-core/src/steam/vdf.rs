@@ -8,9 +8,11 @@
 //! repeated string value replaces the old one), `//` comments, BOM stripped, `[$COND]` suffixes
 //! ignored, escapes `\n \t \v \b \r \f \a \\ \? \" \'` decoded in quoted strings.
 //!
-//! The *writer* ([`dump_pretty`]) is a first cut for the `steam_ops` agent: it follows
-//! `vdf.dump(pretty=True)` (tab indent) with the `"key"\t\t"value"` separator documented in
-//! `bench/OPS.md`; verify byte-equality against the launch-options goldens before relying on it.
+//! The *writer* ([`dump_pretty`]) is byte-identical to `vdf.dump(obj, fp, pretty=True)`: tab
+//! indent and a **single space** between key and value (`"key" "value"`). (Steam itself writes
+//! `"key"\t\t"value"`, which the parser accepts; the `\t\t` form seen in the original files and
+//! in `localconfig_backup.vdf` is the *input*, the rewritten goldens use one space.) Checked
+//! against `bench/golden/080-*.json` and the vdf 3.4 source.
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
@@ -239,7 +241,7 @@ fn escape(s: &str) -> String {
     out
 }
 
-/// `vdf.dump(obj, pretty=True)`; see the module docs for the caveat about the separator.
+/// `vdf.dumps(obj, pretty=True)`.
 pub fn dump_pretty(obj: &Obj) -> String {
     let mut out = String::new();
     dump_level(&mut out, obj, 0);
@@ -255,9 +257,27 @@ fn dump_level(out: &mut String, obj: &Obj, level: usize) {
                 dump_level(out, o, level + 1);
                 out.push_str(&format!("{ind}}}\n"));
             }
-            Node::Str(s) => out.push_str(&format!("{ind}\"{}\"\t\t\"{}\"\n", escape(k), escape(s))),
+            Node::Str(s) => out.push_str(&format!("{ind}\"{}\" \"{}\"\n", escape(k), escape(s))),
         }
     }
+}
+
+/// Parse a UTF-8 VDF file (Python `open(.., encoding="utf-8")` + `vdf.load`). The error is the
+/// text to log.
+pub fn load_file(path: &std::path::Path) -> Result<Obj, String> {
+    let bytes = std::fs::read(path).map_err(|e| crate::pyfmt::io_error_text(&e, Some(path)))?;
+    let text = String::from_utf8(bytes).map_err(|e| {
+        let u = e.utf8_error();
+        let at = u.valid_up_to();
+        let byte = e.as_bytes()[at];
+        format!("'utf-8' codec can't decode byte 0x{byte:02x} in position {at}: invalid start byte")
+    })?;
+    parse(&text).map_err(|e| e.0)
+}
+
+/// Write `obj` with [`dump_pretty`] (truncating, like Python's `open(.., "w")`).
+pub fn write_file(path: &std::path::Path, obj: &Obj) -> std::io::Result<()> {
+    std::fs::write(path, dump_pretty(obj))
 }
 
 #[cfg(test)]
@@ -293,5 +313,32 @@ mod tests {
     fn errors() {
         assert!(parse("\"a\" { \"x\" \"1\"").is_err());
         assert!(parse("}").is_err());
+    }
+
+    #[test]
+    fn dump_matches_python_vdf() {
+        let o = parse("\"A\"\n{\n\t\"k\"\t\t\"v\"\n\t\"S\"\n\t{\n\t\t\"x\" \"a?b'c\\\\d\"\n\t}\n}\n").unwrap();
+        assert_eq!(dump_pretty(&o), "\"A\"\n{\n\t\"k\" \"v\"\n\t\"S\"\n\t{\n\t\t\"x\" \"a\\?b\\'c\\\\d\"\n\t}\n}\n");
+    }
+
+    #[test]
+    fn round_trip_is_stable() {
+        let t = "\"R\"\n{\n\t\"a\" \"line\\nbreak \\\"q\\\" tab\\t\"\n\t\"n\"\n\t{\n\t\t\"\" \"\"\n\t}\n}\n";
+        let o = parse(t).unwrap();
+        assert_eq!(dump_pretty(&o), t);
+        assert_eq!(parse(&dump_pretty(&o)).unwrap(), o);
+    }
+
+    #[test]
+    fn duplicate_string_replaces_in_place_and_str_to_section() {
+        let o = parse("\"a\" \"1\" \"b\" \"2\" \"a\" \"3\" \"b\" { \"x\" \"y\" }").unwrap();
+        assert_eq!(o.0[0], ("a".to_string(), Node::Str("3".into())));
+        assert!(matches!(o.get("b"), Some(Node::Obj(_))));
+    }
+
+    #[test]
+    fn bom_and_conditionals() {
+        let o = parse("\u{feff}\"a\" { \"k\" \"v\" [$WIN32] }").unwrap();
+        assert_eq!(o.get_path(&["a", "k"]), Some(&Node::Str("v".into())));
     }
 }
