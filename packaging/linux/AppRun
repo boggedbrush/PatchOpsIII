@@ -1,0 +1,11 @@
+#!/bin/sh
+# PatchOpsIII AppImage entry point.
+#
+# Deliberately tiny: the binary finds its bundled libraries through a RUNPATH baked in at build
+# time (no LD_LIBRARY_PATH, so the Steam / xdg-open / protontricks processes PatchOpsIII spawns
+# do not inherit bundled libraries) and its bundled data (bo3-enhanced-proton/) next to itself
+# via /proc/self/exe, which is correct inside the AppImage mount, under `--appimage-extract-and-run`
+# and under `firejail --appimage`.
+SELF=$(readlink -f "$0")
+HERE=${SELF%/*}
+exec "$HERE/usr/bin/patchops" "$@"

@@ -32,7 +32,7 @@
 - [Star History](#star-history)
 
 ## Overview
-PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popular community tools and quality-of-life tweaks in a single polished Electron interface backed by a local Python API. Whether you are securing your game with T7 Patch, smoothing shader compilation stutter with DXVK, or fine-tuning launch options, PatchOpsIII consolidates every workflow into one cohesive experience.
+PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popular community tools and quality-of-life tweaks in a single polished native desktop app written in Rust (GPUI, with GPU-accelerated rendering) with no embedded browser or runtime. Whether you are securing your game with T7 Patch, smoothing shader compilation stutter with DXVK, or fine-tuning launch options, PatchOpsIII consolidates every workflow into one cohesive experience.
 
 ## Key Features
 
@@ -59,30 +59,31 @@ PatchOpsIII streamlines the setup and upkeep of Black Ops III by surfacing popul
 
 ## Installation
 1. **Download:** Grab the latest release from the [Releases page](https://github.com/boggedbrush/PatchOpsIII/releases).
-2. **Windows:** Run `PatchOpsIII.msi`, follow the installer, then launch PatchOpsIII. The `PatchOpsIII.exe` installer remains available for compatibility with older updaters.
-3. **Linux & Steam Deck:** Download `PatchOpsIII.AppImage`, make it executable, then run it.
-4. **Dependencies:** The packaged build bundles all required Python dependencies; no additional setup is needed.
+2. **Windows:** Run `PatchOpsIII.msi`, follow the installer, then launch PatchOpsIII. The MSI upgrades earlier MSI installs in place. `PatchOpsIII.exe` is the same application as a single portable file (no installation) and is also kept for compatibility with older updaters.
+3. **Linux & Steam Deck:** Download `PatchOpsIII.AppImage`, make it executable, then run it. A working Vulkan driver (present on Steam Deck and every mainstream desktop distro) and glibc 2.35 or newer (Ubuntu 22.04 or newer, SteamOS 3, Fedora, Arch, ...) are required.
+4. **Dependencies:** None. The application is a single self-contained binary; there is nothing else to install.
 
 ### Developer Setup
-PatchOpsIII uses a React + TypeScript renderer wrapped by Electron. Bun is the JavaScript runtime/package manager, while Python runs the local backend API.
+PatchOpsIII is a Rust workspace: `crates/patchops-core` holds all application logic (config, Steam, T7 Patch, DXVK, BO3 Enhanced, EXE swapper, updater) and exposes it as a JSON op registry; `crates/patchops` is the [GPUI](https://crates.io/crates/gpui) desktop binary `patchops`. The toolchain is pinned in CI (see `RUST_TOOLCHAIN` in `.github/workflows/`); the workspace needs Rust 1.85 or newer. Do not run `cargo update`: `Cargo.lock` is committed and CI builds with `--locked`.
 
 ```bash
-# install Python service dependencies
-python -m venv .venv
-source .venv/bin/activate  # On Windows use: .venv\Scripts\activate
-pip install -r requirements.txt
+# run the desktop app (debug build)
+cargo run -p patchops
 
-# install desktop frontend dependencies
-bun install
+# core logic only: unit tests, lints, and the parity suite (replays recorded legacy results against patchops-rpc)
+cargo test -p patchops-core
+cargo clippy -p patchops-core -p patchops --all-targets -- -D warnings
+cargo build -p patchops-core --bin patchops-rpc && python3 tools/parity.py
 
-# run Vite and the Python local API
-bun run dev
-
-# run the Electron desktop app
-bun run dev:desktop
+# optimised build used for releases -> target/release/patchops
+cargo build --release --locked -p patchops
 ```
 
-The browser development server uses Vite on `127.0.0.1:5173` and the Python API on `127.0.0.1:8765`. The Electron desktop command uses Vite on `127.0.0.1:5174` and its Python API on `127.0.0.1:8766`, so both commands can run at the same time. The renderer communicates with Python through HTTP APIs and `/ws` WebSockets; Electron IPC is reserved for desktop-specific bridge actions such as selecting a local game directory.
+**Linux build dependencies** (Debian/Ubuntu names): `build-essential pkg-config libx11-xcb-dev libxcb1-dev libxcb-render0-dev libxcb-shm0-dev libxcb-xkb-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libfontconfig-dev libfreetype-dev`. At run time the app needs a Vulkan driver and an X11 or Wayland session; for headless testing use `xvfb-run -a` with Mesa's software Vulkan (`mesa-vulkan-drivers`).
+
+**Windows build requirements:** the MSVC toolchain (`x86_64-pc-windows-msvc`, Visual Studio Build Tools with the "Desktop development with C++" workload) and the Windows 10/11 SDK. GPUI compiles its HLSL shaders with `fxc.exe` from the SDK; if it is not on `PATH` set `GPUI_FXC_PATH` to it. Details in [crates/patchops/GPUI_NOTES.md](crates/patchops/GPUI_NOTES.md).
+
+**Packaging** (AppImage, MSI and portable EXE, tool pins and the layout the app expects) is described in [packaging/README.md](packaging/README.md). The release workflows read the app version from `[workspace.package] version` in the root `Cargo.toml`.
 
 ## Forked Components
 - **BO3 Enhanced Proton fork metadata:** [bo3-enhanced-proton/README.md](bo3-enhanced-proton/README.md)

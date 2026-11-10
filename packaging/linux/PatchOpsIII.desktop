@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=PatchOpsIII
+GenericName=Black Ops III maintenance tool
+Comment=Patch, tune and maintain Call of Duty: Black Ops III (T7 Patch, DXVK, Enhanced, graphics presets)
+Exec=patchops
+Icon=PatchOpsIII
+Terminal=false
+Categories=Utility;
+# Must equal the GPUI window app_id ("PatchOpsIII", crates/patchops/src/app.rs) so the
+# taskbar / dock matches this entry and shows its icon.
+StartupWMClass=PatchOpsIII

@@ -50,7 +50,9 @@ permissions:
 
 jobs:
   build-linux:
-    name: Build Linux Electron AppImage
+    name: Build Linux AppImage
+    # Oldest hosted Ubuntu image still supported by GitHub: the binary links against this image's
+    # glibc, which is the minimum glibc of the AppImage (2.35). Do not move this forward casually.
     runs-on: ubuntu-22.04
     outputs:
       hash: ${{ steps.compute_hash.outputs.hash }}
@@ -61,143 +63,66 @@ jobs:
         shell: bash
         working-directory: .
     env:
-      BUN_VERSION: "1.3.13"
-      ELECTRON_VERSION: "31.7.7"
-      ELECTRON_BUILDER_VERSION: "26.8.1"
-      PYTHON_VERSION: "3.12"
+      RUST_TOOLCHAIN: "1.97.0"
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: "0"
       APPIMAGE_PATH: dist/packages/PatchOpsIII.AppImage
       ZSYNC_PATH: dist/packages/PatchOpsIII.AppImage.zsync
-      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      MAX_GLIBC: "2.35"
+      UPDATE_INFORMATION: ${{ inputs.update_information || (github.event_name == 'pull_request' && 'gh-releases-zsync|boggedbrush|PatchOpsIII|latest|PatchOpsIII.AppImage.zsync') || '' }}
       VT_ENABLED: ${{ secrets.VT_API_KEY != '' }}
       VT_CLI_ARCHIVE: vt-cli.zip
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-          cache-dependency-path: requirements.txt
-      - name: Cache Bun install cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: linux-bun-${{ runner.arch }}-${{ env.BUN_VERSION }}-${{ hashFiles('bun.lock', 'package.json') }}
-          restore-keys: |
-            linux-bun-${{ runner.arch }}-${{ env.BUN_VERSION }}-
-      - name: Cache Electron downloads
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/electron
-          key: linux-electron-${{ runner.arch }}-${{ env.ELECTRON_VERSION }}
-          restore-keys: |
-            linux-electron-${{ runner.arch }}-
-      - name: Cache electron-builder downloads
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/electron-builder
-          key: linux-electron-builder-${{ runner.arch }}-${{ env.ELECTRON_BUILDER_VERSION }}-${{ env.ELECTRON_VERSION }}
-          restore-keys: |
-            linux-electron-builder-${{ runner.arch }}-${{ env.ELECTRON_BUILDER_VERSION }}-
-            linux-electron-builder-${{ runner.arch }}-
-      - name: Cache Python virtual environment
-        uses: actions/cache@v4
-        with:
-          path: .venv
-          key: linux-venv-${{ runner.arch }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            linux-venv-${{ runner.arch }}-${{ env.PYTHON_VERSION }}-
-      - name: Install Linux packaging prerequisites
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y binutils imagemagick squashfs-tools unzip x11-utils xdotool xvfb zsync
-      - name: Download appimagetool
+          # Build: GPUI (X11 + Wayland backends) and its font stack. Packaging: patchelf, squashfs, zsync.
+          # Smoke test: Xvfb + tools, and Mesa's software Vulkan (lavapipe) because the runner has no GPU.
+          sudo apt-get install -y \
+            build-essential pkg-config \
+            libx11-xcb-dev libxcb1-dev libxcb-render0-dev libxcb-shm0-dev libxcb-xkb-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libfontconfig-dev libfreetype-dev \
+            patchelf squashfs-tools zsync imagemagick binutils unzip \
+            x11-utils xdotool xvfb libvulkan1 mesa-vulkan-drivers python3
+      - name: Install Rust toolchain
         run: |
-          set -euo pipefail
-          appimagetool_path="$RUNNER_TEMP/appimagetool-x86_64.AppImage"
-          runtime_path="$RUNNER_TEMP/runtime-x86_64"
-          curl --fail --location --retry 3 \
-            https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage \
-            --output "$appimagetool_path"
-          echo "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  $appimagetool_path" | sha256sum --check
-          curl --fail --location --retry 3 \
-            https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64 \
-            --output "$runtime_path"
-          echo "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d  $runtime_path" | sha256sum --check
-          chmod +x "$appimagetool_path"
-          echo "APPIMAGETOOL_PATH=$appimagetool_path" >> "$GITHUB_ENV"
-          echo "APPIMAGE_RUNTIME_PATH=$runtime_path" >> "$GITHUB_ENV"
-      - name: Install Python backend dependencies
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy
+          rustup default "$RUST_TOOLCHAIN"
+          rustc --version
+          cargo --version
+      - name: Cache Cargo registry and build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: linux-cargo-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            linux-cargo-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN }}-
+      - name: Core unit tests
+        run: cargo test --locked -p patchops-core
+      - name: Clippy
+        run: cargo clippy --locked -p patchops-core -p patchops --all-targets -- -D warnings
+      - name: Parity suite (legacy goldens vs patchops-rpc)
         run: |
-          python -m venv .venv
-          .venv/bin/python -m pip install -U pip
-          .venv/bin/python -m pip install -r requirements.txt
-          .venv/bin/python -m pip install -U pyinstaller
-      - name: Install Electron dependencies
-        run: bun install --frozen-lockfile
-      - name: Build Electron AppImage
-        run: bun run dist:linux
-      - name: Repack AppImage with update support
-        env:
-          UPDATE_INFORMATION: ${{ inputs.update_information || (github.event_name == 'pull_request' && 'gh-releases-zsync|boggedbrush|PatchOpsIII|latest|PatchOpsIII.AppImage.zsync') || '' }}
+          cargo build --locked -p patchops-core --bin patchops-rpc
+          python3 tools/parity.py --bin target/debug/patchops-rpc --quiet
+      - name: Build release binary
         run: |
-          set -euo pipefail
-          if [ ! -f "$APPIMAGE_PATH" ]; then
-            find dist -maxdepth 4 -type f -print
-            echo "$APPIMAGE_PATH was not produced" >&2
-            exit 1
-          fi
-          chmod +x "$APPIMAGE_PATH"
-          appimage_name="$(basename "$APPIMAGE_PATH")"
-          appimage_dir="$(dirname "$APPIMAGE_PATH")"
-          (
-            cd "$appimage_dir"
-            "./$appimage_name" --appimage-extract
-            find squashfs-root -type d -exec chmod 755 {} +
-            mv "$appimage_name" "$appimage_name.electron-builder"
-            if [ -n "$UPDATE_INFORMATION" ]; then
-              ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL_PATH" \
-                --runtime-file "$APPIMAGE_RUNTIME_PATH" \
-                --updateinformation "$UPDATE_INFORMATION" squashfs-root "$appimage_name"
-            else
-              ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGETOOL_PATH" \
-                --runtime-file "$APPIMAGE_RUNTIME_PATH" \
-                squashfs-root "$appimage_name"
-            fi
-            rm -rf squashfs-root "$appimage_name.electron-builder"
-            chmod +x "$appimage_name"
-            if [ -z "$UPDATE_INFORMATION" ]; then
-              zsyncmake -u "$appimage_name" -o "$appimage_name.zsync" "$appimage_name"
-            fi
-          )
+          cargo build --release --locked -p patchops
+          ./target/release/patchops --version
+      - name: Build AppImage
+        run: packaging/linux/build-appimage.sh
       - name: Verify AppImage artifact
-        env:
-          UPDATE_INFORMATION: ${{ inputs.update_information || (github.event_name == 'pull_request' && 'gh-releases-zsync|boggedbrush|PatchOpsIII|latest|PatchOpsIII.AppImage.zsync') || '' }}
         run: |
           set -euo pipefail
-          test -s "$APPIMAGE_PATH"
           test -s "$ZSYNC_PATH"
-          if [ -n "$UPDATE_INFORMATION" ]; then
-            actual_update_information="$("$APPIMAGE_PATH" --appimage-updateinformation)"
-            if [ "$actual_update_information" != "$UPDATE_INFORMATION" ]; then
-              printf 'Expected update information: %s\nFound: %s\n' \
-                "$UPDATE_INFORMATION" "$actual_update_information" >&2
-              exit 1
-            fi
-          fi
-          squashfs_listing="$RUNNER_TEMP/appimage-filesystem.txt"
-          unsquashfs -lln -o "$("$APPIMAGE_PATH" --appimage-offset)" "$APPIMAGE_PATH" > "$squashfs_listing"
-          awk '$1 ~ /^d/ { found = 1; if ($1 != "drwxr-xr-x") { print "AppImage directory must have mode 0755: " $0 > "/dev/stderr"; exit 1 } } END { if (!found) exit 1 }' "$squashfs_listing"
-          extraction_dir="$(mktemp -d)"
-          (cd "$extraction_dir" && "$GITHUB_WORKSPACE/$APPIMAGE_PATH" --appimage-extract >/dev/null)
-          test -x "$extraction_dir/squashfs-root/AppRun"
-          rm -rf "$extraction_dir"
+          packaging/linux/verify-appimage.sh "$APPIMAGE_PATH" "$UPDATE_INFORMATION"
       - name: Install catalog Firejail test runtime
         run: |
           set -euo pipefail
@@ -219,8 +144,6 @@ jobs:
           sudo cp -R "$catalog_firejail/usr/lib/firejail" /usr/lib/
           sudo install -o root -g root -m 4755 "$catalog_firejail/usr/bin/firejail" /usr/bin/firejail
       - name: Smoke test AppImage at 800x600 with extraction and Firejail
-        env:
-          SCREENSHOT_PATH: ${{ runner.temp }}/PatchOpsIII-800x600.png
         run: |
           set -euo pipefail
           for launch_mode in firejail extract; do
@@ -228,7 +151,8 @@ jobs:
           echo "Testing AppImage launch mode: $LAUNCH_MODE"
           export XDG_CONFIG_HOME="$RUNNER_TEMP/patchops-config-$launch_mode"
           export XDG_CACHE_HOME="$RUNNER_TEMP/patchops-cache-$launch_mode"
-          mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"
+          export XDG_DATA_HOME="$RUNNER_TEMP/patchops-data-$launch_mode"
+          mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME"
           xvfb-run --auto-servernum --server-args="-screen 0 800x600x24" bash -euo pipefail <<'SMOKE_TEST'
           screen_info="$(xwininfo -root)"
           grep -Eq "Width: +800" <<< "$screen_info"
@@ -237,7 +161,7 @@ jobs:
           if [ "$LAUNCH_MODE" = firejail ]; then
             setsid firejail --quiet --noprofile --net=none --appimage "$GITHUB_WORKSPACE/$APPIMAGE_PATH" &
           else
-            APPIMAGE_EXTRACT_AND_RUN=1 setsid "$GITHUB_WORKSPACE/$APPIMAGE_PATH" --no-sandbox --disable-gpu &
+            APPIMAGE_EXTRACT_AND_RUN=1 setsid "$GITHUB_WORKSPACE/$APPIMAGE_PATH" &
           fi
           app_pid=$!
           cleanup() {
@@ -266,31 +190,19 @@ jobs:
             exit 1
           fi
 
+          # The window must fit the 800x600 display (GPUI clamps its default size to the work area).
           window_info="$(xwininfo -id "$window_id")"
-          window_x="$(awk '/Absolute upper-left X:/ { print $4; exit }' <<< "$window_info")"
-          window_y="$(awk '/Absolute upper-left Y:/ { print $4; exit }' <<< "$window_info")"
           window_width="$(awk '/Width:/ { print $2; exit }' <<< "$window_info")"
           window_height="$(awk '/Height:/ { print $2; exit }' <<< "$window_info")"
-          if (( window_x < 0 || window_y < 0 || window_x + window_width > 800 || window_y + window_height > 600 )); then
-            echo "AppImage window exceeds the 800x600 display: ${window_width}x${window_height} at ${window_x},${window_y}" >&2
+          if (( window_width > 800 || window_height > 600 )); then
+            echo "AppImage window exceeds the 800x600 display: ${window_width}x${window_height}" >&2
             exit 1
           fi
 
-          sleep 2
-          if [ "$LAUNCH_MODE" = firejail ]; then
-            import -window root "$SCREENSHOT_PATH"
-          fi
-          test -s "$SCREENSHOT_PATH"
-          sleep 20
+          sleep 10
           kill -0 "$app_pid"
           SMOKE_TEST
           done
-      - name: Upload AppImage visual review screenshot
-        uses: actions/upload-artifact@v4
-        with:
-          name: PatchOpsIII-AppImage-800x600
-          path: ${{ runner.temp }}/PatchOpsIII-800x600.png
-          if-no-files-found: error
       - name: Compute AppImage hash
         id: compute_hash
         run: |

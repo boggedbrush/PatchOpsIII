@@ -4,7 +4,7 @@ members = ["crates/patchops-core", "crates/patchops"]
 exclude = ["bench"]
 
 [workspace.package]
-version = "0.1.0"
+version = "1.3.4"
 edition = "2021"
 license = "MIT"
 rust-version = "1.85"

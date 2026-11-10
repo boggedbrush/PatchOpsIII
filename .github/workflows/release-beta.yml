@@ -37,20 +37,22 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Determine version from package.json
+      - name: Determine version from Cargo.toml
         id: version
         run: |
-          python <<'PY'
-          import json
+          python3 <<'PY'
           import os
           import re
+          import tomllib
 
-          with open('package.json', encoding='utf-8') as package_file:
-              data = json.load(package_file)
+          # Single source of truth: [workspace.package] version in the root Cargo.toml
+          # (the Rust crates inherit it; `patchops --version` and the in-app updater report it).
+          with open('Cargo.toml', 'rb') as cargo_file:
+              data = tomllib.load(cargo_file)
 
-          raw_version = str(data.get('version', '')).strip()
+          raw_version = str(data.get('workspace', {}).get('package', {}).get('version', '')).strip()
           if not raw_version:
-              raise SystemExit('version is empty in package.json')
+              raise SystemExit('workspace.package.version is empty in Cargo.toml')
 
           tagged = raw_version if raw_version.lower().startswith('v') else f'v{raw_version}'
           normalized = re.sub(r"[^0-9.]", ".", raw_version)
@@ -203,7 +205,7 @@ jobs:
           info = metadata[selected_rel]
           version_token = os.environ.get("PROJECT_VERSION", "").strip()
           if not version_token:
-              raise SystemExit("PROJECT_VERSION was not provided from package.json.")
+              raise SystemExit("PROJECT_VERSION was not provided from Cargo.toml.")
 
           if not version_token.lower().startswith("v"):
               version_token = f"v{version_token}"
@@ -220,7 +222,7 @@ jobs:
           if notes_version.lower() != version_token.lower():
               raise SystemExit(
                   f"Release notes version '{notes_version}' does not match PROJECT_VERSION '{version_token}'. "
-                  "Update package.json or choose matching release notes."
+                  "Update the workspace version in Cargo.toml or choose matching release notes."
               )
           release_title = f"PatchOpsIII {tag_name}"
 

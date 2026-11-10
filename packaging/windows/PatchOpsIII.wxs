@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PatchOpsIII Windows installer (WiX v5 authoring; built by packaging/windows/package.ps1).
+
+  Compatibility with the legacy electron-builder MSI (see packaging/README.md):
+    * UpgradeCode  = uuid5(NS d752fe43-5d44-44d5-9fc9-6dd1bf19d5cc, "com.patchopsiii.app")
+                     = A9A7E56F-6704-5167-96C9-3DF300383A42  (the value electron-builder derived from the
+                     old appId, so this MSI upgrades an installed Electron-era MSI in place).
+    * Per-machine, C:\Program Files\PatchOpsIII, Start menu + desktop shortcut "PatchOpsIII",
+      same-version upgrades allowed, WixUI_InstallDir wizard with the PatchOpsIII banner/dialog bitmaps,
+      no "run after finish".
+  Variables (wix build -d NAME=VALUE): Version (x.y.z.w), ExePath, IconPath, BrandingDir.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package Name="PatchOpsIII"
+           Manufacturer="boggedbrush"
+           Version="$(var.Version)"
+           UpgradeCode="A9A7E56F-6704-5167-96C9-3DF300383A42"
+           Language="1033"
+           Codepage="65001"
+           Scope="perMachine"
+           InstallerVersion="500"
+           Compressed="yes">
+
+    <!-- GPUI's Direct3D 11 backend needs Windows 10 or later (the Electron build allowed Windows 7+). -->
+    <Launch Condition="Installed OR VersionNT &gt;= 1000" Message="Windows 10 or later is required."/>
+
+    <!-- AllowSameVersionUpgrades: re-installing the same version (and beta -> stable of the same x.y.z) replaces it. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of [ProductName] is already installed."/>
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high"/>
+
+    <Icon Id="AppIcon.exe" SourceFile="$(var.IconPath)"/>
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.exe"/>
+    <!-- Same as the legacy MSI: advertised shortcuts are materialised as plain .lnk files. -->
+    <Property Id="DISABLEADVTSHORTCUTS" Value="1"/>
+
+    <WixVariable Id="WixUIBannerBmp" Value="$(var.BrandingDir)\patchops-msi-banner.bmp"/>
+    <WixVariable Id="WixUIDialogBmp" Value="$(var.BrandingDir)\patchops-msi-dialog.bmp"/>
+
+    <!-- Welcome -> Install folder -> Ready (no license page, like the legacy wizard). -->
+    <UI>
+      <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER"/>
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Order="3" Condition="NOT Installed"/>
+      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="3"/>
+    </UI>
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="PatchOpsIII"/>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder"/>
+    <StandardDirectory Id="DesktopFolder"/>
+
+    <Feature Id="ProductFeature" Title="PatchOpsIII" Absent="disallow">
+      <ComponentGroupRef Id="ProductComponents"/>
+    </Feature>
+
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+      <Component Id="MainExecutable">
+        <!-- The cargo binary is called patchops.exe; it is installed (and released) as PatchOpsIII.exe. -->
+        <File Id="PatchOpsIIIExe" Name="PatchOpsIII.exe" Source="$(var.ExePath)" KeyPath="yes">
+          <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="PatchOpsIII"
+                    WorkingDirectory="INSTALLFOLDER" Advertise="yes" Icon="AppIcon.exe"/>
+          <Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="PatchOpsIII"
+                    WorkingDirectory="INSTALLFOLDER" Advertise="yes" Icon="AppIcon.exe"/>
+        </File>
+      </Component>
+    </ComponentGroup>
+  </Package>
+</Wix>

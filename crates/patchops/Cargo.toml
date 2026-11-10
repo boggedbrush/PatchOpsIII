@@ -29,3 +29,8 @@ gpui = { workspace = true, features = ["windows-manifest"] }
 
 [features]
 debug-log = ["dep:env_logger"]
+
+# Windows only: embeds the app icon + VERSIONINFO into the exe (see build.rs). Already in Cargo.lock via gpui.
+# Host-gated, so Linux builds neither download nor compile it.
+[target.'cfg(windows)'.build-dependencies]
+embed-resource = "3"
