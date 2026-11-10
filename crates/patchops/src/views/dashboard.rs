@@ -18,11 +18,12 @@ pub struct DashboardView {
 impl DashboardView {
     pub fn new(shared: Arc<SharedState>, cx: &mut Context<Self>) -> Self {
         let init = shared.with(|d| d.slider);
-        let slider = cx.new(|_| Slider::new(0.0, 1.0, init));
+        let slider = cx.new(|cx| Slider::new(0.0, 1.0, init, cx).step(0.01));
         cx.subscribe(&slider, |this, _, ev: &SliderEvent, cx| {
-            let SliderEvent::Changed(v) = ev;
-            this.shared.with(|d| d.slider = *v);
-            cx.notify();
+            if let SliderEvent::Changed(v) = ev {
+                this.shared.with(|d| d.slider = *v);
+                cx.notify();
+            }
         })
         .detach();
 
@@ -31,6 +32,7 @@ impl DashboardView {
             match ev {
                 TextInputEvent::Changed(s) => this.shared.with(|d| d.text = s.to_string()),
                 TextInputEvent::Submit(s) => this.shared.push_log(format!("submitted: {s}")),
+                TextInputEvent::Blurred(_) => {}
             }
             cx.notify();
         })
@@ -42,7 +44,7 @@ impl DashboardView {
 
 impl Render for DashboardView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let t = cx.theme().clone();
+        let t = *cx.theme();
         let data = self.shared.snapshot();
         // Pick up changes made elsewhere (e.g. via RPC) without emitting events.
         self.slider.update(cx, |s, _| {

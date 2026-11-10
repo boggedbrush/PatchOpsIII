@@ -9,8 +9,8 @@ use gpui::{
 
 use crate::state::{SharedState, UiEvent};
 use crate::theme::{ActiveTheme, Theme};
-use crate::views::{AboutView, DashboardView, LogsView, TasksView};
-use crate::widgets;
+use crate::views::{gallery, AboutView, DashboardView, GalleryView, LogsView, TasksView};
+use crate::widgets::{self, TabNav};
 
 actions!(patchops, [Quit, NextView, PrevView]);
 
@@ -21,10 +21,16 @@ pub enum Nav {
     Logs,
     Tasks,
     About,
+    /// Widget gallery; only listed when `PATCHOPS_GALLERY=1`.
+    Gallery,
 }
 
 impl Nav {
-    pub const ALL: [Nav; 4] = [Nav::Dashboard, Nav::Logs, Nav::Tasks, Nav::About];
+    pub const ALL: [Nav; 5] = [Nav::Dashboard, Nav::Logs, Nav::Tasks, Nav::About, Nav::Gallery];
+
+    pub fn visible(self) -> bool {
+        self != Nav::Gallery || gallery::enabled()
+    }
 
     pub fn label(self) -> &'static str {
         match self {
@@ -32,6 +38,7 @@ impl Nav {
             Nav::Logs => "Logs",
             Nav::Tasks => "Tasks",
             Nav::About => "About",
+            Nav::Gallery => "Gallery",
         }
     }
 
@@ -41,7 +48,7 @@ impl Nav {
 }
 
 pub fn run(shared: Arc<SharedState>, ui_rx: async_channel::Receiver<UiEvent>) {
-    Application::new().run(move |cx: &mut App| {
+    Application::new().with_assets(widgets::Assets).run(move |cx: &mut App| {
         cx.set_global(Theme::dark());
         widgets::init(cx);
         cx.bind_keys([
@@ -99,6 +106,7 @@ pub struct AppView {
     logs: Entity<LogsView>,
     tasks: Entity<TasksView>,
     about: Entity<AboutView>,
+    gallery: Entity<GalleryView>,
 }
 
 impl Focusable for AppView {
@@ -131,12 +139,13 @@ impl AppView {
         .detach();
 
         Self {
-            nav: Nav::Dashboard,
+            nav: if gallery::enabled() { Nav::Gallery } else { Nav::Dashboard },
             focus_handle: cx.focus_handle(),
             dashboard: cx.new(|cx| DashboardView::new(shared.clone(), cx)),
             logs: cx.new(|cx| LogsView::new(shared.clone(), cx)),
             tasks: cx.new(|cx| TasksView::new(shared.clone(), cx)),
             about: cx.new(|_| AboutView),
+            gallery: cx.new(GalleryView::new),
         }
     }
 
@@ -147,15 +156,21 @@ impl AppView {
 
     fn step(&mut self, delta: isize, cx: &mut Context<Self>) {
         let n = Nav::ALL.len() as isize;
-        let i = (self.nav.index() as isize + delta).rem_euclid(n) as usize;
-        self.go(Nav::ALL[i], cx);
+        let mut i = self.nav.index() as isize;
+        loop {
+            i = (i + delta).rem_euclid(n);
+            if Nav::ALL[i as usize].visible() {
+                break;
+            }
+        }
+        self.go(Nav::ALL[i as usize], cx);
     }
 }
 
 impl Render for AppView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         trace_first_render();
-        let t = cx.theme().clone();
+        let t = *cx.theme();
         let nav = self.nav;
         let sidebar = div()
             .w(px(180.))
@@ -176,7 +191,7 @@ impl Render for AppView {
                     .text_color(t.text)
                     .child("PatchOpsIII"),
             )
-            .children(Nav::ALL.map(|item| {
+            .children(Nav::ALL.into_iter().filter(|n| n.visible()).map(|item| {
                 let active = item == nav;
                 let hover = t.hover;
                 div()
@@ -197,10 +212,12 @@ impl Render for AppView {
             Nav::Logs => self.logs.clone().into_any_element(),
             Nav::Tasks => self.tasks.clone().into_any_element(),
             Nav::About => self.about.clone().into_any_element(),
+            Nav::Gallery => self.gallery.clone().into_any_element(),
         });
 
         div()
             .key_context("Root")
+            .tab_nav()
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(|this, _: &NextView, _, cx| this.step(1, cx)))
             .on_action(cx.listener(|this, _: &PrevView, _, cx| this.step(-1, cx)))

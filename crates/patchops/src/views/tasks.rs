@@ -52,7 +52,7 @@ impl TasksView {
 
 impl Render for TasksView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let t = cx.theme().clone();
+        let t = *cx.theme();
         page(&t)
             .child(heading(&t, "Tasks"))
             .child(

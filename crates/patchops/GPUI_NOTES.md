@@ -209,7 +209,8 @@ child in it; the prepaint closure runs with the real bounds each frame.
 ## Fonts
 
 `font_family("Inter")` falls back silently if missing. Linux dev box had Inter + DejaVu Sans Mono installed; Windows and
-Steam Deck will not. **TODO before release:** bundle fonts and `cx.text_system().add_fonts(vec![Cow::Borrowed(include_bytes!(..))])`.
+Steam Deck will not. Fonts are now bundled (Inter Regular/Medium/Bold + JetBrains Mono Regular, subset OTF/TTF in `assets/fonts/`)
+and registered by `widgets::init(cx)`; `Theme::font_ui` = "Inter", `font_mono` = "JetBrains Mono". Weights: `.font_weight(FontWeight::BOLD)` / `MEDIUM`.
 
 ## Build / run notes and pitfalls
 
@@ -233,3 +234,143 @@ Steam Deck will not. **TODO before release:** bundle fonts and `cx.text_system()
 * Nothing in our own deps is Linux-only; `parking_lot`, `async-channel`, `serde_json`, `unicode-segmentation` are portable. Keep Linux-only code behind `cfg(target_os = "linux")`.
 * Key bindings: use `ctrl-` on Windows/Linux (done via `cfg(target_os = "macos")` in `text_input::bind_keys`).
 * Steam Deck: Vulkan (RADV) via blade-graphics; X11 and Wayland both enabled so gamescope/XWayland and native Wayland work.
+
+---
+
+# Widget kit (`src/widgets/`, theme in `src/theme.rs`)
+
+Everything below is exported from `crate::widgets::*` and visible in the gallery
+(`PATCHOPS_GALLERY=1 patchops`; env `PATCHOPS_GALLERY_TAB=0..3` picks the tab, `PATCHOPS_GALLERY_DIALOG=1` / `_BROWSER=1`
+open overlays at start). Source for every snippet: `src/views/gallery.rs`.
+
+## Setup (already wired in `app.rs`; new windows/bins need the same)
+
+```rust
+Application::new().with_assets(widgets::Assets).run(|cx| {   // icons come from the asset source
+    cx.set_global(Theme::dark());
+    widgets::init(cx);              // fonts + key bindings (text input, slider, select, number, log, Tab/Shift-Tab)
+    ...
+});
+div().key_context("Root").tab_nav()   // `use widgets::TabNav;` - Tab / Shift-Tab move focus between widgets
+```
+
+## Theme (`cx.theme()` -> `&Theme`, `Copy`: write `let t = *cx.theme();`)
+
+Colours (all `Hsla`, many are white/black + alpha like the CSS): `bg bg_deep sidebar panel panel_strong field modal overlay
+border border_strong text text_muted text_strong accent accent_dark accent_hover accent_bg accent_border ok ok_bg ok_border
+warning danger danger_bg danger_border hover hover_strong selection focus_ring scroll_*`. Metrics (f32 px, use `px(t.x)`):
+`radius(10) radius_sm(7) radius_xs(5) control_h(36) row_h(38) nav_w(190) font_xs(12) font_sm(13) font_md(14) font_lg(16) font_xl(24)`;
+spacing consts `theme::space::{XS 4, SM 8, MD 12, LG 16, XL 24}`. Page gutter in legacy: 14px, gap between panels 12px.
+Always set `.text_size(px(t.font_md))` on a view root (or rely on the app root's `.text_sm()` = 14px).
+
+## Icons
+
+```rust
+icon(Icon::FolderOpen).size(px(16.)).text_color(t.text_muted)     // lucide set: see `enum Icon` in icon.rs
+```
+Add one: drop `assets/icons/<name>.svg` (lucide-static) and add a line to the `icons!{}` macro. Variants: ArrowUp Check
+ChevronDown/Right/Up CircleCheck CircleX Clipboard Copy Cpu Download Eraser ExternalLink EyeOff Eye FolderOpen Folder Gem
+HardDrive House Image Info KeyRound LayoutDashboard LoaderCircle Minus Plus RefreshCw RotateCcw Save Search Settings
+ShieldCheck SquarePlay Trash2 TriangleAlert UserRound Wrench X. (legacy names: CheckCircle2=CircleCheck, AlertTriangle=TriangleAlert,
+PlaySquare=SquarePlay.)
+
+## Stateless widgets (`RenderOnce` builders; owner keeps the value)
+
+```rust
+Button::new("id", "Label").primary()|.danger()|.ghost()|.kind(ButtonKind::..)  // default = secondary
+    .icon(Icon::Save).small().full_width().disabled(b).busy(b)                  // busy = spinner + inert
+    .on_click(cx.listener(|this, _ev, _w, cx| { .. }))                          // Enter/Space work when focused
+IconButton::new("id", Icon::X).active(b).disabled(b).on_click(..)
+Toggle::new("id", on).disabled(b).on_change(move |v, _w, cx| this.update(cx, |t, cx| { t.on = v; cx.notify() }))  // `let this = cx.entity()`
+Checkbox::new("id", on).label("Skip Intro").disabled(b).on_change(|v, w, cx| ..)
+Radio::new(("profile", i), sel == i).label("Play Offline").on_select(|w, cx| ..)
+Segmented::new("id", ["Stable", "Beta"]).selected(ix).disabled(b).on_change(|ix, w, cx| ..)   // equal width
+SubTabs::new("id", ["Graphics Settings", "DXVK"]).selected(ix).on_change(|ix, w, cx| ..)      // content-width tabs
+NavItem::new("nav-x", Icon::Image, "Graphics").active(b).on_click(..)
+Spinner::new("id").size(px(16.)).color(c)                         ProgressBar::new("id").value(Some(0.4))|None (indeterminate).width(px(200.))
+Badge::new("Active").tone(Tone::Ok)                                // Tone::{Neutral, Ok, Warn, Danger}; Tone::from_ok(bool)
+StatusRow::new("T7 Patch", Tone::from_ok(ok)).value("Configured").last()      // dot + value, hairline below
+StatusPill::new("Config", "t7patch.conf found", Tone::Ok)                    // label over value tile (use flex_1 in a row)
+Metric::new("Steam ID", "Not found", Tone::Neutral)                          // `label ..... value` line
+Alert::error("msg") | Alert::warning("msg") .on_dismiss(|_, w, cx| ..)       // red strip with icon + X
+Chip::new("id", "Red").swatch(rgb(0xff453a).into()).active(b).disabled(b).on_click(..)   // gamertag colour chips
+requirement("Game detected", ok, cx)                                          // icon + coloured text line
+Panel::new("Status Overview").child(..)   // title above bordered body; .untitled() / .flush() (no padding); give flex_1().min_h_0() to fill
+Card::new().icon(Icon::Cpu).title("System").child(..)                         // legacy .tool-card
+Group::new("Performance").child(SettingRow::new(..))                          // legacy .graphics-settings-group
+divider(cx)                                                                    // 1px rule
+Collapsible::new("id", "Advanced", open).detail("sub text").on_toggle(|open, w, cx| ..).child(..)   // <details>
+DropZone::new("id", "Drop DUMP.zip here").detail("or browse").on_drop(|paths: &[PathBuf], w, cx| ..)   // OS file drag&drop
+SettingRow::new("Vertical sync").help("opt").control(Toggle::new(..)).last().boxed()   // label left / control right
+FormRow::new("Display Mode").help("opt").label_width(150.).control(select.clone()).last()   // label column + control fills
+Field::new("Name").child(input.clone())                                       // caption stacked over a control
+div().id("x").tooltip(tooltip("Hide password"))                               // tooltip(text) -> builder closure
+```
+
+## Stateful widgets (`cx.new(..)` -> `Entity<T>`; events via `cx.subscribe(&e, |this, e, ev: &Ev, cx| ..).detach()`)
+
+```rust
+// TextInput  (events: Changed(s) / Submit(s) on Enter / Blurred(s) on focus loss -- commit-on-blur like legacy TextRow)
+let i = cx.new(|cx| TextInput::new("placeholder", cx));
+i.update(cx, |i, cx| { i.set_masked(true, cx); i.set_max_len(Some(20)); i.set_read_only(true, cx); i.set_disabled(false, cx);
+                       i.set_text("abc", cx);            // sets + moves cursor, no event
+                       i.sync_text(&state.s, cx);        // set only if different (safe to mirror in render)
+                       i.set_char_filter(|c| c.is_ascii_digit()); });
+// Ctrl+Left/Right word move, Ctrl+Backspace/Delete word delete, double-click = word, triple = all, Ctrl+A/C/X/V. Masked: no copy/cut.
+// Password with reveal button: i.set_masked(!show, cx) in render + IconButton::new("eye", Icon::KeyRound).active(show).
+
+// NumberInput (events: Changed(f64) while typing/stepping, Committed(f64) clamped, on Enter/blur/step) - Up/Down keys + arrows step
+let n = cx.new(|cx| NumberInput::new(165., /*min*/ 1., /*max*/ 240., cx));
+n.update(cx, |n, cx| { n.set_step(1.); n.set_disabled(false, cx); n.set_value(state.refresh as f64, cx); /* ignored while user is typing */ });
+
+// Slider (events: Changed(f32) continuously, Committed(f32) on mouse-up / key press) - arrows, PageUp/Down, Home/End when focused
+let s = cx.new(|cx| Slider::new(65., 120., 80., cx).step(1.).label_width(px(44.)));   // .no_label()
+s.update(cx, |s, cx| { s.set_value_silent(90.); s.set_disabled(false, cx); });
+
+// Select (event: Changed(SharedString value)); popup opens below/above, Up/Down/Enter/Esc/Space, closes on outside click
+let m = cx.new(|cx| Select::new([("0", "Windowed"), ("1", "Fullscreen")], cx).placeholder("Choose..."));   // .momentary() for "Choose preset"
+m.update(cx, |m, cx| { m.set_selected(Some("1"), cx); m.set_options([("a", "A")], cx); m.set_disabled(false, cx); });
+
+// LogList (virtualised; follows the tail while at bottom; click a row + Ctrl+C copies it)
+let log = cx.new(|cx| LogList::new(cx));                       // .max_lines(5000) default cap
+log.update(cx, |l, cx| l.push(LogLevel::from_category("Success"), "message", cx));   // Info/Success/Warning/Error; extend(..), clear(cx)
+div().h(px(180.)).child(log.clone());                           // needs a bounded height;  log.read(cx).text() / .copy_all(cx)
+
+// ToastHost: create once, add as LAST child of a `.relative()` root; errors stay 8 s, others 4 s, max 4 visible
+let toasts = cx.new(|_| ToastHost::new());  root.child(toasts.clone());
+toasts.update(cx, |t, cx| t.success("Gamertag updated", cx));  // info / success / warning / error / push(ToastKind, msg, cx)
+
+// DirBrowser (modal; no fs access: you answer Navigate with core's `browse` op)
+let b = cx.new(|cx| DirBrowser::new("Select Game Directory", "Choose the folder that contains BlackOps3.exe.", "Use Selected Folder", cx)
+                        .require_game_executable(true));         // confirm enabled only when BrowseData.has_game_executable
+cx.subscribe(&b, |this, b, ev: &DirBrowserEvent, cx| match ev {
+    DirBrowserEvent::Navigate(path) => { /* run core browse(path) (empty = default), then: */
+                                         b.update(cx, |b, cx| b.set_data(BrowseData { path, parent, has_game_executable, roots, shortcuts, entries }, cx)); /* or b.set_error("..", cx) */ }
+    DirBrowserEvent::Select(path) => { /* use it; close */ }   DirBrowserEvent::Cancel => { /* close */ }
+}).detach();
+b.update(cx, |b, cx| b.navigate("", cx));                      // when opening
+root.when(open, |d| d.child(b.clone()));                        // last child of a `.relative()` root
+```
+
+## Overlays / scrolling
+
+```rust
+Dialog::new("id").title("Copy this").description("..").width(px(480.)).child(body).footer(Button::new(..)).footer(Button::new(..).primary())
+    .on_close(|w, cx| ..)             // Esc, backdrop click, X; .no_close_button()
+confirm_dialog("id", "Reset to stock?", "message", "Reset", /*destructive*/ true, on_confirm, on_cancel)   // returns a Dialog
+// Dialogs/DirBrowser/ToastHost: add as the LAST child of a `.relative()` root so they paint on top (deferred, priority 10/20).
+ScrollArea::new("id").gap(px(12.)).child(..)       // scrolling column + visible draggable scrollbar; give it a bounded height (flex_1().min_h_0())
+Scrollbar::new("bar", scroll_handle)               // overlay for your own scroll container/uniform_list; see log_list.rs
+```
+
+## Gotchas learned while building the kit
+
+* An `absolute()` child with `size_full()` is positioned at the parent's *content* box (inside padding/border), so a bounds-recording `canvas`
+  inside a padded/bordered element reports shifted bounds. Use `.absolute().inset_0()` (select.rs, slider.rs).
+* `RenderOnce` widgets get focus for free via `.tab_index(0)` on a `Stateful<Div>` (no FocusHandle needed); a focused element with `on_click`
+  also fires it on Enter/Space. `.focus(|s| ..)` styles the focused state.
+* Per-element state in a `RenderOnce` widget: `window.use_keyed_state("key", cx, |_, cx| ..)` (see ScrollArea, Dialog).
+* `Task`/`Subscription` fields are dropped with the entity (no leaks): ToastHost keeps each auto-dismiss timer in its toast, TextInput/Select keep the blur
+  subscription (registered lazily in `render` because `new` has no `Window`).
+* Popups: `deferred(anchored().position(window_point).anchor(..).child(..)).with_priority(n)` with an explicit window-space position.
+* No dep on gpui-component; do not add one.

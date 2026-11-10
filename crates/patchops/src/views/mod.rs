@@ -2,11 +2,13 @@
 
 mod about;
 mod dashboard;
+pub mod gallery;
 mod logs;
 mod tasks;
 
 pub use about::AboutView;
 pub use dashboard::DashboardView;
+pub use gallery::GalleryView;
 pub use logs::LogsView;
 pub use tasks::TasksView;
 

@@ -24,7 +24,7 @@ impl LogsView {
 
 impl Render for LogsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let t = cx.theme().clone();
+        let t = *cx.theme();
         let len = self.shared.log_len();
         let mono = t.font_mono;
         let (text, muted) = (t.text, t.text_muted);

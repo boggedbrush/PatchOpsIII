@@ -14,7 +14,7 @@ struct SecondWindow;
 
 impl Render for SecondWindow {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let t = cx.theme().clone();
+        let t = *cx.theme();
         page(&t).child(heading(&t, "Second window")).child("Separate OS window, same entity world.")
     }
 }
@@ -34,7 +34,7 @@ fn open_second_window(cx: &mut App) {
 
 impl Render for AboutView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let t = cx.theme().clone();
+        let t = *cx.theme();
         page(&t)
             .child(heading(&t, "About"))
             .child(format!("patchops-core {}", patchops_core::version()))
