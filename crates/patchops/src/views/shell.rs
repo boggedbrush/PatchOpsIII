@@ -447,13 +447,14 @@ impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         crate::views::trace_first_render();
         let t = *cx.theme();
-        let (nav, has_state, boot, error, browser, toasts) = {
+        let (nav, has_state, boot, error, legacy, browser, toasts) = {
             let c = self.c.read(cx);
             (
                 c.nav(),
                 c.state().is_some(),
                 c.boot_status().clone(),
                 c.error().cloned(),
+                c.legacy_notice().cloned(),
                 c.browser().cloned(),
                 c.toasts().clone(),
             )
@@ -504,7 +505,20 @@ impl Render for Shell {
                 .pb(px(PAD))
                 .child(self.directory_row(cx))
                 .when_some(error, |d, msg| {
+                    let c = c.clone();
                     d.child(Alert::error(msg).on_dismiss(move |_, _, cx| c.update(cx, |c, cx| c.dismiss_error(cx))))
+                })
+                .when_some(legacy, |d, msg| {
+                    let (c1, c2) = (c.clone(), c.clone());
+                    d.child(
+                        Alert::warning(msg)
+                            .action(
+                                Button::new("legacy-open-apps", "Open Apps settings")
+                                    .small()
+                                    .on_click(move |_, _, cx| c1.update(cx, |c, cx| c.open_url(crate::state::APPS_SETTINGS_URI, cx))),
+                            )
+                            .on_dismiss(move |_, _, cx| c2.update(cx, |c, cx| c.dismiss_legacy_notice(cx))),
+                    )
                 })
                 .child(
                     div()

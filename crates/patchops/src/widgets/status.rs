@@ -279,6 +279,7 @@ pub struct Alert {
     message: SharedString,
     tone: Tone,
     on_dismiss: Option<super::ClickFn>,
+    action: Option<AnyElement>,
 }
 
 impl Alert {
@@ -287,18 +288,24 @@ impl Alert {
             message: message.into(),
             tone: Tone::Danger,
             on_dismiss: None,
+            action: None,
         }
     }
-    #[allow(dead_code)] // kit API
     pub fn warning(message: impl Into<SharedString>) -> Self {
         Self {
             message: message.into(),
             tone: Tone::Warn,
             on_dismiss: None,
+            action: None,
         }
     }
     pub fn on_dismiss(mut self, f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
         self.on_dismiss = Some(Box::new(f));
+        self
+    }
+    /// A trailing control (e.g. a small button) before the dismiss X.
+    pub fn action(mut self, el: impl IntoElement) -> Self {
+        self.action = Some(el.into_any_element());
         self
     }
 }
@@ -328,6 +335,7 @@ impl RenderOnce for Alert {
             .text_color(fg)
             .child(icon(Icon::TriangleAlert).size(px(16.)).text_color(fg))
             .child(div().flex_1().min_w_0().child(self.message))
+            .children(self.action)
             .when_some(self.on_dismiss, |d, f| {
                 d.child(
                     div()

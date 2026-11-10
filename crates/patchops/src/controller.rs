@@ -145,6 +145,8 @@ pub struct Controller {
     /// Download percent of the running network install `(busy key, percent)`.
     progress: Option<(&'static str, u8)>,
     error: Option<SharedString>,
+    /// "Older install found" strip text (`None` = nothing found or dismissed).
+    legacy_notice: Option<SharedString>,
     toasts: Entity<ToastHost>,
     logs: Entity<LogList>,
     last_error_log: Option<SharedString>,
@@ -221,6 +223,7 @@ impl Controller {
             refresh_again: false,
             progress: None,
             error: None,
+            legacy_notice: None,
             toasts,
             logs,
             last_error_log: None,
@@ -235,6 +238,7 @@ impl Controller {
         // Entries logged before the UI existed (settings migration, ...).
         this.push_logs(early, cx);
         this.boot(cx);
+        this.detect_legacy(cx);
         this
     }
 
@@ -272,6 +276,40 @@ impl Controller {
 
     pub fn error(&self) -> Option<&SharedString> {
         self.error.as_ref()
+    }
+
+    pub fn legacy_notice(&self) -> Option<&SharedString> {
+        self.legacy_notice.as_ref()
+    }
+
+    /// Look for a leftover old Windows install off the UI thread (registry read; `None` elsewhere).
+    fn detect_legacy(&mut self, cx: &mut Context<Self>) {
+        let core = self.core.clone();
+        cx.spawn(async move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let found = cx.background_executor().spawn(async move { crate::state::detect_legacy_notice(&core) }).await;
+            if let Some(text) = found {
+                this.update(cx, |this, cx| {
+                    this.legacy_notice = Some(text.into());
+                    cx.notify();
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    /// Hide the strip and remember that for next time (the only settings write this feature makes).
+    pub fn dismiss_legacy_notice(&mut self, cx: &mut Context<Self>) {
+        self.legacy_notice = None;
+        cx.notify();
+        let core = self.core.clone();
+        cx.background_executor()
+            .spawn(async move {
+                let _ = core.update_settings(|s| {
+                    s.0.insert(crate::state::LEGACY_NOTICE_DISMISSED_KEY.into(), serde_json::Value::Bool(true));
+                });
+            })
+            .detach();
     }
 
     pub fn nav(&self) -> Nav {
