@@ -416,7 +416,9 @@ fn t7_mode(game: &std::path::Path) -> String {
         return "Enhanced".into();
     }
     let exe = crate::game::find_executable(game);
-    let hash = exe.as_deref().and_then(crate::hash::file_sha256);
+    // Same signature-validated cache the `exeSwap` state builder uses, so one `status` hashes the
+    // executable at most once (and an unchanged exe costs one `stat`).
+    let hash = exe.as_deref().and_then(crate::enhanced::hashcache::file_sha256_cached);
     if hash.as_deref() == Some(super::enhanced::DEFAULT_STEAM_EXE_SHA256) || crate::game::read_exe_variant(game).as_deref() == Some("default") {
         "Default".into()
     } else if exe.is_some() {
