@@ -24,7 +24,7 @@ use crate::controller::Controller;
 use crate::theme::ActiveTheme;
 use crate::views::{self, PANEL_GAP};
 use crate::widgets::{
-    Button, Chip, Collapsible, Group, Icon, NumberInput, NumberInputEvent, Panel, ProgressBar, ScrollArea, Select,
+    Button, Chip, Collapsible, Group, Icon, NumberInput, NumberInputEvent, ProgressBar, ScrollArea, Select,
     SelectEvent, SettingRow, Slider, SliderEvent, StatusPill, SubTabs, TextInput, TextInputEvent, Toggle, Tone,
     tooltip,
 };
@@ -73,7 +73,7 @@ fn tile_row(cx: &Context<GraphicsView>, children: impl IntoIterator<Item = AnyEl
         .items_center()
         .gap_x(px(10.))
         .gap_y(px(6.))
-        .min_h(px(t.row_h))
+        .min_h(px(50.))
         .min_w_0()
         .px(px(14.))
         .py(px(5.))
@@ -84,6 +84,11 @@ fn tile_row(cx: &Context<GraphicsView>, children: impl IntoIterator<Item = AnyEl
         .text_size(px(t.font_md))
         .text_color(t.text_strong)
         .children(children)
+}
+
+/// A column of the "groups" row: stretches to the row's height so both boxes share a bottom edge.
+fn group_cell(min_w: f32, group: impl IntoElement) -> gpui::Div {
+    views::fr(div(), 1.0).min_w(px(min_w)).flex().flex_col().child(group)
 }
 
 pub struct GraphicsView {
@@ -349,8 +354,8 @@ impl GraphicsView {
         let (g, a) = (&state.graphics, &state.advanced);
         // Legacy `.graphics-quick-grid`: auto-fit columns of at least 220px; each tile is a bordered
         // row with a label column (min 88px) and a control that fills the rest.
-        let tile = |label: &'static str, ctl: AnyElement| {
-            tile_row(cx, [div().flex_none().whitespace_nowrap().child(label).into_any_element(), div().flex_1().min_w(px(96.)).child(ctl).into_any_element()])
+        let tile = |label: &'static str, ratio: f32, ctl: AnyElement| {
+            tile_row(cx, [views::fr(div(), ratio).min_w(px(if ratio < 0.4 { 52. } else { 88. })).child(label).into_any_element(), views::fr(div(), 1.0).min_w(px(96.)).flex().flex_col().child(ctl).into_any_element()])
                 .flex_1()
                 .min_w(px(230.))
         };
@@ -358,10 +363,10 @@ impl GraphicsView {
             .flex()
             .flex_wrap()
             .gap(px(PANEL_GAP))
-            .child(tile("Preset", self.preset.clone().into_any_element()))
-            .child(tile("Display Mode", self.display.clone().into_any_element()))
-            .child(tile("Resolution", self.resolution.clone().into_any_element()))
-            .child(tile("Refresh Rate", self.refresh.clone().into_any_element()));
+            .child(tile("Preset", 0.3, self.preset.clone().into_any_element()))
+            .child(tile("Display Mode", 0.5, self.display.clone().into_any_element()))
+            .child(tile("Resolution", 0.5, self.resolution.clone().into_any_element()))
+            .child(tile("Refresh Rate", 0.5, self.refresh.clone().into_any_element()));
 
         let cfg_toggle = |id: &'static str, on: bool, cid: ConfigId| {
             let c = c.clone();
@@ -369,33 +374,41 @@ impl GraphicsView {
                 c.update(cx, |c, cx| c.run(Action::SetConfig(cid, ConfigInput::Bool(v)), cx))
             })
         };
+        // Number / slider rows: the control fills its column. Toggle rows: the switch sits next to
+        // the label (legacy `ToggleRow`).
         let row = |label: &'static str, ctl: gpui::AnyElement, last: bool| {
-            let r = SettingRow::new(label).control(ctl);
+            let r = SettingRow::new(label).control(ctl).control_start();
             if last { r.last() } else { r }
         };
-        let w = |w: f32, e: gpui::AnyElement| div().w(px(w)).child(e).into_any_element();
-        let slider_w = |e: gpui::AnyElement| div().w(px(230.)).child(e).into_any_element();
+        let fill_row = |label: &'static str, ratio: f32, ctl: gpui::AnyElement, last: bool| {
+            let r = SettingRow::new(label).control(ctl).fill(ratio);
+            if last { r.last() } else { r }
+        };
 
         let performance = Group::new("Performance")
-            .child(row("Max FPS", w(110., self.max_fps.clone().into_any_element()), false))
+            .child(fill_row("Max FPS", 0.45, self.max_fps.clone().into_any_element(), false))
             .child(row("Vertical sync", cfg_toggle("vsync", g.vsync, ConfigId::Vsync).into_any_element(), false))
             .child(row("FPS counter", cfg_toggle("drawfps", g.draw_fps, ConfigId::DrawFps).into_any_element(), true));
         let quality = Group::new("Quality")
-            .child(row("Render Resolution", slider_w(self.render_res.clone().into_any_element()), false))
-            .child(row("Field of View", slider_w(self.fov.clone().into_any_element()), true));
+            .child(fill_row("Render Resolution", 0.34, self.render_res.clone().into_any_element(), false))
+            .child(fill_row("Field of View", 0.34, self.fov.clone().into_any_element(), true));
+        // Legacy `.graphics-settings-shell`: rows `auto 1fr auto`, so the groups take the free height
+        // while the drawer is closed (open: natural heights, the page scrolls).
+        let grow = !self.advanced_open;
         let groups = div()
             .flex()
             .flex_wrap()
             .gap(px(PANEL_GAP))
-            .items_start()
-            .child(div().flex_1().min_w(px(340.)).child(performance))
-            .child(div().flex_1().min_w(px(340.)).child(quality));
+            .when(grow, |d| d.flex_grow().flex_shrink_0())
+            .child(group_cell(340., performance))
+            .child(group_cell(340., quality));
 
         let c2 = c.clone();
         let c3 = c.clone();
         let target = a.vram_target;
         let advanced = Collapsible::new("gfx-advanced", "Advanced", self.advanced_open)
             .detail("Config, CPU, latency, and VRAM controls")
+            .chevron_end()
             .on_toggle(move |open, _, cx| this.update(cx, |v, cx| {
                 v.advanced_open = open;
                 cx.notify();
@@ -403,7 +416,7 @@ impl GraphicsView {
             .child(row("Smooth framerate", cfg_toggle("smooth", a.smooth_framerate, ConfigId::SmoothFramerate).into_any_element(), false))
             .child(row("Expose hidden graphics", cfg_toggle("unlock", a.unlock_options, ConfigId::UnlockOptions).into_any_element(), false))
             .child(row("Reduce CPU pressure", cfg_toggle("cpu", a.reduce_cpu, ConfigId::ReduceCpu).into_any_element(), false))
-            .child(row("Frame latency", w(110., self.frame_latency.clone().into_any_element()), false))
+            .child(fill_row("Frame latency", 0.45, self.frame_latency.clone().into_any_element(), false))
             .child(row(
                 "Limit VRAM target",
                 Toggle::new("vram-limit", a.vram_limited)
@@ -413,7 +426,7 @@ impl GraphicsView {
                     .into_any_element(),
                 false,
             ))
-            .child(row("VRAM target %", w(110., self.vram.clone().into_any_element()), false))
+            .child(fill_row("VRAM target %", 0.45, self.vram.clone().into_any_element(), false))
             .child(row(
                 "Lock config.ini",
                 Toggle::new("readonly", a.config_readonly)
@@ -422,9 +435,14 @@ impl GraphicsView {
                 true,
             ));
 
-        Panel::new("Graphics Settings").child(
-            div().flex().flex_col().gap(px(PANEL_GAP)).child(quick).child(groups).child(advanced),
-        )
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(PANEL_GAP))
+            .when(grow, |d| d.flex_grow().flex_shrink_0())
+            .child(quick)
+            .child(groups)
+            .child(advanced)
     }
 
     fn dxvk_tab(&self, cx: &mut Context<Self>, state: &State) -> impl IntoElement {
@@ -434,20 +452,28 @@ impl GraphicsView {
         let progress = ctl.progress("dxvk-install");
         let (b_uninstall, b_apply) = (ctl.is_busy("dxvk-uninstall"), ctl.is_busy("dxvk-config"));
         let this = cx.entity();
+        let t = *cx.theme();
         let d = &self.draft;
         let dx = &state.dxvk;
 
         let pill = |label: &'static str, value: &'static str, ok: bool| {
-            div().flex_1().min_w(px(190.)).child(StatusPill::new(label, value, Tone::from_ok(ok)))
+            views::fr(div(), 1.0).min_w(px(250.)).child(
+                StatusPill::new(label, value, Tone::from_ok(ok)).inline(true).min_h(58.),
+            )
         };
-        let actions = div()
-            .flex_1()
-            .min_w(px(330.))
+        let actions = views::fr(div(), 1.0)
+            .min_w(px(360.))
+            .min_h(px(58.))
             .flex()
             .flex_wrap()
             .items_center()
             .gap(px(8.))
-            .child(div().flex_1().min_w(px(100.)).child(
+            .p(px(10.))
+            .border_1()
+            .border_color(t.border)
+            .rounded(px(t.radius - 4.))
+            .bg(gpui::white().opacity(0.03))
+            .child(div().flex_1().min_w(px(90.)).child(
                 Button::new("dxvk-install", "Install")
                     .icon(Icon::Download)
                     .small()
@@ -481,7 +507,6 @@ impl GraphicsView {
         let bar = div()
             .flex()
             .flex_wrap()
-            .items_center()
             .gap(px(PANEL_GAP))
             .child(pill("Status", if dx.installed { "Installed" } else { "Not installed" }, dx.installed))
             .child(pill("dxvk.conf", if dx.conf_exists { "Configured" } else { "Missing" }, dx.conf_exists))
@@ -510,7 +535,7 @@ impl GraphicsView {
                     .child(div().w(px(90.)).child(self.dx_threads.clone()))
                     .child(
                         div().id("dx-auto-tip").tooltip(tooltip(auto_tip)).child(
-                            Chip::new("dx-auto", "Recommended: Auto (0)").active(threads == 0).on_click(move |_, _, cx| {
+                            Chip::new("dx-auto", "Recommended: Auto (0)").height(30.).active(threads == 0).on_click(move |_, _, cx| {
                                 t1.update(cx, |v, cx| {
                                     v.draft.num_compiler_threads = 0;
                                     v.push_draft(cx);
@@ -524,7 +549,7 @@ impl GraphicsView {
                             None => "Logical CPU cores detected".to_string(),
                         };
                         div().id("dx-manual-tip").tooltip(tooltip(tip)).child(
-                            Chip::new("dx-manual", format!("Manual: {n}")).active(threads == n && n != 0).on_click(
+                            Chip::new("dx-manual", format!("Manual: {n}")).height(30.).dim(true).active(threads == n && n != 0).on_click(
                                 move |_, _, cx| {
                                     t2.update(cx, |v, cx| {
                                         v.draft.num_compiler_threads = n;
@@ -537,14 +562,17 @@ impl GraphicsView {
                     .into_any_element(),
             ],
         );
+        // Legacy `.dxvk-quick-grid` is the shell's `1fr` row: the tiles take the free height.
         let quick = div()
             .flex()
             .flex_wrap()
             .gap(px(PANEL_GAP))
-            .child(div().flex_1().min_w(px(280.)).child(
-                SettingRow::new("Preset").control(div().w(px(150.)).child(self.dx_preset.clone())).boxed(),
+            .flex_grow()
+            .flex_shrink_0()
+            .child(views::fr(div(), 1.0).min_w(px(280.)).flex().flex_col().child(
+                SettingRow::new("Preset").control(self.dx_preset.clone()).fill(0.5).boxed(),
             ))
-            .child(div().flex_1().min_w(px(400.)).child(threads_row));
+            .child(views::fr(div(), 1.0).min_w(px(400.)).flex().flex_col().child(threads_row.flex_grow()));
 
         let toggle = |id: &'static str, on: bool, set: fn(&mut DxvkSettings, bool)| {
             let this = this.clone();
@@ -556,7 +584,11 @@ impl GraphicsView {
             })
         };
         let row = |label: &'static str, ctl: gpui::AnyElement, last: bool| {
-            let r = SettingRow::new(label).control(ctl);
+            let r = SettingRow::new(label).control(ctl).control_start();
+            if last { r.last() } else { r }
+        };
+        let fill_row = |label: &'static str, ratio: f32, ctl: gpui::AnyElement, last: bool| {
+            let r = SettingRow::new(label).control(ctl).fill(ratio);
             if last { r.last() } else { r }
         };
         let shader = Group::new("Shader Pipeline")
@@ -564,29 +596,28 @@ impl GraphicsView {
             .child(row("GPL async cache", toggle("dx-gpl", d.gpl_async_cache, |s, v| s.gpl_async_cache = v).into_any_element(), false))
             .child(row("FPS/GPU HUD", toggle("dx-hud", d.hud_enabled, |s, v| s.hud_enabled = v).into_any_element(), true));
         let pacing = Group::new("Frame Pacing")
-            .child(row("Frame rate cap", div().w(px(230.)).child(self.dx_cap.clone()).into_any_element(), false))
-            .child(row("Frame latency", div().w(px(110.)).child(self.dx_latency.clone()).into_any_element(), false))
-            .child(row("Tear Free", div().w(px(130.)).child(self.dx_tear.clone()).into_any_element(), true));
+            .child(fill_row("Frame rate cap", 0.34, self.dx_cap.clone().into_any_element(), false))
+            .child(fill_row("Frame latency", 0.45, div().flex().flex_col().w_full().max_w(px(240.)).child(self.dx_latency.clone()).into_any_element(), false))
+            .child(fill_row("Tear Free", 0.45, self.dx_tear.clone().into_any_element(), true));
         let groups = div()
             .flex()
             .flex_wrap()
-            .items_start()
             .gap(px(PANEL_GAP))
-            .child(div().flex_1().min_w(px(340.)).child(shader))
-            .child(div().flex_1().min_w(px(340.)).child(pacing));
+            .child(group_cell(340., shader))
+            .child(group_cell(340., pacing));
 
-        Panel::new("DXVK-GPLAsync").child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(PANEL_GAP))
-                .child(bar)
-                .when(installing, |d| {
-                    d.child(ProgressBar::new("dxvk-progress").value(progress.map(|p| f32::from(p) / 100.)))
-                })
-                .child(quick)
-                .child(groups),
-        )
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(PANEL_GAP))
+            .flex_grow()
+            .flex_shrink_0()
+            .child(bar)
+            .when(installing, |d| {
+                d.child(ProgressBar::new("dxvk-progress").value(progress.map(|p| f32::from(p) / 100.)))
+            })
+            .child(quick)
+            .child(groups)
     }
 }
 
@@ -594,6 +625,7 @@ impl Render for GraphicsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let Some(state) = self.state(cx) else { return div().into_any_element() };
         let this = cx.entity();
+        let heading = if self.tab == 0 { "Graphics Settings" } else { "DXVK-GPLAsync" };
         let body = if self.tab == 0 {
             self.graphics_tab(cx, &state).into_any_element()
         } else {
@@ -601,7 +633,7 @@ impl Render for GraphicsView {
         };
         div().size_full().flex().flex_col().min_h_0().child(ScrollArea::new(("graphics-scroll", self.tab))
             .gap(px(PANEL_GAP))
-            .child(div().flex_none().child(SubTabs::new("graphics-tabs", ["Graphics Settings", "DXVK"]).selected(self.tab).on_change(
+            .child(div().flex_none().child(SubTabs::new("graphics-tabs", ["Graphics Settings", "DXVK"]).full_width().selected(self.tab).on_change(
                 move |ix, _, cx| {
                     this.update(cx, |v, cx| {
                         v.tab = ix;
@@ -609,7 +641,15 @@ impl Render for GraphicsView {
                     })
                 },
             )))
-            .child(div().flex_none().child(body)))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_grow()
+                    .flex_shrink_0()
+                    .child(div().flex_none().child(views::heading(cx, heading)))
+                    .child(body),
+            ))
             .into_any_element()
     }
 }

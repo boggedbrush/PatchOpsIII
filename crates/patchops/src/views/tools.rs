@@ -23,13 +23,16 @@ const METRIC_OK: u32 = 0x24ff66;
 
 pub struct ToolsView {
     c: Entity<Controller>,
+    /// Where core keeps its write-once first copy of Steam's `localconfig.vdf` / `config.vdf`.
+    originals: String,
     _sub: Subscription,
 }
 
 impl ToolsView {
     pub fn new(controller: Entity<Controller>, cx: &mut Context<Self>) -> Self {
         let _sub = views::watch(&controller, cx);
-        Self { c: controller, _sub }
+        let originals = patchops_core::paths::Paths::from_env().originals.to_string_lossy().into_owned();
+        Self { c: controller, originals, _sub }
     }
 }
 
@@ -52,7 +55,6 @@ fn tool_card(t: Theme, title: &'static str, glyph: Icon, body: impl IntoIterator
                 .items_center()
                 .gap(px(9.))
                 .text_size(px(t.font_md))
-                .font_weight(FontWeight::BOLD)
                 .text_color(t.text)
                 .child(icon(glyph).text_color(t.text_muted))
                 .child(title),
@@ -63,6 +65,19 @@ fn tool_card(t: Theme, title: &'static str, glyph: Icon, body: impl IntoIterator
 /// Column of `ToolMetric` rows (legacy `.tool-metric-list`).
 fn metric_list() -> Div {
     div().flex().flex_col().gap(px(8.)).min_w_0()
+}
+
+/// A metric whose value is free text (a path): label column, then the value, wrapping instead of truncating.
+fn metric_text(t: Theme, label: &'static str, value: String, label_w: f32) -> impl IntoElement {
+    div()
+        .flex()
+        .items_start()
+        .gap(px(10.))
+        .min_w_0()
+        .text_size(px(t.font_sm))
+        .text_color(t.text_muted)
+        .child(div().flex_none().min_w(px(label_w)).font_weight(FontWeight::BOLD).child(label))
+        .child(div().flex_1().min_w_0().font_weight(FontWeight::BOLD).text_color(t.text).child(value))
 }
 
 /// Legacy `ToolMetric`: label column (at least `label_w` px) then the value, green when `ok`.
@@ -176,15 +191,16 @@ impl Render for ToolsView {
                     "Status",
                     if mod_dir_ok { "Configured".into() } else { "Missing".into() },
                     mod_dir_ok,
-                    90.,
+                    130.,
                 ))
                 .child(metric(
                     t,
                     "Directory",
                     if mod_dir_ok { "Ready".into() } else { "Not found".into() },
                     mod_dir_ok,
-                    90.,
+                    130.,
                 ))
+                .child(metric_text(t, "Steam config backups", self.originals.clone(), 130.))
                 .into_any_element()],
         );
 
@@ -284,7 +300,7 @@ impl Render for ToolsView {
         let grid = div()
             .grid()
             .grid_cols(if two_cols { 2 } else { 1 })
-            .gap(px(12.))
+            .gap(px(13.))
             .items_start()
             .p(px(14.))
             .child(system)
