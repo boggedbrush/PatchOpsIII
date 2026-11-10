@@ -7,6 +7,8 @@ description = "Pure application logic for PatchOpsIII (no GUI dependencies)"
 
 [dependencies]
 flate2 = { version = "1.1.11", default-features = false, features = ["rust_backend"] }
+crc32fast = "1.5.5"
+ring = { version = "0.17.14", default-features = false, features = ["alloc"] }
 serde.workspace = true
 serde_json = { workspace = true, features = ["preserve_order"] }
 ureq = { version = "3.5.1", default-features = false, features = ["rustls"] }

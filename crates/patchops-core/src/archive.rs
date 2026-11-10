@@ -9,8 +9,8 @@
 //! * limits on the number of members and the total unpacked size (zip-bomb guard), enforced on
 //!   the bytes actually written, not on the sizes the headers claim.
 //!
-//! Zip reading reuses the dependency-free [`crate::enhanced::zip`] reader (stored + deflate, CRC
-//! checked). Gzip uses `flate2` (pure-Rust miniz_oxide backend); the tar parser is local
+//! Zip reading reuses the [`crate::enhanced::zip`] reader (stored + deflate, CRC
+//! checked). Inflate/CRC use `flate2` + `crc32fast`; gzip uses `flate2` (pure-Rust miniz_oxide backend); the tar parser is local
 //! (ustar, GNU long names, pax `path`/`linkpath`/`size`).
 //!
 //! Errors are plain `String`s (the legacy code surfaced Python exception text).
@@ -261,6 +261,12 @@ fn pad(size: u64) -> u64 {
     (512 - size % 512) % 512
 }
 
+/// Size of a member's data including block padding (saturating: a hostile size then simply runs
+/// into end-of-archive instead of overflowing).
+fn padded(size: u64) -> u64 {
+    size.saturating_add(pad(size))
+}
+
 /// pax extended header records: `"<len> <key>=<value>\n"`.
 fn parse_pax(data: &[u8]) -> Vec<(String, String)> {
     let mut out = Vec::new();
@@ -268,7 +274,7 @@ fn parse_pax(data: &[u8]) -> Vec<(String, String)> {
     while p < data.len() {
         let Some(sp) = data[p..].iter().position(|&c| c == b' ') else { break };
         let Ok(len) = String::from_utf8_lossy(&data[p..p + sp]).parse::<usize>() else { break };
-        if len == 0 || p + len > data.len() || sp + 1 >= len {
+        if len == 0 || len > data.len() - p || sp + 1 >= len {
             break;
         }
         let rec = &data[p + sp + 1..p + len];
@@ -396,7 +402,7 @@ pub fn extract_tar(mut reader: impl Read, dest: &Path, limits: Limits) -> Result
         let rel = match safe_relative_path(&m.name)? {
             Some(r) => r,
             None => {
-                skip(&mut reader, m.size + pad(m.size)).map_err(|e| format!("Truncated tar archive: {e}"))?;
+                skip(&mut reader, padded(m.size)).map_err(|e| format!("Truncated tar archive: {e}"))?;
                 continue;
             }
         };
@@ -405,7 +411,7 @@ pub fn extract_tar(mut reader: impl Read, dest: &Path, limits: Limits) -> Result
             Kind::Dir => {
                 let target = prepare_target(dest, &rel)?;
                 fs::create_dir_all(&target).map_err(|e| io_text(&e, &target))?;
-                skip(&mut reader, m.size + pad(m.size)).map_err(|e| format!("Truncated tar archive: {e}"))?;
+                skip(&mut reader, padded(m.size)).map_err(|e| format!("Truncated tar archive: {e}"))?;
             }
             Kind::Symlink => {
                 let parent = rel.parent().unwrap_or(Path::new(""));
@@ -414,7 +420,7 @@ pub fn extract_tar(mut reader: impl Read, dest: &Path, limits: Limits) -> Result
                 clear_existing_file(&target)?;
                 make_symlink(&m.link, &target)?;
                 stats.files += 1;
-                skip(&mut reader, m.size + pad(m.size)).map_err(|e| format!("Truncated tar archive: {e}"))?;
+                skip(&mut reader, padded(m.size)).map_err(|e| format!("Truncated tar archive: {e}"))?;
             }
             Kind::Hardlink => {
                 let src_rel = safe_relative_path(&m.link)
@@ -430,7 +436,7 @@ pub fn extract_tar(mut reader: impl Read, dest: &Path, limits: Limits) -> Result
                 clear_existing_file(&target)?;
                 fs::hard_link(&src, &target).map_err(|e| io_text(&e, &target))?;
                 stats.files += 1;
-                skip(&mut reader, m.size + pad(m.size)).map_err(|e| format!("Truncated tar archive: {e}"))?;
+                skip(&mut reader, padded(m.size)).map_err(|e| format!("Truncated tar archive: {e}"))?;
             }
             Kind::File => {
                 if m.size > total_left {
@@ -682,5 +688,38 @@ mod tests {
         fs::write(dir.join("notzip.zip"), b"hello").unwrap();
         assert!(extract_zip(&dir.join("notzip.zip"), &dir.join("l3"), Limits::default()).is_err());
         let _ = fs::remove_dir_all(dir);
+    }
+
+    fn set_size_base256(tar: &mut [u8], size: u64) {
+        tar[124..136].fill(0);
+        tar[124] = 0x80;
+        tar[128..136].copy_from_slice(&size.to_be_bytes());
+        tar[148..156].fill(b' ');
+        let sum: u64 = tar[..512].iter().map(|&c| u64::from(c)).sum();
+        tar[148..156].copy_from_slice(format!("{sum:06o}\0 ").as_bytes());
+    }
+
+    #[test]
+    fn tar_hostile_pax_and_sizes_error_instead_of_panicking() {
+        let dir = tmp("tar-hostile");
+        // pax record whose declared length wraps `p + len` (regression: slice panic).
+        for rec in ["18446744073709551615 path=x\n", "18446744073709551610 a=b\n", "99999999999999999999 a=b\n", "2 \n"] {
+            let pax = TarMember { typeflag: b'x', ..TarMember::file("pax", rec.as_bytes()) };
+            let data = tar(&[pax, TarMember::file("a", b"1")]);
+            let _ = extract_tar(&data[..], &dir.join("p"), Limits::default()); // must not panic
+        }
+        // Sizes near u64::MAX: `size + padding` overflowed for dir/symlink/hardlink/skipped members.
+        for member in [TarMember::dir("d/"), TarMember::symlink("l", "x"), TarMember::dir("./")] {
+            for size in [u64::MAX, u64::MAX - 100, u64::MAX - 511] {
+                let mut data = tar(&[member_clone(&member)]);
+                set_size_base256(&mut data, size);
+                assert!(extract_tar(&data[..], &dir.join("s"), Limits::default()).is_err(), "{size}");
+            }
+        }
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    fn member_clone<'a>(m: &TarMember<'a>) -> TarMember<'a> {
+        TarMember { name: m.name, typeflag: m.typeflag, link: m.link, data: m.data, mode: m.mode }
     }
 }

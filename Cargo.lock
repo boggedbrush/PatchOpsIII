@@ -3800,8 +3800,10 @@ dependencies = [
 name = "patchops-core"
 version = "1.3.4"
 dependencies = [
+ "crc32fast",
  "flate2",
  "libc",
+ "ring",
  "serde",
  "serde_json",
  "ureq",
