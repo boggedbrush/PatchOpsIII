@@ -408,7 +408,16 @@ impl Render for EnhancedView {
             .items_start()
             .gap(px(PANEL_GAP))
             .child(views::fr(div(), 1.35).min_w(px(420.)).child(source_card))
-            .child(views::fr(div(), 0.65).min_w(px(300.)).when(narrow, |d| d.w_full().flex_none()).child(help));
+            .child(if narrow {
+                // Stacked: the card takes its own line and the whole width (a percentage width does
+                // not resolve here, so use a full-row basis that may shrink to the container).
+                let mut d = div().flex().flex_col().min_w_0().flex_basis(px(cw)).child(help);
+                d.style().flex_grow = Some(1.0);
+                d.style().flex_shrink = Some(1.0);
+                d
+            } else {
+                views::fr(div(), 0.65).min_w(px(300.)).child(help)
+            });
 
         // ---- Install Details / Diagnostics ------------------------------------------------
         let install_path = match state.game_dir.as_deref().filter(|s| !s.is_empty()) {

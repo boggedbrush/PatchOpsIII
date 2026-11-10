@@ -4,17 +4,36 @@
 use gpui::{
     actions, anchored, canvas, deferred, div, point, prelude::*, px, App, Bounds, Context, Corner,
     CursorStyle, EventEmitter, FocusHandle, Focusable, FontWeight, KeyBinding, MouseButton,
-    MouseDownEvent, Pixels, Render, ScrollHandle, SharedString, Subscription, Window,
+    MouseDownEvent, Pixels, Render, ScrollHandle, SharedString, Subscription, TextRun, Window,
 };
 
 use super::icon::{icon, Icon};
 use super::scroll::Scrollbar;
+use super::ellipsis;
 use crate::theme::ActiveTheme;
 
 actions!(patchops_select, [Up, Down, Confirm, Cancel, Open]);
 const CONTEXT: &str = "PatchOpsSelect";
 const ROW_H: f32 = 32.0;
 const MAX_VISIBLE: usize = 8;
+/// Popup width beyond the widest label: list padding (2x3) + border (2) + row padding (2x10) +
+/// check mark and its gap (14 + 8) + scrollbar lane.
+const POPUP_CHROME: f32 = 6. + 2. + 20. + 22. + 6.;
+
+/// Width in px of `text` in the bold UI font at `size` (what the popup rows render).
+fn text_width(window: &Window, text: &SharedString, size: f32) -> f32 {
+    let mut font = window.text_style().font();
+    font.weight = FontWeight::BOLD;
+    let run = TextRun {
+        len: text.len(),
+        font,
+        color: gpui::black(),
+        background_color: None,
+        underline: None,
+        strikethrough: None,
+    };
+    f32::from(window.text_system().shape_line(text.clone(), px(size), &[run], None).width)
+}
 
 pub fn bind_keys(cx: &mut App) {
     let c = Some(CONTEXT);
@@ -217,6 +236,7 @@ impl Render for Select {
         let is_placeholder = self.selected.is_none();
         let list_h = px(ROW_H * self.options.len().min(MAX_VISIBLE) as f32 + 8.);
         let viewport_h = window.viewport_size().height;
+        let viewport_w = window.viewport_size().width;
 
         div()
             .key_context(CONTEXT)
@@ -269,7 +289,7 @@ impl Render for Select {
                                 .hover(move |s| s.bg(gpui::black().opacity(0.34)))
                         }
                     })
-                    .child(div().min_w_0().truncate().child(label))
+                    .child(div().flex_1().min_w_0().child(ellipsis(label)))
                     .child(
                         icon(Icon::ChevronDown)
                             .size(px(15.))
@@ -296,7 +316,12 @@ impl Render for Select {
                     ),
             )
             .when(self.open, |d| {
-                let width = self.bounds.size.width;
+                // At least as wide as the trigger, grown to the widest option (bold: the selected
+                // row is bold), bounded by the window.
+                let trigger_w = self.bounds.size.width;
+                let widest = self.options.iter().map(|o| text_width(window, &o.label, t.font_md)).fold(0f32, f32::max);
+                let want = px(widest + POPUP_CHROME);
+                let width = want.max(trigger_w).min((viewport_w - px(16.)).max(trigger_w));
                 // Place below the trigger, or above when there is not enough room below.
                 let below = viewport_h - self.bounds.bottom() - px(12.);
                 let above = self.bounds.top() - px(12.);
@@ -323,6 +348,7 @@ impl Render for Select {
                                 div()
                                     .occlude()
                                     .w(width)
+                                    .min_w(trigger_w)
                                     .on_mouse_down_out(cx.listener(|s, _, _, cx| s.close(cx)))
                                     .child(
                                         div()
@@ -374,8 +400,8 @@ impl Render for Select {
                                                                 ))
                                                                 .child(
                                                                     div()
-                                                                        .truncate()
-                                                                        .child(o.label.clone()),
+                                                                        .min_w_0()
+                                                                        .child(ellipsis(o.label.clone())),
                                                                 )
                                                                 .when(sel, |d| {
                                                                     d.child(

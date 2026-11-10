@@ -23,16 +23,13 @@ const METRIC_OK: u32 = 0x24ff66;
 
 pub struct ToolsView {
     c: Entity<Controller>,
-    /// Where core keeps its write-once first copy of Steam's `localconfig.vdf` / `config.vdf`.
-    originals: String,
     _sub: Subscription,
 }
 
 impl ToolsView {
     pub fn new(controller: Entity<Controller>, cx: &mut Context<Self>) -> Self {
         let _sub = views::watch(&controller, cx);
-        let originals = patchops_core::paths::Paths::from_env().originals.to_string_lossy().into_owned();
-        Self { c: controller, originals, _sub }
+        Self { c: controller, _sub }
     }
 }
 
@@ -67,18 +64,37 @@ fn metric_list() -> Div {
     div().flex().flex_col().gap(px(8.)).min_w_0()
 }
 
-/// A metric whose value is free text (a path): label column, then the value, wrapping instead of truncating.
-fn metric_text(t: Theme, label: &'static str, value: String, label_w: f32) -> impl IntoElement {
+/// A metric whose value is a path: one line showing the END of the path (the start is replaced by
+/// an ellipsis, like the directory browser's header), the full path in a tooltip.
+/// `value_px` is the width available to the value.
+fn metric_path(t: Theme, label: &'static str, path: &str, label_w: f32, value_px: f32) -> impl IntoElement {
+    let max_chars = ((value_px / (t.font_sm * 0.6)).floor() as usize).max(12);
     div()
         .flex()
-        .items_start()
+        .items_center()
         .gap(px(10.))
         .min_w_0()
         .text_size(px(t.font_sm))
         .text_color(t.text_muted)
         .child(div().flex_none().min_w(px(label_w)).font_weight(FontWeight::BOLD).child(label))
-        .child(div().flex_1().min_w_0().font_weight(FontWeight::BOLD).text_color(t.text).child(value))
+        .child(
+            div()
+                .id("metric-path")
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .font_weight(FontWeight::BOLD)
+                .text_color(t.text)
+                .tooltip(crate::widgets::tooltip(path.to_string()))
+                .child(crate::widgets::dir_browser::shorten_start(path, max_chars)),
+        )
 }
+
+/// Label column width of the metric rows (legacy `.tool-metric`).
+const LABEL_W: f32 = 90.;
+/// Card chrome around a metric row: padding + border + the label/value gap.
+const CARD_CHROME: f32 = 2. * 14. + 2. + 10.;
 
 /// Legacy `ToolMetric`: label column (at least `label_w` px) then the value, green when `ok`.
 fn metric(t: Theme, label: &'static str, value: String, ok: bool, label_w: f32) -> impl IntoElement {
@@ -104,7 +120,9 @@ fn metric(t: Theme, label: &'static str, value: String, ok: bool, label_w: f32) 
 impl Render for ToolsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = *cx.theme();
-        let two_cols = views::content_width(window) >= 760.;
+        let cw = views::content_width(window);
+        let two_cols = cw >= 760.;
+        let card_w = if two_cols { (cw - PANEL_GAP) / 2. } else { cw };
         let ctl = self.c.read(cx);
         let Some(state) = ctl.state().cloned() else {
             return div().into_any_element();
@@ -112,6 +130,7 @@ impl Render for ToolsView {
         let busy = |k: &'static str| ctl.is_busy(k);
         let ready = ctl.ready();
         let latest_error = ctl.last_error_log().is_some();
+        let originals = ctl.originals_dir().to_string_lossy().into_owned();
         let entries = ctl.log_count(cx);
         let c = self.c.clone();
 
@@ -191,16 +210,16 @@ impl Render for ToolsView {
                     "Status",
                     if mod_dir_ok { "Configured".into() } else { "Missing".into() },
                     mod_dir_ok,
-                    130.,
+                    90.,
                 ))
                 .child(metric(
                     t,
                     "Directory",
                     if mod_dir_ok { "Ready".into() } else { "Not found".into() },
                     mod_dir_ok,
-                    130.,
+                    90.,
                 ))
-                .child(metric_text(t, "Steam config backups", self.originals.clone(), 130.))
+                .child(metric_path(t, "Backups", &originals, LABEL_W, card_w - CARD_CHROME - LABEL_W))
                 .into_any_element()],
         );
 

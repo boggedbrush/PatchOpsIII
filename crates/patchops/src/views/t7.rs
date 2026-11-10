@@ -25,7 +25,7 @@ use crate::controller::{Controller, ControllerEvent};
 use crate::theme::ActiveTheme;
 use crate::views::{self, PANEL_GAP};
 use crate::widgets::{
-    icon, Button, Chip, Icon, IconButton, Panel, ProgressBar, ScrollArea, StatusPill, TextInput, TextInputEvent, Toggle,
+    icon, ellipsis, Button, Chip, Icon, IconButton, Panel, ProgressBar, ScrollArea, StatusPill, TextInput, TextInputEvent, Toggle,
     Tone,
 };
 
@@ -47,6 +47,20 @@ fn color_of(code: &str) -> (&'static str, Hsla) {
     let (_, label, hex) = COLORS.iter().find(|c| c.0 == code).copied().unwrap_or(COLORS[0]);
     (label, Hsla::from(rgb(hex)))
 }
+
+/// Overview row tracks (legacy `minmax(190px,1fr) repeat(2,minmax(160px,0.8fr)) minmax(340px,1.4fr)`;
+/// the actions minimum is the two buttons + gap + padding).
+const OV_MODULE_MIN: f32 = 190.;
+const OV_PILL_MIN: f32 = 160.;
+const OV_INSTALL_MIN: f32 = 216.;
+const OV_UNINSTALL_MIN: f32 = 180.;
+const OV_ACTIONS_MIN: f32 = OV_INSTALL_MIN + OV_UNINSTALL_MIN + 10. + 18. + 2.;
+/// Below this content width the overview row no longer fits on one line and wraps.
+const OV_WRAP_BELOW: f32 = OV_MODULE_MIN + 2. * OV_PILL_MIN + OV_ACTIONS_MIN + 4.;
+/// Row heights shared by the tiles / pills / buttons of this tab.
+const TILE_H: f32 = 38.;
+const PILL_H: f32 = 42.;
+const CHIP_H: f32 = 38.;
 
 pub struct T7View {
     c: Entity<Controller>,
@@ -180,11 +194,11 @@ fn state_tile(label: &str, value: impl IntoElement, cx: &Context<T7View>) -> gpu
 fn state_value(text: &str, color: Hsla, cx: &Context<T7View>) -> gpui::Div {
     let t = *cx.theme();
     div()
-        .truncate()
+        .min_w_0()
         .text_size(px(t.font_xs))
         .font_weight(FontWeight::BOLD)
         .text_color(color)
-        .child(SharedString::from(text.to_string()))
+        .child(ellipsis(SharedString::from(text.to_string())))
 }
 
 /// Label above a control (legacy `<label>` in `.field-grid`).
@@ -247,23 +261,24 @@ impl Render for T7View {
 
         // ---- Overview ---------------------------------------------------------------------
         let installing = busy("t7-install");
-        let module = views::fr(div(), 0.7)
-            .min_w(px(205.))
-            .min_h(px(42.))
+        let module = views::fr(div(), 1.0)
+            .min_w(px(OV_MODULE_MIN))
+            .min_h(px(PILL_H))
             .flex()
             .items_center()
             .gap(px(9.))
             .px(px(10.))
             .child(icon(Icon::ShieldCheck).size(px(22.)).text_color(t.text_strong))
-            .child(div().flex_1().min_w_0().truncate().text_color(t.text_strong).child("T7 Patch"))
+            .child(div().flex_none().whitespace_nowrap().text_color(t.text_strong).child("T7 Patch"))
             .child(
                 div()
-                    .flex_none()
+                    .flex_1()
+                    .min_w_0()
                     .font_weight(FontWeight::BOLD)
                     .text_color(if t7.installed { t.ok } else { t.text_muted })
-                    .child(if t7.installed { "Configured" } else { "Not configured" }),
+                    .child(ellipsis(if t7.installed { "Configured" } else { "Not configured" })),
             );
-        let pill = |p: StatusPill| views::fr(div(), 1.0).min_w(px(192.)).child(p.inline(false).min_h(42.));
+        let pill = |p: StatusPill| views::fr(div(), 0.8).min_w(px(OV_PILL_MIN)).child(p.inline(false).min_h(PILL_H));
         let install = Button::new("t7-install", "Install / Update T7 Patch")
             .primary()
             .icon(Icon::Download)
@@ -279,7 +294,7 @@ impl Render for T7View {
         // Wide: the legacy fixed 400px actions column. Narrow (legacy `.t7-actions` -> 1 column):
         // the buttons get their own full-width line and wrap again when even that is too tight.
         let mut actions = views::fr(div(), 1.4)
-            .min_w(px(456.))
+            .min_w(px(OV_ACTIONS_MIN))
             .flex()
             .flex_col()
             .justify_center()
@@ -288,10 +303,10 @@ impl Render for T7View {
             .child(
                 div()
                     .flex()
-                    .when(cw < 1070., |d| d.flex_wrap())
+                    .when(cw < OV_WRAP_BELOW, |d| d.flex_wrap())
                     .gap(px(10.))
-                    .child(div().flex_1().min_w(px(200.)).child(install))
-                    .child(div().flex_1().min_w(px(200.)).child(uninstall)),
+                    .child(views::fr(div(), 1.2).min_w(px(OV_INSTALL_MIN)).child(install))
+                    .child(views::fr(div(), 1.0).min_w(px(OV_UNINSTALL_MIN)).child(uninstall)),
             );
         if installing {
             actions = actions.child(
@@ -314,7 +329,7 @@ impl Render for T7View {
         let overview = Panel::new("T7 Patch").flush().child(
             div()
                 .flex()
-                .when(cw < 1070., |d| d.flex_wrap())
+                .when(cw < OV_WRAP_BELOW, |d| d.flex_wrap())
                 .items_center()
                 .child(module)
                 .child(pill(StatusPill::new(
@@ -341,18 +356,17 @@ impl Render for T7View {
             .child(
                 div()
                     .max_w_full()
-                    .truncate()
                     .text_size(px(34.))
                     .font_weight(FontWeight::EXTRA_BOLD)
                     .text_color(sel_color)
-                    .child(SharedString::from(preview_name)),
+                    .child(ellipsis(SharedString::from(preview_name))),
             );
         let chip = |i: usize| {
             let (code, label, hex) = COLORS[i];
             let this = cx.entity();
             div().flex_1().min_w_0().child(
                 Chip::new(("t7-color", i), label)
-                    .height(38.)
+                    .height(CHIP_H)
                     .swatch(Hsla::from(rgb(hex)))
                     .active(self.color == code)
                     .disabled(!conf)
@@ -375,12 +389,14 @@ impl Render for T7View {
                     .step_by(per_row)
                     .map(|start| div().flex().gap(px(8.)).children((start..(start + per_row).min(10)).map(chip))),
             );
-        let saved_tile = views::fr(div(), 2.0)
+        let saved_tile = div()
+            .flex_1()
             .min_w_0()
+            .overflow_hidden()
             .flex()
             .items_center()
             .gap(px(12.))
-            .min_h(px(38.))
+            .min_h(px(TILE_H))
             .p(px(8.))
             .border_1()
             .border_color(t.border)
@@ -402,12 +418,17 @@ impl Render for T7View {
                     .items_center()
                     .gap(px(10.))
                     .child(
+                        // The container takes the free width (`flex_1` + `min_w_0`); the text
+                        // inside truncates to it with an ellipsis.
                         div()
-                            .truncate()
+                            .id("t7-saved-name")
+                            .flex_1()
+                            .min_w_0()
                             .text_size(px(t.font_xs))
                             .font_weight(FontWeight::BOLD)
                             .text_color(t.text_strong)
-                            .child(SharedString::from(saved_name.clone())),
+                            .tooltip(crate::widgets::tooltip(saved_name.clone()))
+                            .child(ellipsis(SharedString::from(saved_name.clone()))),
                     )
                     .child(
                         div()
@@ -423,6 +444,7 @@ impl Render for T7View {
                     .child(
                         div()
                             .flex_none()
+                            .text_right()
                             .text_size(px(t.font_xs))
                             .text_color(t.text_muted)
                             .child(SharedString::from(format!("{}/20", saved_name.chars().count()))),
@@ -437,12 +459,12 @@ impl Render for T7View {
         };
         // Legacy `.t7-state-grid > .inline-state`: "Status" and its value on one line.
         let inline_status = |pending: bool| {
-            views::fr(div(), 1.0)
-                .min_w_0()
+            div()
+                .flex_none()
                 .flex()
                 .items_center()
                 .gap(px(10.))
-                .min_h(px(38.))
+                .min_h(px(TILE_H))
                 .p(px(8.))
                 .border_1()
                 .border_color(t.border)

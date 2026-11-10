@@ -73,7 +73,7 @@ fn tile_row(cx: &Context<GraphicsView>, children: impl IntoIterator<Item = AnyEl
         .items_center()
         .gap_x(px(10.))
         .gap_y(px(6.))
-        .min_h(px(50.))
+        .min_h(px(TILE_MIN_H))
         .min_w_0()
         .px(px(14.))
         .py(px(5.))
@@ -85,6 +85,17 @@ fn tile_row(cx: &Context<GraphicsView>, children: impl IntoIterator<Item = AnyEl
         .text_color(t.text_strong)
         .children(children)
 }
+
+/// Minimum width of a quick-settings tile (legacy `minmax(220px, 1fr)` plus tile padding).
+const QUICK_TILE_MIN: f32 = 230.;
+/// Minimum control width in a quick tile; the Preset select needs room for "Choose preset".
+const QUICK_CTL_MIN: f32 = 96.;
+const QUICK_PRESET_CTL_MIN: f32 = 150.;
+/// Width of the DXVK "Frame latency" number field (legacy ~238px).
+const FRAME_LATENCY_W: f32 = 238.;
+/// Row heights: boxed setting tile, DXVK status pill / action strip.
+const TILE_MIN_H: f32 = 50.;
+const DXVK_BAR_H: f32 = 58.;
 
 /// A column of the "groups" row: stretches to the row's height so both boxes share a bottom edge.
 fn group_cell(min_w: f32, group: impl IntoElement) -> gpui::Div {
@@ -348,25 +359,29 @@ impl GraphicsView {
         self.push_draft(cx);
     }
 
-    fn graphics_tab(&self, cx: &mut Context<Self>, state: &State) -> impl IntoElement {
+    fn graphics_tab(&self, window: &Window, cx: &mut Context<Self>, state: &State) -> impl IntoElement {
         let c = self.c.clone();
         let this = cx.entity();
         let (g, a) = (&state.graphics, &state.advanced);
         // Legacy `.graphics-quick-grid`: auto-fit columns of at least 220px; each tile is a bordered
         // row with a label column (min 88px) and a control that fills the rest.
-        let tile = |label: &'static str, ratio: f32, ctl: AnyElement| {
-            tile_row(cx, [views::fr(div(), ratio).min_w(px(if ratio < 0.4 { 52. } else { 88. })).child(label).into_any_element(), views::fr(div(), 1.0).min_w(px(96.)).flex().flex_col().child(ctl).into_any_element()])
-                .flex_1()
-                .min_w(px(230.))
+        let tile = |label: &'static str, ctl_min: f32, ctl: AnyElement| {
+            tile_row(cx, [
+                div().flex_none().whitespace_nowrap().child(label).into_any_element(),
+                views::fr(div(), 1.0).min_w(px(ctl_min)).flex().flex_col().child(ctl).into_any_element(),
+            ])
         };
+        // Legacy `repeat(auto-fit, minmax(220px, 1fr))`: a real grid, so an orphan tile keeps the
+        // width of one column instead of stretching across the row.
+        let cols = (((views::content_width(window) + PANEL_GAP) / (QUICK_TILE_MIN + PANEL_GAP)).floor() as u16).clamp(1, 4);
         let quick = div()
-            .flex()
-            .flex_wrap()
+            .grid()
+            .grid_cols(cols)
             .gap(px(PANEL_GAP))
-            .child(tile("Preset", 0.3, self.preset.clone().into_any_element()))
-            .child(tile("Display Mode", 0.5, self.display.clone().into_any_element()))
-            .child(tile("Resolution", 0.5, self.resolution.clone().into_any_element()))
-            .child(tile("Refresh Rate", 0.5, self.refresh.clone().into_any_element()));
+            .child(tile("Preset", QUICK_PRESET_CTL_MIN, self.preset.clone().into_any_element()))
+            .child(tile("Display Mode", QUICK_CTL_MIN, self.display.clone().into_any_element()))
+            .child(tile("Resolution", QUICK_CTL_MIN, self.resolution.clone().into_any_element()))
+            .child(tile("Refresh Rate", QUICK_CTL_MIN, self.refresh.clone().into_any_element()));
 
         let cfg_toggle = |id: &'static str, on: bool, cid: ConfigId| {
             let c = c.clone();
@@ -458,12 +473,12 @@ impl GraphicsView {
 
         let pill = |label: &'static str, value: &'static str, ok: bool| {
             views::fr(div(), 1.0).min_w(px(250.)).child(
-                StatusPill::new(label, value, Tone::from_ok(ok)).inline(true).min_h(58.),
+                StatusPill::new(label, value, Tone::from_ok(ok)).inline(true).min_h(DXVK_BAR_H),
             )
         };
         let actions = views::fr(div(), 1.0)
             .min_w(px(360.))
-            .min_h(px(58.))
+            .min_h(px(DXVK_BAR_H))
             .flex()
             .flex_wrap()
             .items_center()
@@ -529,7 +544,8 @@ impl GraphicsView {
                     .flex()
                     .flex_wrap()
                     .flex_1()
-                    .justify_end()
+                    .min_w_0()
+                    .justify_start()
                     .items_center()
                     .gap(px(8.))
                     .child(div().w(px(90.)).child(self.dx_threads.clone()))
@@ -597,7 +613,7 @@ impl GraphicsView {
             .child(row("FPS/GPU HUD", toggle("dx-hud", d.hud_enabled, |s, v| s.hud_enabled = v).into_any_element(), true));
         let pacing = Group::new("Frame Pacing")
             .child(fill_row("Frame rate cap", 0.34, self.dx_cap.clone().into_any_element(), false))
-            .child(fill_row("Frame latency", 0.45, div().flex().flex_col().w_full().max_w(px(240.)).child(self.dx_latency.clone()).into_any_element(), false))
+            .child(fill_row("Frame latency", 0.45, div().flex().flex_col().flex_none().w(px(FRAME_LATENCY_W)).max_w_full().child(self.dx_latency.clone()).into_any_element(), false))
             .child(fill_row("Tear Free", 0.45, self.dx_tear.clone().into_any_element(), true));
         let groups = div()
             .flex()
@@ -622,12 +638,12 @@ impl GraphicsView {
 }
 
 impl Render for GraphicsView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let Some(state) = self.state(cx) else { return div().into_any_element() };
         let this = cx.entity();
         let heading = if self.tab == 0 { "Graphics Settings" } else { "DXVK-GPLAsync" };
         let body = if self.tab == 0 {
-            self.graphics_tab(cx, &state).into_any_element()
+            self.graphics_tab(window, cx, &state).into_any_element()
         } else {
             self.dxvk_tab(cx, &state).into_any_element()
         };

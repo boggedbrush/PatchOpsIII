@@ -5,6 +5,7 @@ use gpui::{
     FontWeight, InteractiveElement, IntoElement, SharedString, Window,
 };
 
+use super::ellipsis;
 use super::icon::{icon, Icon};
 use crate::theme::ActiveTheme;
 
@@ -84,7 +85,7 @@ impl RenderOnce for NavItem {
             } else {
                 t.text_strong
             }))
-            .child(div().min_w_0().truncate().child(self.label))
+            .child(div().min_w_0().child(ellipsis(self.label)))
             .when_some(self.on_click, |d, f| d.on_click(f))
     }
 }

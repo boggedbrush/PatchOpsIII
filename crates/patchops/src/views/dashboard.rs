@@ -48,10 +48,13 @@ impl DashboardView {
     }
 }
 
+/// Height of a dashboard status row.
+const STATUS_ROW_H: f32 = 38.;
+
 /// Legacy `StatusRow`: value is the detail (default "Configured") when ok, else "Not configured".
 fn status_row(label: &str, ok: bool, detail: Option<String>) -> StatusRow {
     StatusRow::new(label.to_string(), Tone::from_ok(ok))
-        .min_h(38.)
+        .min_h(STATUS_ROW_H)
         .grow()
         .value(if ok { detail.unwrap_or_else(|| "Configured".into()) } else { "Not configured".into() })
 }

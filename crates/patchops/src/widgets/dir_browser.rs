@@ -7,6 +7,7 @@ use gpui::{
     FontWeight, IntoElement, Render, SharedString, Subscription, UniformListScrollHandle, Window,
 };
 
+use super::ellipsis;
 use super::button::Button;
 use super::icon::{icon, Icon};
 use super::modal::Dialog;
@@ -86,7 +87,7 @@ impl EventEmitter<DirBrowserEvent> for DirBrowser {}
 const HEADER_CHARS: usize = 56;
 
 /// `path` shortened to its last `max` chars with a leading ellipsis (on a char boundary).
-fn shorten_start(path: &str, max: usize) -> String {
+pub(crate) fn shorten_start(path: &str, max: usize) -> String {
     let n = path.chars().count();
     if n <= max {
         return path.to_string();
@@ -197,7 +198,7 @@ impl Render for DirBrowser {
                 .hover(move |s| s.bg(t.panel_strong))
                 .on_click(cx.listener(move |this, _, _, cx| this.navigate(target.clone(), cx)))
                 .child(icon(ic).size(px(17.)).text_color(t.text))
-                .child(div().flex_1().min_w_0().truncate().child(name))
+                .child(div().flex_1().min_w_0().child(ellipsis(name)))
                 .when(tag, |d| {
                     d.child(
                         div()
@@ -326,7 +327,7 @@ impl Render for DirBrowser {
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         this.navigate(target.clone(), cx)
                                     }))
-                                    .child(div().truncate().child(SharedString::from(l.label.clone())))
+                                    .child(div().min_w_0().child(ellipsis(SharedString::from(l.label.clone()))))
                             })),
                     )
                     .child(

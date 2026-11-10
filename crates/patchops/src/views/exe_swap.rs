@@ -14,7 +14,7 @@ use crate::actions::Action;
 use crate::controller::Controller;
 use crate::theme::{ActiveTheme, Theme};
 use crate::views::{self, PANEL_GAP};
-use crate::widgets::{icon, Badge, Button, Icon, ScrollArea, StatusPill, Tone};
+use crate::widgets::{icon, ellipsis, Badge, Button, Icon, ScrollArea, StatusPill, Tone};
 
 /// Legacy `.exe-swap-pros .warn svg` colour.
 const WARN_ICON: u32 = 0xffb020;
@@ -178,11 +178,10 @@ impl Render for ExeSwapView {
                     .child(
                         div()
                             .min_w_0()
-                            .truncate()
                             .text_size(px(17.))
                             .font_weight(FontWeight::BOLD)
                             .text_color(t.text)
-                            .child(active_title),
+                            .child(ellipsis(active_title)),
                     ),
             );
 

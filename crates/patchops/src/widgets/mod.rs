@@ -6,6 +6,7 @@
 pub mod assets;
 pub mod button;
 pub mod dir_browser;
+pub mod ellipsis;
 pub mod form;
 pub mod icon;
 pub mod log_list;
@@ -27,6 +28,7 @@ pub mod tooltip;
 pub use assets::Assets;
 #[allow(unused_imports)] // kit surface (gallery / views)
 pub use button::{Button, ButtonKind, IconButton};
+pub use ellipsis::ellipsis;
 pub use dir_browser::{BrowseData, BrowseEntry, BrowseLocation, DirBrowser, DirBrowserEvent};
 #[allow(unused_imports)]
 pub use form::{Field, FormRow, SettingRow};
@@ -53,6 +55,7 @@ pub use toggle::{Checkbox, Radio, Toggle};
 pub use tooltip::tooltip;
 
 use gpui::{actions, App, ClickEvent, InteractiveElement, KeyBinding, Window};
+
 
 /// Boxed callback shapes shared by the widgets.
 pub type ClickFn = Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>;

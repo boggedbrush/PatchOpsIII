@@ -12,6 +12,10 @@ use gpui::{
 
 use crate::theme::ActiveTheme;
 
+/// Row heights of a boxed (tile) / plain setting row.
+const BOXED_ROW_H: f32 = 50.;
+const ROW_H: f32 = 38.;
+
 /// Label on the left, control on the right, bottom border (omit with `.last()`).
 ///
 /// ```ignore
@@ -89,7 +93,7 @@ impl RenderOnce for SettingRow {
             .items_center()
             .when(fill.is_none() && !start, |d| d.justify_between())
             .gap(px(if self.boxed || fill.is_some() || start { 10. } else { 14. }))
-            .min_h(px(if self.boxed { 50. } else { 38. }))
+            .min_h(px(if self.boxed { BOXED_ROW_H } else { ROW_H }))
             .when(self.boxed, |d| d.flex_grow())
             .when(fill.is_some(), |d| d.w_full())
             .px(px(14.))

@@ -433,10 +433,11 @@ impl RenderOnce for DropZone {
                     .items_center()
                     .justify_center()
                     .flex_1()
-                    .text_center()
+                    .w_full()
+                    .min_w_0()
                     .font_weight(FontWeight::BOLD)
                     .text_color(t.text)
-                    .child(self.title),
+                    .child(div().w_full().min_w_0().text_center().child(self.title)),
             )
             .when_some(self.detail, |d, s| {
                 d.child(
@@ -445,11 +446,12 @@ impl RenderOnce for DropZone {
                         .items_center()
                         .justify_center()
                         .flex_1()
-                        .text_center()
+                        .w_full()
+                        .min_w_0()
                         .text_size(px(t.font_sm))
                         .font_weight(FontWeight::BOLD)
                         .text_color(t.text_muted)
-                        .child(s),
+                        .child(div().w_full().min_w_0().text_center().child(s)),
                 )
             })
     }

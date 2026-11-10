@@ -5,6 +5,7 @@ use gpui::{
     InteractiveElement, IntoElement, SharedString, Window,
 };
 
+use super::ellipsis;
 use super::icon::{icon, Icon};
 use crate::theme::{ActiveTheme, Theme};
 
@@ -103,7 +104,7 @@ impl RenderOnce for StatusRow {
             .min_h(px(self.min_h))
             .when(self.grow, |d| d.flex_grow())
             .when(!self.last, |d| d.border_b_1().border_color(t.border))
-            .child(div().min_w_0().whitespace_nowrap().text_color(t.text_strong).child(self.label))
+            .child(div().min_w_0().text_color(t.text_strong).child(ellipsis(self.label)))
             .child(
                 div()
                     .flex()
@@ -113,7 +114,7 @@ impl RenderOnce for StatusRow {
                     .font_weight(FontWeight::BOLD)
                     .text_color(color)
                     .child(div().size(px(9.)).flex_none().rounded_full().bg(dot))
-                    .child(div().truncate().child(self.value)),
+                    .child(div().min_w_0().child(ellipsis(self.value))),
             )
     }
 }
@@ -163,11 +164,11 @@ impl RenderOnce for StatusPill {
                 .flex()
                 .items_center()
                 .justify_between()
-                .gap(px(12.))
+                .gap(px(if bordered { 12. } else { 6. }))
                 .w_full()
                 .min_w_0()
                 .min_h(px(self.min_h))
-                .px(px(14.))
+                .px(px(if bordered { 14. } else { 6. }))
                 .when(bordered, |d| {
                     d.border_1()
                         .border_color(t.border)
@@ -185,13 +186,12 @@ impl RenderOnce for StatusPill {
                 )
                 .child(
                     div()
+                        .flex_1()
                         .min_w_0()
-                        .whitespace_nowrap()
-                        .text_right()
                         .text_size(px(t.font_md))
                         .font_weight(FontWeight::BOLD)
                         .text_color(value_color)
-                        .child(self.value),
+                        .child(ellipsis(self.value).right()),
                 )
                 .into_any_element();
         }
@@ -393,6 +393,8 @@ impl RenderOnce for Alert {
             .gap(px(8.))
             .min_h(px(34.))
             .px(px(12.))
+            // Breathing room so a 34px button never touches the strip's border.
+            .py(px(4.))
             .border_1()
             .border_color(border)
             .rounded(px(9.))

@@ -267,6 +267,11 @@ impl Controller {
         self.boot == Boot::Ready
     }
 
+    /// Where core keeps its write-once first copy of Steam's config files.
+    pub fn originals_dir(&self) -> &std::path::Path {
+        &self.core.paths.originals
+    }
+
     /// Is an action with this busy key queued or running? Use for `.busy(..)` / `.disabled(..)`.
     pub fn is_busy(&self, key: &'static str) -> bool {
         self.busy.contains(&key)
