@@ -64,13 +64,22 @@ pub const GROUPS: &[Group] = &[
     maintenance::GROUP,
 ];
 
+/// Ops whose legacy route takes neither a body model nor a query model (`async def f()`), see `bench/OPS.md` section 3.
+pub const NO_BODY_OPS: &[&str] = &[
+    "health", "status", "launch", "update-check", "dxvk-uninstall", "t7-install", "t7-uninstall", "enhanced-uninstall",
+    "exe-swap/compatible", "exe-swap/compatible-depot", "exe-swap/current", "exe-swap/enhanced", "logs/payload", "logs/clear",
+    "mod-files/clear", "reset-stock",
+];
+
 /// Route `op` with JSON `args` (a JSON object, or `null` for none) to its handler and return the
 /// legacy JSON body. Envelope-level failures are [`OpError`]s; application failures are
 /// `{"ok": false, "error": ...}` bodies.
 pub fn dispatch(core: &Core, op: &str, args: &Value) -> Result<Value, OpError> {
     for g in GROUPS {
         if g.ops.contains(&op) {
-            let a = Args::new(args)?;
+            // An op whose legacy route declares no body model ignores whatever body it is sent (FastAPI does not
+            // even parse it), so `args` of any JSON type is fine there.
+            let a = if NO_BODY_OPS.contains(&op) { Args::new(&Value::Null)? } else { Args::new(args)? };
             return (g.call)(core, op, &a);
         }
     }
@@ -121,10 +130,24 @@ mod tests {
             "enhanced-validate", "enhanced-install", "enhanced-uninstall", "exe-swap/compatible", "exe-swap/compatible-depot",
             "exe-swap/current", "exe-swap/enhanced", "logs/payload", "logs/clear", "mod-files/clear", "reset-stock",
         ];
+        assert!(NO_BODY_OPS.iter().all(|o| all_ops().any(|a| a == *o)));
         let mut got: Vec<&str> = all_ops().collect();
         got.sort_unstable();
         let mut want: Vec<&str> = EXPECTED.to_vec();
         want.sort_unstable();
         assert_eq!(got, want, "ops registered in groups must equal the OPS.md catalogue (no duplicates)");
+    }
+
+    #[test]
+    fn ops_without_a_body_model_ignore_any_args_but_the_others_validate_them() {
+        let root = std::env::temp_dir().join(format!("patchops-nobody-{}", std::process::id()));
+        let core = Core::with_paths(crate::paths::Paths::with_app_data(root.join("home"), root.join("app")), "t".into());
+        for junk in [json!("x"), json!(5), json!([1]), json!(true)] {
+            assert!(dispatch(&core, "health", &junk).is_ok(), "{junk}");
+            assert!(dispatch(&core, "logs/payload", &junk).is_ok(), "{junk}");
+            assert!(matches!(dispatch(&core, "intro-skip", &junk), Err(OpError::Validation(_))), "{junk}");
+            assert!(matches!(dispatch(&core, "config", &junk), Err(OpError::Validation(_))), "{junk}");
+        }
+        let _ = std::fs::remove_dir_all(root);
     }
 }

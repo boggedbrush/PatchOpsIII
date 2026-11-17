@@ -87,7 +87,7 @@ fn fetch_release_assets<'c>(net: &Net, cache: &'c mut ReleaseCache, api: &str) -
         let mut out = BTreeMap::new();
         if let Ok(data) = net.client.get_json(api, Duration::from_secs(30)) {
             for asset in data.get("assets").and_then(Value::as_array).into_iter().flatten() {
-                let s = |k: &str| asset.get(k).and_then(Value::as_str).unwrap_or("").trim().to_string();
+                let s = |k: &str| crate::pyfmt::py_strip(asset.get(k).and_then(Value::as_str).unwrap_or("")).to_string();
                 let name = s("name");
                 if name.is_empty() {
                     continue;
@@ -398,7 +398,7 @@ pub fn install_t7_patch(core: &Core, net: &Net, game: &Path, progress: ProgressF
     }
     for stale in [mod_files.join("linux"), mod_files.join("Linux.Steamdeck.and.Manual.Windows.Install"), extract_dir.clone()] {
         if stale.exists() {
-            std::fs::remove_dir_all(&stale).map_err(|e| io_error_text(&e, Some(&stale)))?;
+            crate::fsutil::py_rmtree(&stale).map_err(|e| e.text())?;
         }
     }
     if expected.is_empty() {

@@ -288,7 +288,7 @@ pub fn uninstall(core: &Core, game_dir: &Path) -> AppResult<()> {
     let mut removed_mod = false;
     for cache in [mod_files.join("linux"), mod_files.join("Linux.Steamdeck.and.Manual.Windows.Install"), mod_files.join("T7Patch_extracted")] {
         if cache.exists() {
-            std::fs::remove_dir_all(&cache).map_err(|e| io_fail(e, &cache))?;
+            crate::fsutil::py_rmtree(&cache).map_err(|e| AppError::new(e.text()))?;
             removed_mod = true;
         }
     }
@@ -537,5 +537,49 @@ mod tests {
     fn gamertag_with_line_breaks_is_written_verbatim_like_legacy() {
         // legacy: f"playername={name}\n" with the raw name; the extra line shows up on the next read
         assert_eq!(edit_conf("a=1\n", &name("^1x\ny")), "playername=^1x\ny\na=1\n");
+    }
+
+    #[cfg(unix)]
+    fn uninstall_core(tag: &str) -> (Core, PathBuf, PathBuf) {
+        let root = std::env::temp_dir().join(format!("patchops-t7un-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("home")).unwrap();
+        std::fs::create_dir_all(root.join("game")).unwrap();
+        let core = Core::with_paths(crate::paths::Paths::with_app_data(root.join("home"), root.join("appdata")), "t".into());
+        (core, root.join("game"), root)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn uninstall_unlinks_a_symlinked_cache_dir_and_keeps_its_target() {
+        let (core, game, root) = uninstall_core("link");
+        let outside = root.join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("keep.txt"), b"keep").unwrap();
+        std::fs::create_dir_all(&core.paths.mod_files).unwrap();
+        std::os::unix::fs::symlink(&outside, core.paths.mod_files.join("linux")).unwrap();
+        uninstall(&core, &game).unwrap();
+        assert!(!core.paths.mod_files.join("linux").exists());
+        assert_eq!(std::fs::read(outside.join("keep.txt")).unwrap(), b"keep");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn uninstall_names_the_failing_path_like_rmtree() {
+        use std::os::unix::fs::PermissionsExt;
+        // SAFETY: geteuid has no preconditions and cannot fail.
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+        let (core, game, root) = uninstall_core("ro");
+        let sub = core.paths.mod_files.join("T7Patch_extracted/sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("t7patch.dll"), b"m").unwrap();
+        std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let e = uninstall(&core, &game).unwrap_err().message;
+        std::fs::set_permissions(&sub, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(e, format!("[Errno 13] Permission denied: '{}'", sub.display()));
+        let _ = std::fs::remove_dir_all(root);
     }
 }

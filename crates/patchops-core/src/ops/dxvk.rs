@@ -347,7 +347,7 @@ fn install_inner(core: &Core, net: &Net, game: &Path, settings: DxvkSettings, pr
     let archive = mod_files.join(url.rsplit('/').next().unwrap_or("dxvk-gplasync").split('?').next().unwrap_or("dxvk-gplasync"));
     std::fs::create_dir_all(mod_files).map_err(|e| io_error_text(&e, Some(mod_files)))?;
     if extract_dir.exists() {
-        std::fs::remove_dir_all(&extract_dir).map_err(|e| io_error_text(&e, Some(&extract_dir)))?;
+        crate::fsutil::py_rmtree(&extract_dir).map_err(|e| e.text())?;
     }
     std::fs::create_dir_all(&extract_dir).map_err(|e| io_error_text(&e, Some(&extract_dir)))?;
 

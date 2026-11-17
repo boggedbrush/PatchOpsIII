@@ -13,6 +13,7 @@ use serde_json::Value;
 use super::{state_reply, to_json, Args, Group};
 use crate::context::Core;
 use crate::error::{AppError, AppResult, OpError};
+use crate::fsutil::{py_rmtree, RmtreeError};
 use crate::game::has_game_executable;
 use crate::pyfmt::{expanduser, io_error_text, normpath, path_str, resolve};
 use crate::state::{State, StateCx};
@@ -329,58 +330,17 @@ pub fn clear_logs(core: &Core) -> AppResult<State> {
     Ok(State::build(core))
 }
 
-/// A failure of the legacy `_clear_mod_files`, with the path named the way Python's `str(OSError)` names it.
-#[derive(Debug)]
-struct WipeError {
-    err: std::io::Error,
-    /// `'<path>'`, or `PosixPath('<path>')` where Python passed a `Path` object.
-    named: String,
-}
-
-impl WipeError {
-    fn text(&self) -> String {
-        format!("{}: {}", io_error_text(&self.err, None), self.named)
-    }
-}
-
-/// `shutil.rmtree(path)` as CPython 3.13 raises: entries are removed in directory order, the first failure
-/// stops everything. A failing file removal names the DIRECTORY that holds it, a failing sub-directory (open,
-/// list or `rmdir`) names that directory, the final `rmdir` names `path`. Only the top-level directory is a
-/// `Path` object (`PosixPath('...')`); everything below is a joined `str`. Symbolic links inside are removed
-/// as links (`entry.is_dir(follow_symlinks=False)`), never followed.
-fn py_rmtree(path: &Path, top: bool) -> Result<(), WipeError> {
-    let named = |p: &Path, is_top: bool| {
-        let r = crate::pyfmt::repr_str(&path_str(p));
-        if is_top {
-            format!("PosixPath({r})")
-        } else {
-            r
-        }
-    };
-    let fail = |err: std::io::Error| WipeError { err, named: named(path, top) };
-    let entries = std::fs::read_dir(path).map_err(fail)?.collect::<Result<Vec<_>, _>>().map_err(fail)?;
-    for entry in entries {
-        let p = entry.path();
-        if entry.file_type().is_ok_and(|t| t.is_dir()) {
-            py_rmtree(&p, false)?;
-        } else {
-            std::fs::remove_file(&p).map_err(fail)?;
-        }
-    }
-    std::fs::remove_dir(path).map_err(fail)
-}
-
 /// Legacy `_clear_mod_files`: `mkdir(parents=True, exist_ok=True)`, then every item removed (`rmtree` for
 /// directories, `unlink` otherwise). A symbolic link to a directory is unlinked, not refused and never followed:
 /// the legacy `rmtree` raised `Cannot call rmtree on a symbolic link` there, the port only removes the link itself.
-fn wipe_dir(dir: &Path) -> Result<(), WipeError> {
-    let plain = |e: std::io::Error, p: &Path| WipeError { err: e, named: crate::pyfmt::repr_str(&path_str(p)) };
+fn wipe_dir(dir: &Path) -> Result<(), RmtreeError> {
+    let plain = |e: std::io::Error, p: &Path| RmtreeError::plain(e, p);
     std::fs::create_dir_all(dir).map_err(|e| plain(e, dir))?;
     for entry in std::fs::read_dir(dir).map_err(|e| plain(e, dir))? {
         let entry = entry.map_err(|e| plain(e, dir))?;
         let p = entry.path();
         if entry.file_type().is_ok_and(|t| t.is_dir()) {
-            py_rmtree(&p, true)?;
+            py_rmtree(&p)?;
         } else {
             std::fs::remove_file(&p).map_err(|e| plain(e, &p))?;
         }

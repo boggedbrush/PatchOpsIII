@@ -793,4 +793,49 @@ mod first_seen_tests {
         assert!(a.starts_with("steam_config_") && a.ends_with("_original.vdf"), "{a}");
         assert_eq!(a.len(), "steam_config_".len() + 8 + "_original.vdf".len());
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn legacy_error_texts_for_a_directory_and_a_read_only_localconfig() {
+        use std::os::unix::fs::PermissionsExt;
+        // localconfig.vdf is a directory: the backup step fails with Python's errno text naming the source
+        let sb = Sandbox::new();
+        let path = localconfig_path(&sb.core, USER);
+        std::fs::create_dir_all(&path).unwrap();
+        assert!(!set_launch_options_exact(&sb.core, USER, APP, "-x"));
+        let log = sb.core.log.read_file();
+        assert!(log.contains(&format!("Error: Failed to create backup: [Errno 21] Is a directory: '{}'\n", path.display())), "{log}");
+        assert!(log.contains("Error: Aborting due to backup failure"));
+        // mode 0444 (as non-root): the backup succeeds (a read-only source is readable), the write fails with the
+        // legacy `open(path, "w")` text, and the restore fails naming the DESTINATION
+        // SAFETY: geteuid has no preconditions and cannot fail.
+        if unsafe { libc::geteuid() } != 0 {
+            let sb = Sandbox::new();
+            let path = write_localconfig(&sb.core, &vdf("-novid"));
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444)).unwrap();
+            assert!(!set_launch_options_exact(&sb.core, USER, APP, "-x"));
+            let log = sb.core.log.read_file();
+            let backup = sb.core.paths.backups.join(LOCALCONFIG_BACKUP);
+            assert!(log.contains(&format!("Success: Config backup created at {}\n", backup.display())), "{log}");
+            assert!(log.contains(&format!("Error: Error updating launch options: [Errno 13] Permission denied: '{}'", path.display())), "{log}");
+            assert!(
+                log.contains(&format!("Error: Failed to restore backup from {}: [Errno 13] Permission denied: '{}'\n", backup.display(), path.display())),
+                "{log}"
+            );
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), vdf("-novid"), "the file is untouched");
+        }
+    }
+
+    #[test]
+    fn unparsable_localconfig_is_left_unchanged_with_a_clear_log_line() {
+        let sb = Sandbox::new();
+        let garbage = "{ this is not vdf }\n";
+        let path = write_localconfig(&sb.core, garbage);
+        assert!(!set_launch_options_exact(&sb.core, USER, APP, "-x"));
+        let log = sb.core.log.read_file();
+        assert!(log.contains("Error: Error updating launch options: vdf: unexpected opening brace (localconfig.vdf); the file was left unchanged"), "{log}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), garbage);
+        // read-only state building stays tolerant
+        assert_eq!(read_launch_options(&sb.core, USER, APP), None);
+    }
 }

@@ -506,6 +506,85 @@ mod write_tests {
         let _ = std::fs::remove_dir_all(&game);
     }
 
+    #[cfg(unix)]
+    fn game_with_config(tag: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let game = std::env::temp_dir().join(format!("patchops-ini-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&game);
+        let cfg = crate::game::config_path(&game);
+        std::fs::create_dir_all(cfg.parent().unwrap()).unwrap();
+        (game, cfg)
+    }
+
+    fn fov(v: &str) -> Vec<(String, ConfigValue, String)> {
+        vec![("FOV".into(), ConfigValue::Str(v.into()), "c".into())]
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_values_through_a_symlinked_config_keeps_the_link() {
+        let (game, cfg) = game_with_config("sym");
+        let real = game.join("dotfiles/config.ini");
+        std::fs::create_dir_all(real.parent().unwrap()).unwrap();
+        std::fs::write(&real, "FOV = \"80\" // x\n").unwrap();
+        std::os::unix::fs::symlink(&real, &cfg).unwrap();
+        write_values(&game, &fov("90")).unwrap();
+        assert!(std::fs::symlink_metadata(&cfg).unwrap().file_type().is_symlink());
+        assert_eq!(std::fs::read_to_string(&real).unwrap(), "FOV = \"90\" // c\n");
+        let _ = std::fs::remove_dir_all(&game);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_values_keeps_hard_links_and_works_in_a_read_only_players_dir() {
+        use std::os::unix::fs::PermissionsExt;
+        let (game, cfg) = game_with_config("hard");
+        std::fs::write(&cfg, "FOV = \"80\" // x\n").unwrap();
+        let other = game.join("config.link");
+        std::fs::hard_link(&cfg, &other).unwrap();
+        write_values(&game, &fov("91")).unwrap();
+        assert_eq!(std::fs::read_to_string(&other).unwrap(), "FOV = \"91\" // c\n", "the other hard link sees the new content");
+        // a read-only `players` directory (the file itself is writable): written in place, like `open(path, "w")`
+        // SAFETY: geteuid has no preconditions and cannot fail.
+        if unsafe { libc::geteuid() } != 0 {
+            let dir = cfg.parent().unwrap();
+            std::fs::remove_file(&other).unwrap();
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+            let r = write_values(&game, &fov("92"));
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+            r.unwrap();
+            assert_eq!(std::fs::read_to_string(&cfg).unwrap(), "FOV = \"92\" // c\n");
+        }
+        let _ = std::fs::remove_dir_all(&game);
+    }
+
+    #[test]
+    fn json_numbers_become_python_values() {
+        let v = |s: &str| ConfigValue::from_json(&serde_json::from_str(s).unwrap()).unwrap().py_str();
+        assert_eq!(v("9223372036854775808"), "9223372036854775808");
+        assert_eq!(v("-9223372036854775809"), "-9223372036854775809");
+        assert_eq!(v("-0"), "0");
+        assert_eq!(v("-0.0"), "-0.0");
+        assert_eq!(v("123456789.12345679"), "123456789.12345679");
+        assert_eq!(v("1e400"), "inf");
+        assert_eq!(v("1E+2"), "100.0");
+        assert_eq!(v("true"), "True");
+        assert_eq!(v("\"a\""), "a");
+        assert!(ConfigValue::from_json(&serde_json::Value::Null).is_none());
+    }
+
+    #[test]
+    fn state_numbers_parse_like_python_float_and_int() {
+        let c = "RefreshRate = \"\u{ff11}\u{ff12}\"\r\nFOV = \" 1_0.9 \"\nMaxFPS = \"1e30\"\nResolutionPercent = \"inf\"\nFullScreenMode = \"nan\"\n";
+        let c = normalize_newlines(c);
+        assert_eq!(get_float(&c, "RefreshRate", 60.0), 12.0);
+        assert_eq!(get_int(&c, "FOV", 80).to_string(), "10");
+        assert_eq!(get_int(&c, "MaxFPS", 165).to_string(), "1000000000000000019884624838656");
+        // the legacy raises (HTTP 500) for inf/nan; the port answers with the default
+        assert_eq!(get_int(&c, "ResolutionPercent", 100).to_string(), "100");
+        assert_eq!(get_int(&c, "FullScreenMode", 1).to_string(), "1");
+        assert_eq!(get_int("MaxFPS = \"\u{663}\u{660}\"", "MaxFPS", 165).to_string(), "30");
+    }
+
     /// Same replacement string as the legacy `_write_config_values` (comment fixed to `c`).
     fn set(text: &str, key: &str, value: &str) -> Result<String, String> {
         apply_update(text, key, &format!("{key} = \"{value}\" // c"))

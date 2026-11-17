@@ -165,6 +165,61 @@ pub fn copy2(src: &Path, dst: &Path) -> io::Result<()> {
     copy2_named(src, dst).map_err(|(e, _)| e)
 }
 
+/// A `shutil.rmtree` / `Path.unlink` failure with the path named the way Python's `str(OSError)` names it.
+#[derive(Debug)]
+pub struct RmtreeError {
+    pub err: io::Error,
+    /// `'<path>'`, or `PosixPath('<path>')` where Python passed a `Path` object.
+    named: String,
+}
+
+impl RmtreeError {
+    /// A failure that names `path` as a plain `str`.
+    pub fn plain(err: io::Error, path: &Path) -> RmtreeError {
+        RmtreeError { err, named: crate::pyfmt::repr_str(&crate::pyfmt::path_str(path)) }
+    }
+
+    /// `[Errno 13] Permission denied: '<path>'`.
+    pub fn text(&self) -> String {
+        format!("{}: {}", crate::pyfmt::io_error_text(&self.err, None), self.named)
+    }
+}
+
+/// `shutil.rmtree(path)` with `path` a `Path` object, as CPython 3.13 fails: entries are removed in directory order and
+/// the first failure stops everything. A failing file removal names the DIRECTORY that holds it, a failing sub-directory
+/// (open, list or `rmdir`) names that directory, the final `rmdir` names `path`. Only the top-level directory is a `Path`
+/// object (`PosixPath('...')`); everything below is a joined `str`. Symbolic links are removed as links
+/// (`entry.is_dir(follow_symlinks=False)`), never followed; a symlink given as `path` itself is unlinked too (the legacy
+/// refused: `Cannot call rmtree on a symbolic link`), so the target is never touched.
+pub fn py_rmtree(path: &Path) -> Result<(), RmtreeError> {
+    rmtree_level(path, true)
+}
+
+fn rmtree_level(path: &Path, top: bool) -> Result<(), RmtreeError> {
+    let named = |p: &Path, is_top: bool| {
+        let r = crate::pyfmt::repr_str(&crate::pyfmt::path_str(p));
+        if is_top {
+            format!("PosixPath({r})")
+        } else {
+            r
+        }
+    };
+    let fail = |err: io::Error| RmtreeError { err, named: named(path, top) };
+    if top && fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
+        return fs::remove_file(path).map_err(fail);
+    }
+    let entries = fs::read_dir(path).map_err(fail)?.collect::<Result<Vec<_>, _>>().map_err(fail)?;
+    for entry in entries {
+        let p = entry.path();
+        if entry.file_type().is_ok_and(|t| t.is_dir()) {
+            rmtree_level(&p, false)?;
+        } else {
+            fs::remove_file(&p).map_err(fail)?;
+        }
+    }
+    fs::remove_dir(path).map_err(fail)
+}
+
 /// Copy `src` over `dst` with `shutil.copy2` semantics, crash-safe where possible: a symlinked `dst`
 /// is followed (legacy wrote through the link into the target, which stays a link); a file with
 /// other hard links, or a directory that refuses the temp file / the rename, is overwritten in place
