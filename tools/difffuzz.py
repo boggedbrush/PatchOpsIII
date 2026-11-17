@@ -69,9 +69,15 @@ Known intentional divergences (ALLOWLIST / TEXT_NORMALISERS below; each entry: i
 Not generated / invisible by construction (nothing to allowlist): the port's write-once first-seen copies live outside the
 snapshot roots; the `MostRecent` Steam user preference (needs config/loginusers.vdf, which is never generated); the port
 refusing to edit Steam vdf when Steam will not close (the fake steam always closes); the log size bound (2 MiB, never reached).
-Allowlisted (see the code): `vdf-string-and-section` (a vdf key used as both string and section, Steam-writing ops only, after a
-perturbation tagged vdf-string-section-clash) and the text normaliser `first-seen-copy-note` (the sentence the port appends to
-some vdf error log lines to point at its first-seen copy). Anything not understood is reported, never allowlisted.
+Allowlisted (see the code; reported as `allowlisted`, never as passes; every entry is a narrow matcher with its reason, and the
+table is repeated in crates/patchops-core/README.md): `vdf-string-and-section` (a vdf key used as both string and section, Steam-writing
+ops only, after a perturbation tagged vdf-string-section-clash); legacy crashes where the port answers sensibly, matched on the legacy
+side answering envelope `internal:` (`legacy-500-numeric-config`, `-t7-conf`, `-launchoptions-section`, `-browse-root`,
+`-game-directory`); `vdf-lenient-localconfig` (python-vdf's line-oriented leniency, the port refuses to rewrite such a file);
+`rmtree-symlinked-dir` (the port unlinks a symlink where `shutil.rmtree` refuses; never the target); `settings-hand-edited-types`;
+`null-args-body-op`. The text normaliser `first-seen-copy-note` removes the sentence the port appends to some vdf error log lines
+to point at its first-seen copy. Files that are not valid UTF-8 are compared after the same sandbox-path / timestamp normalisation as
+text files. Anything not understood is reported, never allowlisted.
 
 Steering a campaign past already-triaged bugs: `--avoid id1,id2,...` (`--avoid list` prints the ids) rejection-samples cases
 whose JSON contains the feature (see KNOWN: each id is a documented root cause with a predicate over the case). Without it every
@@ -410,6 +416,21 @@ class Side:
                 ent = dict(self.snaps[rel])
                 ent["sha256"] = "txt:" + hashlib.sha256(t2.encode("utf-8")).hexdigest()
                 self.snaps[rel] = ent
+        # Files that are not valid UTF-8 (a pre-existing log with a stray byte that the op then appends to) are hashed raw by the
+        # snapshot, so the sandbox path / timestamps inside them would differ between the two sandboxes: normalise them bytewise
+        # (latin-1 is a bijection between bytes and code points).
+        for rel, ent in list(self.snaps.items()):
+            if str(ent.get("sha256", "")).startswith("bin:") and ent.get("t") == "f" and ent.get("size", 1 << 30) <= (1 << 20):
+                try:
+                    with open(os.path.join(self.sb.root, rel), "rb") as fh:
+                        raw = fh.read()
+                except OSError:
+                    continue
+                norm = snap.normalize_text(raw.decode("latin-1"), self.sb.root).encode("latin-1", "replace")
+                if norm != raw:
+                    ent = dict(ent)
+                    ent["sha256"] = "bin:" + hashlib.sha256(norm).hexdigest()
+                    self.snaps[rel] = ent
         return self.snaps
 
 
@@ -657,10 +678,54 @@ def _vdf_key_clash(ctx):
     return _case_has_fx(ctx, lambda f: isinstance(f, dict) and f.get("tag") == "vdf-string-section-clash")
 
 
+def _legacy_500(ctx):
+    """the legacy answered HTTP 500 (envelope `internal:`) while the port answered with a normal envelope"""
+    d = ctx.div
+    return (d.get("legacy_error") or "").startswith("internal:") and not d.get("port_error")
+
+
+def _fx_writes(ctx, *suffixes):
+    return [st.get("data") for st in ctx.case["steps"] if st.get("fx") == "write" and str(st.get("path", "")).endswith(suffixes) and isinstance(st.get("data"), str)]
+
+
+def _resp_paths_only(ctx, rx):
+    """every response difference line is about a path matching `rx`, and no file differs"""
+    d = ctx.div
+    return bool(d["resp_diff"]) and all(re.search(rx, ln) for ln in d["resp_diff"]) and not (d["only_legacy"] or d["only_port"] or d["changed"])
+
+
 ALLOWLIST = [
     ("vdf-string-and-section", "port rejects a VDF key used as both string and section (documented in steam/vdf.rs); "
      "only for Steam-writing ops after a perturbation tagged vdf-string-section-clash",
      lambda ctx: ctx.step.get("op") in STEAM_OPS and _vdf_key_clash(ctx)),
+    # ---- legacy crashes (HTTP 500): the port answers sensibly, nothing to replicate -------------------------------------------------
+    ("legacy-500-numeric-config", "legacy: int(float('inf'|'nan'|'1e999')) in the state builder raises OverflowError/ValueError (HTTP 500); the port keeps "
+     "its tolerant defaults (crates/patchops-core/README.md, 'Intentional differences')",
+     lambda ctx: _legacy_500(ctx) and (KNOWN["legacy500_inf"][1](ctx.case) or any(re.search(r"[eE][+-]?\d{3,}", n) for n in _raw_nums(ctx.case)))),
+    ("legacy-500-t7-conf", "legacy: t7patch.conf that is a directory or not valid UTF-8 makes check_t7_patch_status raise (HTTP 500); the port reads what it can",
+     lambda ctx: _legacy_500(ctx) and KNOWN["t7_nonfile"][1](ctx.case)),
+    ("legacy-500-launchoptions-section", "legacy: LaunchOptions stored as a VDF section makes the state builder raise (HTTP 500); the port treats it as 'no launch options'",
+     lambda ctx: _legacy_500(ctx) and any(re.search(r'"LaunchOptions"\s*\n\s*\{', t) for t in _fx_writes(ctx, "localconfig.vdf", "lc.real"))),
+    ("legacy-500-browse-root", "legacy: browse of '/' raises (HTTP 500); the port lists the root (what the directory browser's root button needs)",
+     lambda ctx: _legacy_500(ctx) and ctx.step.get("op") == "browse" and KNOWN["browse_root"][1](ctx.case)),
+    ("legacy-500-game-directory", "legacy: game-directory with a path beyond PATH_MAX / a >255-byte component (Path.is_dir -> ENAMETOOLONG) or an unwritable "
+     "app data dir (settings save) raises (HTTP 500); the port answers ok:false with the reason",
+     lambda ctx: ctx.step.get("op") == "game-directory" and _legacy_500(ctx) and (KNOWN["longpath"][1](ctx.case) or KNOWN["settings_unwritable"][1](ctx.case))),
+    # ---- deliberate differences -------------------------------------------------------------------------------------------------------
+    ("vdf-lenient-localconfig", "python-vdf is line-oriented and lenient (a '{ garbage }' file parses to {}, a line '}}' closes one level); the port refuses to "
+     "parse such a localconfig.vdf and therefore never rewrites it (launch-options/workshop-install log 'the file was left unchanged'); state building stays tolerant",
+     lambda ctx: any(t.lstrip("\ufeff \t\r\n").startswith("{ this is not vdf }") or re.search(r"(?m)^[ \t]*\}\}[ \t]*$", t) for t in _fx_writes(ctx, "localconfig.vdf", "lc.real"))
+     and _resp_paths_only(ctx, r"/(currentLaunchOptions|activeLaunchProfile|launchProfiles)")),
+    ("rmtree-symlinked-dir", "legacy: shutil.rmtree refuses a symbolic link to a directory (mod-files/clear, t7-uninstall's cache dirs: '[Errno None] None: "
+     "PosixPath(...)') and keeps it; the port unlinks the link itself and never touches the target (unit tests "
+     "mod_files_clear_unlinks_symlinks_and_never_touches_their_targets, uninstall_unlinks_a_symlinked_cache_dir_and_keeps_its_target)",
+     lambda ctx: ctx.step.get("op") in ("mod-files/clear", "t7-uninstall", "reset-stock") and "[Errno None] None: PosixPath(" in json.dumps(ctx.div.get("legacy_body"))),
+    ("settings-hand-edited-types", "electron-settings.json edited by hand with a non-string enhanced_dump_source: legacy echoes the raw JSON value in "
+     "state.enhanced.dumpSource, the port shows ''",
+     lambda ctx: any("enhanced_dump_source" in (t or "") for t in _fx_writes(ctx, "electron-settings.json")) and _resp_paths_only(ctx, r"/enhanced/dumpSource")),
+    ("null-args-body-op", "args:null for an op whose body model has only optional fields: legacy answers 422, the port treats null as {} (bench/OPS.md section 1: absent args = {})",
+     lambda ctx: (ctx.div.get("legacy_error") or "").startswith("validation:") and not ctx.div.get("port_error")
+     and isinstance(ctx.step.get("args"), dict) and "$rawargs" in ctx.step["args"]),
 ]
 
 

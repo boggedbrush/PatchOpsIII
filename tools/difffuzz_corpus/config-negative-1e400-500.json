@@ -1,0 +1,46 @@
+{
+ "id": "config-negative-1e400-500",
+ "title": "JSON -1e400 as a config value: legacy writes -inf and its state builder then raises (HTTP 500)",
+ "right_side": "port (legacy crash)",
+ "severity": "legacy bug (500)",
+ "culprit": "n/a (legacy _config_int)",
+ "suggested_fix": "none; allowlisted as legacy-500-numeric-config",
+ "notes": "status: allowlisted (found by the fresh seed-7001 campaign)",
+ "signature": [
+  "config",
+  "resp:/envelope_ok"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/config-negative-1e400-500.json",
+ "observed": {
+  "step_idx": 0,
+  "op": "config",
+  "resp_diff": [
+   "  ~ /envelope_ok: legacy=false port=true",
+   "  - /error_class: \"internal\"",
+   "  + /result: {\"ok\": true, \"state\": {\"appVersion\": \"bench\", \"platform\": \"Linux\", \"gameDir\": \"<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III\", \"gameDetected\": true, \"configExists\": true, \"steamUserId\": \"12345678\", \"logPath\": \"<SB>/home/.local/share/PatchOpsIII/PatchOpsIII.log\", \"presets\": [\"Sm"
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [],
+  "legacy_error": "internal: HTTP 500: Internal Server Error",
+  "port_error": null,
+  "files": {}
+ },
+ "case": {
+  "version": 1,
+  "seed": 7001,
+  "index": 858,
+  "profile": "fast",
+  "steps": [
+   {
+    "op": "config",
+    "args": {
+     "key": "FOV",
+     "value": {
+      "$raw": "-1e400"
+     }
+    }
+   }
+  ]
+ }
+}

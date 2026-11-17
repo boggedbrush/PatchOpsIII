@@ -1,0 +1,75 @@
+{
+ "id": "no-body-op-ignores-args",
+ "title": "mod-files/clear (an op whose legacy route has no body model) sent args:\"x\": legacy ignores any body, the port answered validation",
+ "right_side": "legacy",
+ "severity": "wrong response (validation instead of the op running)",
+ "culprit": "ops/mod.rs dispatch: Args::new rejected non-object args for every op",
+ "suggested_fix": "skip Args::new validation for ops without a body model (NO_BODY_OPS)",
+ "notes": "status: fixed (found by the fresh seed-7001 campaign)",
+ "signature": [
+  "mod-files/clear",
+  "resp:/envelope_ok|fs:APPDATA/BON Mod Files,APPDATA/PatchOpsIII.log"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/no-body-op-ignores-args.json",
+ "observed": {
+  "step_idx": 1,
+  "op": "mod-files/clear",
+  "resp_diff": [
+   "  ~ /envelope_ok: legacy=true port=false",
+   "  + /error_class: \"validation\"",
+   "  - /result: {\"ok\": true, \"state\": {\"appVersion\": \"bench\", \"platform\": \"Linux\", \"gameDir\": \"<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III\", \"gameDetected\": true, \"configExists\": true, \"steamUserId\": \"12345678\", \"logPath\": \"<SB>/home/.local/share/PatchOpsIII/PatchOpsIII.log\", \"presets\": [\"Sm"
+  ],
+  "only_legacy": [
+   "home/.local/share/PatchOpsIII/BO3 Mod Files"
+  ],
+  "only_port": [],
+  "changed": [
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log"
+  ],
+  "legacy_error": null,
+  "port_error": "validation: Input should be a valid dictionary or object",
+  "files": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": "<TS> - Success: All intro videos skipped.\n<TS> - Success: Cleared mod files in <SB>/home/.local/share/PatchOpsIII/BO3 Mod Files\n",
+    "port": "<TS> - Success: All intro videos skipped.\n",
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:a0b1e71e7fe4c322e5ba609d5a95073af8247055cc5a907f9e8fd6b611b4107d",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:4dc0fa298cbe1fcb9a51b957688bba9ffa951dc0faef9915a6fa571cd3e47644",
+     "mode": "0644"
+    }
+   },
+   "home/.local/share/PatchOpsIII/BO3 Mod Files": {
+    "legacy_meta": {
+     "t": "d",
+     "mode": "0755"
+    },
+    "port_meta": null
+   }
+  }
+ },
+ "case": {
+  "version": 1,
+  "seed": 7001,
+  "index": 504,
+  "profile": "fast",
+  "steps": [
+   {
+    "op": "all-intros-skip",
+    "args": {
+     "enabled": true
+    }
+   },
+   {
+    "op": "mod-files/clear",
+    "args": {
+     "$rawargs": "\"x\""
+    }
+   }
+  ]
+ }
+}

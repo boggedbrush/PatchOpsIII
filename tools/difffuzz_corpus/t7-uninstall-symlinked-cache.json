@@ -1,0 +1,74 @@
+{
+ "id": "t7-uninstall-symlinked-cache",
+ "title": "a symlink named like a t7 cache dir inside BO3 Mod Files: legacy shutil.rmtree refuses it and the op fails, the port unlinks the link",
+ "right_side": "port (safer: never follows the link)",
+ "severity": "different result",
+ "culprit": "n/a",
+ "suggested_fix": "allowlisted as rmtree-symlinked-dir",
+ "notes": "status: allowlisted (found by the fresh seed-7001 campaign)",
+ "signature": [
+  "t7-uninstall",
+  "resp:/error|fs:APPDATA/BON Mod Files/linux,APPDATA/PatchOpsIII.log"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/t7-uninstall-symlinked-cache.json",
+ "observed": {
+  "step_idx": 1,
+  "op": "t7-uninstall",
+  "resp_diff": [
+   "  - /result/error: \"[Errno None] None: PosixPath('<SB>/home/.local/share/PatchOpsIII/BO3 Mod Files/linux')\"",
+   "  ~ /result/ok: legacy=false port=true",
+   "  + /result/state: {\"appVersion\": \"bench\", \"platform\": \"Linux\", \"gameDir\": \"<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III\", \"gameDetected\": true, \"configExists\": true, \"steamUserId\": \"12345678\", \"logPath\": \"<SB>/home/.local/share/PatchOpsIII/PatchOpsIII.log\", \"presets\": [\"Smooth Preset\", \"Low-Lat"
+  ],
+  "only_legacy": [
+   "home/.local/share/PatchOpsIII/BO3 Mod Files/linux"
+  ],
+  "only_port": [],
+  "changed": [
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log"
+  ],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": "<TS> - Error: T7 Patch uninstall failed: [Errno None] None: PosixPath('<SB>/home/.local/share/PatchOpsIII/BO3 Mod Files/linux')\n",
+    "port": "<TS> - Success: Removed cached T7 Patch files.\n<TS> - Success: T7 Patch has been completely uninstalled.\n",
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:6c337d10895e87fdd2148690a5819bdacba5d0618e17f09ec4eaf4aca9c925c3",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:7ede61e0c567f85eb12aa7bbc65d8ff1877dc0771e2d6f25f53a7a8ba6f3b43a",
+     "mode": "0644"
+    }
+   },
+   "home/.local/share/PatchOpsIII/BO3 Mod Files/linux": {
+    "legacy_meta": {
+     "t": "l",
+     "to": "<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III",
+     "mode": "0777"
+    },
+    "port_meta": null
+   }
+  }
+ },
+ "case": {
+  "version": 1,
+  "seed": 7001,
+  "index": 703,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "symlink",
+    "root": "mod",
+    "path": "linux",
+    "to": "{game_dir}"
+   },
+   {
+    "op": "t7-uninstall",
+    "args": {}
+   }
+  ]
+ }
+}

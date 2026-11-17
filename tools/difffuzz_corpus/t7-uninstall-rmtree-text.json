@@ -1,0 +1,68 @@
+{
+ "id": "t7-uninstall-rmtree-text",
+ "title": "t7-uninstall with an unwritable subdirectory in a cached extract dir: legacy shutil.rmtree names the directory holding the failing entry, the port named the top-level cache dir",
+ "right_side": "legacy",
+ "severity": "wrong error text",
+ "culprit": "ops/t7.rs uninstall used remove_dir_all + the top-level path",
+ "suggested_fix": "fsutil::py_rmtree (shared with mod-files/clear)",
+ "notes": "status: fixed (found by the fresh seed-7001 campaign)",
+ "signature": [
+  "t7-uninstall",
+  "resp:/error|fs:APPDATA/PatchOpsIII.log"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/t7-uninstall-rmtree-text.json",
+ "observed": {
+  "step_idx": 2,
+  "op": "t7-uninstall",
+  "resp_diff": [
+   "  ~ /result/error: legacy=\"[Errno 13] Permission denied: '<SB>/home/.local/share/PatchOpsIII/BO3 Mod Files/T7Patch_extracted/sub'\" port=\"[Errno 13] Permission denied: '<SB>/home/.local/share/PatchOpsIII/BO3 Mod Files/T7Patch_extracted'\""
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log"
+  ],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": "<TS> - Error: T7 Patch uninstall failed: [Errno 13] Permission denied: '<SB>/home/.local/share/PatchOpsIII/BO3 Mod Files/T7Patch_extracted/sub'\n",
+    "port": "<TS> - Error: T7 Patch uninstall failed: [Errno 13] Permission denied: '<SB>/home/.local/share/PatchOpsIII/BO3 Mod Files/T7Patch_extracted'\n",
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:8a997d4c8ce17a669f802a8d87bfacbdd4ae281466f6fb74ca148572eb4504a7",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:6dc6e0870a43cbff563508a3aa5b10ce051a187313eafe37c8bf072c31904ab6",
+     "mode": "0644"
+    }
+   }
+  }
+ },
+ "case": {
+  "version": 1,
+  "seed": 7001,
+  "index": 240,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "write",
+    "root": "mod",
+    "path": "T7Patch_extracted/sub/t7patch.dll",
+    "data": "m"
+   },
+   {
+    "fx": "chmod",
+    "root": "mod",
+    "path": "T7Patch_extracted",
+    "mode": 365
+   },
+   {
+    "op": "t7-uninstall",
+    "args": {}
+   }
+  ]
+ }
+}
