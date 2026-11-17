@@ -177,9 +177,9 @@ pub fn write_values(game_dir: &Path, updates: &[(String, ConfigValue, String)]) 
         let replacement = format!("{key} = \"{}\" // {comment}", value.py_str());
         text = apply_update(&text, key, &replacement).map_err(AppError::new)?;
     }
-    // `atomic_write` would happily rename over a read-only file; an in-place open must fail first
-    // exactly as the legacy `open(path, "w")` did (`[Errno 13] Permission denied`), leaving the file untouched.
-    std::fs::OpenOptions::new().write(true).open(&config).map_err(io_err)?;
+    // `atomic_write` keeps the legacy `open(path, "w")` semantics: symlinks are followed, hard links and
+    // read-only directories are written in place, a read-only file fails with `[Errno 13] Permission denied`
+    // and is left untouched.
     crate::fsutil::atomic_write(&config, text.as_bytes()).map_err(io_err)
 }
 

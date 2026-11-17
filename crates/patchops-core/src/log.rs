@@ -96,6 +96,11 @@ struct FileInner {
     payload: Option<(FileKey, Arc<str>)>,
 }
 
+/// The file a log path really names: symlinks followed (a dangling link resolves to its target).
+fn real_log_path(path: &Path) -> PathBuf {
+    crate::fsutil::resolve_link_chain(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
 fn rotated_path(path: &std::path::Path) -> PathBuf {
     let mut s = path.as_os_str().to_os_string();
     s.push(".1");
@@ -379,6 +384,7 @@ impl FileLog {
             return len;
         };
         sweep_stale_temps(&self.path);
+        sweep_stale_temps(&real_log_path(&self.path));
         inner.payload = None;
         match self.trim_exclusive() {
             Trim::NotNeeded(real) => {
@@ -405,8 +411,12 @@ impl FileLog {
     /// The trim proper, holding the cross-process lock. Memory: the retained tail (~512 KiB) and
     /// a copy buffer, never the log.
     fn trim_exclusive(&self) -> Trim {
+        // A symlinked log (dotfile managers, a log kept on another disk) is trimmed where it really lives: the
+        // temps and `.1` are created next to the real file and renamed there, so the link is never replaced.
+        let real = real_log_path(&self.path);
+        let path = &real;
         let cur = || self.stat().map_or(0, |(l, _)| l);
-        let mut f = match std::fs::File::open(&self.path) {
+        let mut f = match std::fs::File::open(&path) {
             Ok(f) => f,
             Err(_) => return Trim::Failed(cur()),
         };
@@ -432,10 +442,10 @@ impl FileLog {
         let mut tail_len = (buf.len() - tail_from) as u64;
         // Both files are prepared (and fsynced) before anything visible changes. The head (the big
         // one) first: when it cannot be written nothing else was done.
-        let Some(head_tmp) = write_like(&rotated_path(&self.path), &meta, |o| copy_prefix(&self.path, start, o)) else {
+        let Some(head_tmp) = write_like(&rotated_path(&path), &meta, |o| copy_prefix(&path, start, o)) else {
             return Trim::Failed(cur());
         };
-        let Some(tail_tmp) = write_like(&self.path, &meta, |o| o.write_all(&buf[tail_from..])) else {
+        let Some(tail_tmp) = write_like(&path, &meta, |o| o.write_all(&buf[tail_from..])) else {
             let _ = std::fs::remove_file(&head_tmp);
             return Trim::Failed(cur());
         };
@@ -476,10 +486,10 @@ impl FileLog {
         }
         // `.1` first (the old content is still complete in the log, so a failure here, or between
         // the two renames, can only duplicate lines, never lose them), then the new log.
-        if std::fs::rename(&head_tmp, rotated_path(&self.path)).is_err() {
+        if std::fs::rename(&head_tmp, rotated_path(&path)).is_err() {
             return discard(Trim::Failed(real));
         }
-        if std::fs::rename(&tail_tmp, &self.path).is_err() {
+        if std::fs::rename(&tail_tmp, &path).is_err() {
             return discard(Trim::Failed(real));
         }
         // Whatever reached the old file after the last read above is still readable through our
@@ -503,7 +513,7 @@ impl FileLog {
                 whole.push(b'\n');
             }
             if !whole.is_empty() {
-                if let Ok(mut n) = std::fs::OpenOptions::new().create(true).append(true).open(&self.path) {
+                if let Ok(mut n) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
                     if n.write_all(&whole).is_ok() {
                         tail_len += whole.len() as u64;
                     }
@@ -688,6 +698,7 @@ impl Logger {
         inner.trim_floor = 0;
         // The previous generation goes too (Clear Logs means clear); it never exists in goldens.
         let _ = std::fs::remove_file(rotated_path(&self.path));
+        let _ = std::fs::remove_file(rotated_path(&real_log_path(&self.path)));
         match std::fs::File::create(&self.path) {
             Ok(_) => true,
             Err(e) => {
@@ -752,6 +763,29 @@ mod tests {
         assert!(kept.contains("00029999 "), "newest line retained");
         assert_eq!(format!("{old}{kept}"), text, "nothing lost, order kept");
         assert!(text.ends_with(&kept));
+        drop(log);
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_log_is_trimmed_in_place_and_the_link_survives() {
+        let d = tmp("trimlink");
+        fs::create_dir(d.join("real")).unwrap();
+        fs::create_dir(d.join("app")).unwrap();
+        let real = d.join("real/a.log");
+        let link = d.join("app/a.log");
+        let text = lines(30_000, 90);
+        fs::write(&real, &text).unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let log = Logger::new(link.clone());
+        log.trim_if_needed();
+        assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink(), "the link is not replaced by a regular file");
+        let kept = fs::read_to_string(&real).unwrap();
+        let old = fs::read_to_string(rotated_path(&real)).unwrap();
+        assert_eq!(format!("{old}{kept}"), text, "nothing lost");
+        assert!(!rotated_path(&link).exists(), ".1 lives next to the real file");
+        assert_eq!(fs::read_to_string(&link).unwrap(), kept);
         drop(log);
         let _ = fs::remove_dir_all(&d);
     }
