@@ -416,7 +416,7 @@ impl FileLog {
         let real = real_log_path(&self.path);
         let path = &real;
         let cur = || self.stat().map_or(0, |(l, _)| l);
-        let mut f = match std::fs::File::open(&path) {
+        let mut f = match std::fs::File::open(path) {
             Ok(f) => f,
             Err(_) => return Trim::Failed(cur()),
         };
@@ -442,10 +442,10 @@ impl FileLog {
         let mut tail_len = (buf.len() - tail_from) as u64;
         // Both files are prepared (and fsynced) before anything visible changes. The head (the big
         // one) first: when it cannot be written nothing else was done.
-        let Some(head_tmp) = write_like(&rotated_path(&path), &meta, |o| copy_prefix(&path, start, o)) else {
+        let Some(head_tmp) = write_like(&rotated_path(path), &meta, |o| copy_prefix(path, start, o)) else {
             return Trim::Failed(cur());
         };
-        let Some(tail_tmp) = write_like(&path, &meta, |o| o.write_all(&buf[tail_from..])) else {
+        let Some(tail_tmp) = write_like(path, &meta, |o| o.write_all(&buf[tail_from..])) else {
             let _ = std::fs::remove_file(&head_tmp);
             return Trim::Failed(cur());
         };
@@ -486,10 +486,10 @@ impl FileLog {
         }
         // `.1` first (the old content is still complete in the log, so a failure here, or between
         // the two renames, can only duplicate lines, never lose them), then the new log.
-        if std::fs::rename(&head_tmp, rotated_path(&path)).is_err() {
+        if std::fs::rename(&head_tmp, rotated_path(path)).is_err() {
             return discard(Trim::Failed(real));
         }
-        if std::fs::rename(&tail_tmp, &path).is_err() {
+        if std::fs::rename(&tail_tmp, path).is_err() {
             return discard(Trim::Failed(real));
         }
         // Whatever reached the old file after the last read above is still readable through our
@@ -513,7 +513,7 @@ impl FileLog {
                 whole.push(b'\n');
             }
             if !whole.is_empty() {
-                if let Ok(mut n) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+                if let Ok(mut n) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
                     if n.write_all(&whole).is_ok() {
                         tail_len += whole.len() as u64;
                     }

@@ -19,13 +19,13 @@ fn write(out: &mut String, v: &Value, level: usize) {
     match v {
         Value::Null => out.push_str("null"),
         Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
-        Value::Number(n) => {
-            if let Some(f) = n.as_f64().filter(|_| n.is_f64()) {
-                out.push_str(&crate::pyfmt::float_str(f));
-            } else {
-                out.push_str(&n.to_string());
-            }
-        }
+        // `json.dumps`: ints of any size as `str(int)`, floats as `repr(float)`, non-finite floats as `Infinity` / `NaN`.
+        Value::Number(n) => out.push_str(match crate::pyfmt::py_str_of_number(n).as_str() {
+            "inf" => "Infinity",
+            "-inf" => "-Infinity",
+            "nan" => "NaN",
+            other => other,
+        }),
         Value::String(s) => write_str(out, s),
         Value::Array(a) => {
             if a.is_empty() {
@@ -103,5 +103,7 @@ mod tests {
             "{\n  \"game_dir\": \"/a/\\u00e9\",\n  \"n\": [\n    1,\n    2\n  ],\n  \"e\": {},\n  \"l\": []\n}"
         );
         assert_eq!(dumps_indent2(&json!({})), "{}");
+        let nums: Value = serde_json::from_str("[9223372036854775808, -0, 123456789.12345679, 1e400, 1.0, 1e2, 7]").unwrap();
+        assert_eq!(dumps_indent2(&nums), "[\n  9223372036854775808,\n  0,\n  123456789.12345679,\n  Infinity,\n  1.0,\n  100.0,\n  7\n]");
     }
 }

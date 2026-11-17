@@ -9,13 +9,15 @@
 use std::path::Path;
 
 use crate::error::{AppError, AppResult};
-use crate::pyfmt::{io_error_text, path_str, repr_str};
+use crate::pyfmt::{io_error_text, path_str, py_isspace, repr_str, PyInt};
 
 /// A value accepted by `config`/presets: Python's `str | int | float | bool`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConfigValue {
     Str(String),
     Int(i64),
+    /// A Python `int` beyond `i64` (a JSON integer literal of any size).
+    BigInt(PyInt),
     Float(f64),
     Bool(bool),
 }
@@ -27,10 +29,17 @@ impl ConfigValue {
         match v {
             Value::String(s) => Some(ConfigValue::Str(s.clone())),
             Value::Bool(b) => Some(ConfigValue::Bool(*b)),
-            Value::Number(n) => match n.as_i64() {
-                Some(i) => Some(ConfigValue::Int(i)),
-                None => n.as_f64().map(ConfigValue::Float),
-            },
+            // `json.loads` semantics: an integer literal is an `int` of any size (`-0` is `0`), anything with a
+            // fraction or exponent a `float` (out of range gives `inf`). The exact literal is kept by serde_json's
+            // `arbitrary_precision`.
+            Value::Number(n) if crate::pyfmt::number_is_int(n) => {
+                let i = crate::pyfmt::py_int(&n.to_string())?;
+                Some(match i.as_str().parse::<i64>() {
+                    Ok(v) => ConfigValue::Int(v),
+                    Err(_) => ConfigValue::BigInt(i),
+                })
+            }
+            Value::Number(n) => Some(ConfigValue::Float(n.to_string().parse::<f64>().unwrap_or(f64::NAN))),
             _ => None,
         }
     }
@@ -40,6 +49,7 @@ impl ConfigValue {
         match self {
             ConfigValue::Str(s) => s.clone(),
             ConfigValue::Int(i) => i.to_string(),
+            ConfigValue::BigInt(i) => i.to_string(),
             ConfigValue::Float(f) => crate::pyfmt::float_str(*f),
             ConfigValue::Bool(true) => "True".into(),
             ConfigValue::Bool(false) => "False".into(),
@@ -122,14 +132,15 @@ pub fn extract_or(content: &str, key: &str, default: &str) -> String {
     extract(content, key).unwrap_or_else(|| default.to_string())
 }
 
-/// Python `int(float(s))` / `float(s)` parsing helpers for state fields.
+/// Python `float(s)` (see [`crate::pyfmt::py_float`]).
 pub fn parse_float(s: &str) -> Option<f64> {
-    s.trim().parse::<f64>().ok()
+    crate::pyfmt::py_float(s)
 }
 
-/// Legacy `_config_int`: `int(float(value))`, default on failure.
-pub fn get_int(content: &str, key: &str, default: i64) -> i64 {
-    extract(content, key).and_then(|v| parse_float(&v)).filter(|f| f.is_finite()).map(|f| f.trunc() as i64).unwrap_or(default)
+/// Legacy `_config_int`: `int(float(value))` (exact for any magnitude), default on failure. `inf`/`nan` make
+/// the legacy raise (HTTP 500); the default is returned instead.
+pub fn get_int(content: &str, key: &str, default: i64) -> PyInt {
+    extract(content, key).and_then(|v| parse_float(&v)).and_then(PyInt::from_f64_trunc).unwrap_or_else(|| PyInt::from(default))
 }
 
 /// Legacy `_config_float`.
@@ -215,15 +226,6 @@ pub fn apply_update(text: &str, key: &str, replacement: &str) -> Result<String, 
     }
     out.extend(&chars[pos..]);
     Ok(out)
-}
-
-/// Python `str.isspace()`, which is also what the `\s` class matches for str patterns.
-pub fn py_isspace(c: char) -> bool {
-    matches!(
-        c,
-        '\t' | '\n' | '\u{0b}' | '\u{0c}' | '\r' | ' ' | '\u{1c}'..='\u{1f}' | '\u{85}' | '\u{a0}' | '\u{1680}'
-            | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}'
-    )
 }
 
 /// First match of `^\s*KEY\s*=.*$` starting at or after `from`, as `(start, end)` char indices.

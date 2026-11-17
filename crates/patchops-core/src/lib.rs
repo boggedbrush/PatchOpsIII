@@ -28,6 +28,7 @@ pub mod presets;
 pub mod proc;
 pub mod pyfmt;
 pub mod pyjson;
+mod pyunicode;
 pub mod rpc;
 pub mod settings;
 pub mod state;

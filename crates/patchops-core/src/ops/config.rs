@@ -16,7 +16,7 @@ use crate::context::Core;
 use crate::error::{AppError, AppResult, OpError};
 use crate::game;
 use crate::presets;
-use crate::pyfmt::{io_error_text, path_str, repr_str};
+use crate::pyfmt::{io_error_text, path_str, repr_str, PyInt};
 use crate::state::{State, StateCx};
 
 pub const OPS: &[&str] = &["config", "vram-target", "presets/apply", "config-readonly"];
@@ -218,12 +218,12 @@ fn set_mode(path: &Path, mode: u32) -> std::io::Result<()> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GraphicsState {
-    pub max_fps: i64,
-    pub fov: i64,
-    pub display_mode: i64,
+    pub max_fps: PyInt,
+    pub fov: PyInt,
+    pub display_mode: PyInt,
     pub resolution: String,
     pub refresh_rate: f64,
-    pub render_resolution: i64,
+    pub render_resolution: PyInt,
     pub vsync: bool,
     pub draw_fps: bool,
 }
@@ -234,9 +234,9 @@ pub struct AdvancedState {
     pub smooth_framerate: bool,
     pub unlock_options: bool,
     pub reduce_cpu: bool,
-    pub max_frame_latency: i64,
+    pub max_frame_latency: PyInt,
     pub vram_limited: bool,
-    pub vram_target: i64,
+    pub vram_target: PyInt,
     pub config_readonly: bool,
 }
 
@@ -262,7 +262,7 @@ pub fn advanced_state(cx: &StateCx) -> AdvancedState {
         reduce_cpu: ini::get_flag(c, "SerializeRender", "2", "0"),
         max_frame_latency: ini::get_int(c, "MaxFrameLatency", 1),
         vram_limited: !(ini::extract_or(c, "VideoMemory", "1") == "1" && ini::extract_or(c, "StreamMinResident", "0") == "0"),
-        vram_target: (ini::get_float(c, "VideoMemory", 0.75) * 100.0) as i64,
+        vram_target: PyInt::from_f64_trunc(ini::get_float(c, "VideoMemory", 0.75) * 100.0).unwrap_or_default(),
         config_readonly: cx
             .game_dir
             .as_deref()

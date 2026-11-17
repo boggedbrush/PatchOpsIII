@@ -39,18 +39,18 @@ fn dxvk_preset(name: &str) -> Option<DxvkSettings> {
         "Recommended" => Some(DxvkSettings {
             enable_async: true,
             gpl_async_cache: true,
-            num_compiler_threads: 0,
-            max_frame_rate: 0,
-            max_frame_latency: 1,
+            num_compiler_threads: 0.into(),
+            max_frame_rate: 0.into(),
+            max_frame_latency: 1.into(),
             tear_free: "True".into(),
             hud_enabled: false,
         }),
         "None" => Some(DxvkSettings {
             enable_async: true,
             gpl_async_cache: false,
-            num_compiler_threads: 0,
-            max_frame_rate: 0,
-            max_frame_latency: 0,
+            num_compiler_threads: 0.into(),
+            max_frame_rate: 0.into(),
+            max_frame_latency: 0.into(),
             tear_free: "Auto".into(),
             hud_enabled: false,
         }),
@@ -204,19 +204,19 @@ impl GraphicsView {
         }));
         subs.push(cx.subscribe(&dx_threads, |this, _, ev: &NumberInputEvent, cx| {
             let (NumberInputEvent::Changed(v) | NumberInputEvent::Committed(v)) = ev;
-            this.draft.num_compiler_threads = (*v as i64).clamp(0, 64);
+            this.draft.num_compiler_threads = (*v as i64).clamp(0, 64).into();
             cx.notify();
         }));
         subs.push(cx.subscribe(&dx_cap, |this, _, ev: &SliderEvent, cx| {
             // Legacy commits the slider value into the draft on release; it is only a local draft,
             // so following the drag keeps the draft and the label consistent.
             let (SliderEvent::Changed(v) | SliderEvent::Committed(v)) = ev;
-            this.draft.max_frame_rate = v.round() as i64;
+            this.draft.max_frame_rate = (v.round() as i64).into();
             cx.notify();
         }));
         subs.push(cx.subscribe(&dx_latency, |this, _, ev: &NumberInputEvent, cx| {
             if let NumberInputEvent::Committed(v) = ev {
-                this.draft.max_frame_latency = *v as i64;
+                this.draft.max_frame_latency = (*v as i64).into();
                 cx.notify();
             }
         }));
@@ -273,11 +273,11 @@ impl GraphicsView {
         let Some(s) = self.state(cx) else { return };
         let (g, a) = (&s.graphics, &s.advanced);
         let saved = match id {
-            ConfigId::MaxFps => g.max_fps as f64,
-            ConfigId::Fov => g.fov as f64,
+            ConfigId::MaxFps => g.max_fps.to_f64(),
+            ConfigId::Fov => g.fov.to_f64(),
             ConfigId::RefreshRate => g.refresh_rate,
-            ConfigId::RenderResolution => g.render_resolution as f64,
-            ConfigId::MaxFrameLatency => a.max_frame_latency as f64,
+            ConfigId::RenderResolution => g.render_resolution.to_f64(),
+            ConfigId::MaxFrameLatency => a.max_frame_latency.to_f64(),
             _ => f64::NAN,
         };
         if (saved - v).abs() > 1e-9 || saved.is_nan() {
@@ -305,20 +305,20 @@ impl GraphicsView {
     fn live_draft(&mut self, cx: &mut Context<Self>) -> DxvkSettings {
         let threads = self.dx_threads.update(cx, |n, cx| n.commit_if_editing(cx));
         let latency = self.dx_latency.update(cx, |n, cx| n.commit_if_editing(cx));
-        self.draft.num_compiler_threads = (threads as i64).clamp(0, 64);
-        self.draft.max_frame_latency = latency as i64;
+        self.draft.num_compiler_threads = (threads as i64).clamp(0, 64).into();
+        self.draft.max_frame_latency = (latency as i64).into();
         self.draft.clone()
     }
 
     /// Push the DXVK draft into the DXVK widgets (no events).
     fn push_draft(&mut self, cx: &mut Context<Self>) {
         let d = self.draft.clone();
-        self.dx_threads.update(cx, |n, cx| n.set_value(d.num_compiler_threads as f64, cx));
+        self.dx_threads.update(cx, |n, cx| n.set_value(d.num_compiler_threads.to_f64(), cx));
         self.dx_cap.update(cx, |s, cx| {
-            s.set_value_silent(d.max_frame_rate as f32);
+            s.set_value_silent(d.max_frame_rate.to_f64() as f32);
             cx.notify();
         });
-        self.dx_latency.update(cx, |n, cx| n.set_value(d.max_frame_latency as f64, cx));
+        self.dx_latency.update(cx, |n, cx| n.set_value(d.max_frame_latency.to_f64(), cx));
         self.dx_tear.update(cx, |s, cx| s.set_selected(Some(&d.tear_free), cx));
         cx.notify();
     }
@@ -342,16 +342,16 @@ impl GraphicsView {
             self.resolution.update(cx, |i, cx| i.set_text(g.resolution.clone(), cx));
         }
         self.refresh.update(cx, |n, cx| n.set_value(g.refresh_rate, cx));
-        self.max_fps.update(cx, |n, cx| n.set_value(g.max_fps as f64, cx));
-        for (slider, v) in [(&self.render_res, g.render_resolution), (&self.fov, g.fov)] {
+        self.max_fps.update(cx, |n, cx| n.set_value(g.max_fps.to_f64(), cx));
+        for (slider, v) in [(&self.render_res, g.render_resolution.to_f64()), (&self.fov, g.fov.to_f64())] {
             slider.update(cx, |s, cx| {
                 s.set_value_silent(v as f32);
                 cx.notify();
             });
         }
-        self.frame_latency.update(cx, |n, cx| n.set_value(a.max_frame_latency as f64, cx));
+        self.frame_latency.update(cx, |n, cx| n.set_value(a.max_frame_latency.to_f64(), cx));
         self.vram.update(cx, |n, cx| {
-            n.set_value(a.vram_target as f64, cx);
+            n.set_value(a.vram_target.to_f64(), cx);
             n.set_disabled(!a.vram_limited, cx);
         });
 
@@ -420,7 +420,7 @@ impl GraphicsView {
 
         let c2 = c.clone();
         let c3 = c.clone();
-        let target = a.vram_target;
+        let target = a.vram_target.to_i64();
         let advanced = Collapsible::new("gfx-advanced", "Advanced", self.advanced_open)
             .detail("Config, CPU, latency, and VRAM controls")
             .chevron_end()
@@ -529,7 +529,7 @@ impl GraphicsView {
 
         let t1 = this.clone();
         let t2 = this.clone();
-        let threads = d.num_compiler_threads;
+        let threads = d.num_compiler_threads.to_i64();
         let detected = self.detected;
         let cores = std::thread::available_parallelism().map(|n| n.get()).ok();
         let auto_tip = match (detected, cores) {
@@ -553,7 +553,7 @@ impl GraphicsView {
                         div().id("dx-auto-tip").tooltip(tooltip(auto_tip)).child(
                             Chip::new("dx-auto", "Recommended: Auto (0)").height(30.).active(threads == 0).on_click(move |_, _, cx| {
                                 t1.update(cx, |v, cx| {
-                                    v.draft.num_compiler_threads = 0;
+                                    v.draft.num_compiler_threads = 0.into();
                                     v.push_draft(cx);
                                 })
                             }),
@@ -568,7 +568,7 @@ impl GraphicsView {
                             Chip::new("dx-manual", format!("Manual: {n}")).height(30.).dim(true).active(threads == n && n != 0).on_click(
                                 move |_, _, cx| {
                                     t2.update(cx, |v, cx| {
-                                        v.draft.num_compiler_threads = n;
+                                        v.draft.num_compiler_threads = n.into();
                                         v.push_draft(cx);
                                     })
                                 },

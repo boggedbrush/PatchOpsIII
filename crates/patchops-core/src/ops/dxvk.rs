@@ -14,7 +14,7 @@ use super::{state_reply, Args, Group};
 use crate::context::Core;
 use crate::error::{AppError, AppResult, OpError};
 use crate::net::{no_progress, DownloadOptions, Net, ProgressFn};
-use crate::pyfmt::io_error_text;
+use crate::pyfmt::{io_error_text, PyInt};
 use crate::state::{State, StateCx};
 
 pub const OPS: &[&str] = &["dxvk-config", "dxvk-install", "dxvk-uninstall"];
@@ -46,9 +46,9 @@ fn settings_from_args(a: &Args) -> Result<DxvkSettings, OpError> {
     Ok(DxvkSettings {
         enable_async: a.bool_or("enableAsync", true)?,
         gpl_async_cache: a.bool_or("gplAsyncCache", true)?,
-        num_compiler_threads: a.int_range("numCompilerThreads", 0, 0, 64)?,
-        max_frame_rate: a.int_range("maxFrameRate", 0, 0, 360)?,
-        max_frame_latency: a.int_range("maxFrameLatency", 1, 0, 16)?,
+        num_compiler_threads: a.int_range("numCompilerThreads", 0, 0, 64)?.into(),
+        max_frame_rate: a.int_range("maxFrameRate", 0, 0, 360)?.into(),
+        max_frame_latency: a.int_range("maxFrameLatency", 1, 0, 16)?.into(),
         tear_free: a.str_or("tearFree", "True")?,
         hud_enabled: a.bool_or("hudEnabled", false)?,
     })
@@ -61,9 +61,9 @@ fn settings_from_args(a: &Args) -> Result<DxvkSettings, OpError> {
 pub struct DxvkSettings {
     pub enable_async: bool,
     pub gpl_async_cache: bool,
-    pub num_compiler_threads: i64,
-    pub max_frame_rate: i64,
-    pub max_frame_latency: i64,
+    pub num_compiler_threads: PyInt,
+    pub max_frame_rate: PyInt,
+    pub max_frame_latency: PyInt,
     pub tear_free: String,
     pub hud_enabled: bool,
 }
@@ -74,9 +74,9 @@ impl Default for DxvkSettings {
         DxvkSettings {
             enable_async: true,
             gpl_async_cache: true,
-            num_compiler_threads: 0,
-            max_frame_rate: 0,
-            max_frame_latency: 1,
+            num_compiler_threads: 0.into(),
+            max_frame_rate: 0.into(),
+            max_frame_latency: 1.into(),
             tear_free: "True".into(),
             hud_enabled: false,
         }
@@ -137,21 +137,34 @@ pub fn write_conf(core: &Core, game_dir: &Path, settings: &DxvkSettings, include
 }
 
 /// Legacy `_read_dxvk_settings`: defaults overlaid with `dxvk.conf`; a malformed integer stops
-/// parsing (earlier lines stay applied) and logs a warning.
+/// parsing (earlier lines stay applied) and logs a warning, an unreadable file (e.g. a directory) logs
+/// `Failed to read dxvk.conf: <OSError text>` and leaves the defaults.
 pub fn read_settings(core: &Core, game_dir: Option<&str>) -> DxvkSettings {
+    use crate::pyfmt::{py_int, py_splitlines, py_strip, repr_str};
     let mut s = DxvkSettings::default();
-    let Some(game) = game_dir else { return s };
+    let Some(game) = game_dir.filter(|g| !g.is_empty()) else { return s };
     let conf = std::path::Path::new(game).join(CONF_FILE);
-    let Ok(bytes) = std::fs::read(&conf) else { return s };
+    // `conf.exists()`: a dangling symlink or an inaccessible path counts as missing.
+    if !conf.exists() {
+        return s;
+    }
+    // `read_text(encoding="utf-8", errors="ignore").splitlines()`: universal newlines, then every Unicode line boundary.
+    let bytes = match std::fs::read(&conf) {
+        Ok(b) => b,
+        Err(e) => {
+            core.log.warning(format!("Failed to read dxvk.conf: {}", io_error_text(&e, Some(&conf))));
+            return s;
+        }
+    };
     let text = crate::config_ini::decode_ignore(&bytes);
-    for line in text.split(['\n', '\r']) {
-        if !line.contains('=') || line.trim().starts_with('#') {
+    for line in py_splitlines(&text) {
+        if !line.contains('=') || py_strip(line).starts_with('#') {
             continue;
         }
         let (k, v) = line.split_once('=').unwrap_or((line, ""));
-        let (key, value) = (k.trim(), v.trim());
+        let (key, value) = (py_strip(k), py_strip(v));
         let lowered = value.to_lowercase();
-        let int = |v: &str| v.parse::<i64>().map_err(|_| format!("invalid literal for int() with base 10: {}", crate::pyfmt::repr_str(v)));
+        let int = |v: &str| py_int(v).ok_or_else(|| format!("invalid literal for int() with base 10: {}", repr_str(v)));
         let r: Result<(), String> = (|| {
             match key {
                 "dxvk.enableAsync" => s.enable_async = lowered == "true",
@@ -391,9 +404,9 @@ mod tests {
         let tuned = DxvkSettings {
             enable_async: false,
             gpl_async_cache: false,
-            num_compiler_threads: 8,
-            max_frame_rate: 144,
-            max_frame_latency: 3,
+            num_compiler_threads: 8.into(),
+            max_frame_rate: 144.into(),
+            max_frame_latency: 3.into(),
             tear_free: "False".into(),
             hud_enabled: true,
         };
@@ -426,7 +439,7 @@ mod tests {
     #[test]
     fn config_round_trips_through_state_parser() {
         let (core, game) = setup("roundtrip");
-        let tuned = DxvkSettings { max_frame_rate: 144, hud_enabled: true, tear_free: "False".into(), ..DxvkSettings::default() };
+        let tuned = DxvkSettings { max_frame_rate: 144.into(), hud_enabled: true, tear_free: "False".into(), ..DxvkSettings::default() };
         let st = set_dxvk_config(&core, tuned.clone()).unwrap();
         assert!(st.dxvk.conf_exists && !st.dxvk.installed);
         assert_eq!(read_settings(&core, Some(game.to_str().unwrap())), tuned);
@@ -482,7 +495,7 @@ mod tests {
         let srv = serve(routes);
         let net = Net::local(&srv.base);
         let mut last = None;
-        let st = dxvk_install_with(&core, &net, DxvkSettings { max_frame_rate: 90, ..Default::default() }, &mut |t| last = Some(*t)).unwrap();
+        let st = dxvk_install_with(&core, &net, DxvkSettings { max_frame_rate: 90.into(), ..Default::default() }, &mut |t| last = Some(*t)).unwrap();
         assert!(st.dxvk.installed && st.dxvk.conf_exists);
         assert_eq!(std::fs::read(game.join("dxgi.dll")).unwrap(), b"64-dxgi");
         assert_eq!(std::fs::read(game.join("d3d11.dll")).unwrap(), b"64-d3d11");
