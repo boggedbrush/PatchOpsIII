@@ -515,6 +515,7 @@ mod write_tests {
         (game, cfg)
     }
 
+    #[cfg(unix)]
     fn fov(v: &str) -> Vec<(String, ConfigValue, String)> {
         vec![("FOV".into(), ConfigValue::Str(v.into()), "c".into())]
     }
