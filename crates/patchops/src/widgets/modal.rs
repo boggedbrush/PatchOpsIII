@@ -213,8 +213,7 @@ impl RenderOnce for Dialog {
                                                 d.child(div().text_color(t.text_muted).child(s))
                                             }),
                                     )
-                                    .when(show_x && x_close.is_some(), |d| {
-                                        let f = x_close.clone().unwrap();
+                                    .when_some(x_close.clone().filter(|_| show_x), |d, f| {
                                         d.child(
                                             div()
                                                 .id("dialog-x")

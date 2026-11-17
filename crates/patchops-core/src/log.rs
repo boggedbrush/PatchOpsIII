@@ -189,7 +189,7 @@ mod os_lock {
     }
 
     pub fn unlock(f: &std::fs::File) {
-        // SAFETY: as above.
+        // SAFETY: plain syscall on a descriptor that `f` keeps open.
         unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_UN) };
     }
 }
@@ -243,7 +243,7 @@ mod os_lock {
 
     pub fn unlock(f: &std::fs::File) {
         let mut ov = overlapped();
-        // SAFETY: as above.
+        // SAFETY: valid handle owned by `f`; `ov` outlives the (synchronous) call.
         unsafe { UnlockFileEx(f.as_raw_handle() as Handle, 0, 1, 0, &mut ov) };
     }
 }

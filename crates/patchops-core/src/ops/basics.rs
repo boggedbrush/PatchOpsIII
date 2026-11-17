@@ -167,11 +167,11 @@ const MAX_BROWSE_ENTRIES: usize = 300;
 fn browse_roots() -> Vec<Root> {
     #[cfg(windows)]
     {
-        return ('A'..='Z')
+        ('A'..='Z')
             .map(|l| format!("{l}:\\"))
             .filter(|d| Path::new(d).is_dir())
             .map(|d| Root { label: d.clone(), path: d })
-            .collect();
+            .collect()
     }
     #[cfg(not(windows))]
     vec![Root { label: "/".into(), path: "/".into() }]

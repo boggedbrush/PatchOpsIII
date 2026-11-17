@@ -936,10 +936,13 @@ impl Element for TextElement {
         if let Some(selection) = prepaint.selection.take() {
             window.paint_quad(selection)
         }
-        let line = prepaint.line.take().unwrap();
+        // `prepaint` always stores the shaped line; without one there is nothing to paint.
+        let Some(line) = prepaint.line.take() else { return };
         let origin = point(bounds.origin.x - prepaint.scroll_x, bounds.origin.y);
-        line.paint(origin, window.line_height(), window, cx)
-            .unwrap();
+        // gpui fails here only when a glyph cannot be rasterised; skip the line rather than abort.
+        if let Err(e) = line.paint(origin, window.line_height(), window, cx) {
+            eprintln!("patchops: text line not painted: {e}");
+        }
         if focus_handle.is_focused(window) && self.input.read(cx).editable() {
             if let Some(cursor) = prepaint.cursor.take() {
                 window.paint_quad(cursor);

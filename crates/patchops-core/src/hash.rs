@@ -24,11 +24,13 @@ impl Sha256 {
 
     /// Lower-case hex digest.
     pub fn finish_hex(self) -> String {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
         let d = self.0.finish();
         let mut s = String::with_capacity(64);
-        for b in d.as_ref() {
-            s.push(char::from_digit((b >> 4) as u32, 16).unwrap());
-            s.push(char::from_digit((b & 15) as u32, 16).unwrap());
+        for &b in d.as_ref() {
+            // Both nibbles are < 16, so the indices are always in bounds.
+            s.push(char::from(HEX[usize::from(b >> 4)]));
+            s.push(char::from(HEX[usize::from(b & 15)]));
         }
         s
     }

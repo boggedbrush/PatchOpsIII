@@ -66,7 +66,9 @@ pub fn home_dir() -> PathBuf {
 fn passwd_home() -> Option<PathBuf> {
     use std::ffi::CStr;
     use std::os::unix::ffi::OsStringExt;
-    // SAFETY: getpwuid returns a pointer to static storage or null; we copy immediately.
+    // SAFETY: getpwuid returns a pointer to static storage (overwritten by the next getpw* call) or
+    // null; we check for null and copy the home directory out before any other getpw* call, and
+    // nothing else in this crate calls getpw*.
     unsafe {
         let pw = libc::getpwuid(libc::getuid());
         if pw.is_null() || (*pw).pw_dir.is_null() {

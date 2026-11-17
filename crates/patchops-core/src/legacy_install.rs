@@ -201,7 +201,7 @@ pub fn detect() -> Option<LegacyInstall> {
         let exe = std::env::current_exe().ok();
         let defaults: Vec<PathBuf> = ["ProgramW6432", "ProgramFiles"]
             .iter()
-            .filter_map(|var| std::env::var_os(var))
+            .filter_map(std::env::var_os)
             .map(|pf| Path::new(&pf).join("PatchOpsIII"))
             .collect();
         let msi_dirs = msi_candidates(read_string(Hive::LocalMachine, MSI_KEY, "InstallLocation").as_deref(), &defaults);

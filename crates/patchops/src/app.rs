@@ -119,7 +119,7 @@ pub fn run(core: Arc<Core>, ui_rx: async_channel::Receiver<UiEvent>) {
 
         let (win, min) = window_size(cx);
         let bounds = Bounds::centered(None, win, cx);
-        let window = cx
+        let window = match cx
             .open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -134,8 +134,13 @@ pub fn run(core: Arc<Core>, ui_rx: async_channel::Receiver<UiEvent>) {
                     let controller = cx.new(|cx| Controller::new(core, ui_rx, log_rx, cx));
                     cx.new(|cx| Shell::new(controller, cx))
                 },
-            )
-            .expect("open main window");
+            ) {
+            Ok(window) => window,
+            Err(e) => {
+                eprintln!("patchops: could not open the main window: {e}");
+                std::process::exit(1);
+            }
+        };
         window
             .update(cx, |view, window, cx| {
                 window.focus(&gpui::Focusable::focus_handle(view, cx));

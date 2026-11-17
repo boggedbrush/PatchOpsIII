@@ -536,7 +536,11 @@ pub fn steam_config_vdf_path(core: &Core) -> Option<PathBuf> {
 /// the text to log. Callers are responsible for closing Steam first and for backups
 /// ([`backup_file`]).
 pub fn modify_vdf_file<T>(path: &Path, edit: impl FnOnce(&mut Obj) -> T) -> Result<T, String> {
-    modify_vdf_file_if(path, |d| Some(edit(d))).map(|o| o.expect("edit always returns Some"))
+    // Same steps as `modify_vdf_file_if` with an edit that always succeeds.
+    let mut data = vdf::load_file(path)?;
+    let out = edit(&mut data);
+    vdf::write_file(path, &data).map_err(|e| io_error_text(&e, Some(path)))?;
+    Ok(out)
 }
 
 /// [`modify_vdf_file`] where `edit` may return `None` to abort: the file is then left untouched

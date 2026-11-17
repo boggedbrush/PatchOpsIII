@@ -31,7 +31,7 @@ fn mutates(line: &str) -> bool {
 
 /// Run the same loop on a background thread inside the GUI process.
 pub fn spawn_in_gui(core: Arc<Core>, ui: async_channel::Sender<UiEvent>) {
-    std::thread::Builder::new()
+    if let Err(e) = std::thread::Builder::new()
         .name("patchops-rpc".into())
         .spawn(move || {
             let stdin = std::io::stdin();
@@ -58,5 +58,7 @@ pub fn spawn_in_gui(core: Arc<Core>, ui: async_channel::Sender<UiEvent>) {
                 }
             }
         })
-        .expect("spawn rpc thread");
+    {
+        eprintln!("patchops: RPC thread not started: {e}");
+    }
 }
