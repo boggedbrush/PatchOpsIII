@@ -5,6 +5,13 @@
     bench/.work/legacy/.venv/bin/python tools/gen_vdf_cases.py <seed> <count> cases.json
     PYVDF_CASES=cases.json cargo test -p patchops-core --lib python_syntax_error_matches_python_vdf -- --ignored
 """
+import io
+import json
+import random
+import sys
+
+import vdf
+
 random.seed(int(sys.argv[1]) if len(sys.argv)>1 else 1)
 toks=['"a"','"b c"','{','}','{}','}}','//c','// "x"',' ','  ','\t','\n','\n','\n','\r\n','\r','abc','x y z','#x','"unterminated','\\','/','$','[$WIN]','""','"a\\"b"','"k"\t\t"v"','"k" "v"','"k"\n','"sec"\n{','{ }','"a" "b" "c"','"q" "multi','line"','"k\\\n','"v\\\n','\\n','a=b','<x>','-1','"x"{','"x" {}', '"x"{}', 'k  //c', 'k  /x', 'k /x/ y','\ufeff','\u00a0','\x0b','\x1c','é','"é"','@','(',"'",'?','*','.','a.b','%x', '=',' }','{ x']
 cases=[]
