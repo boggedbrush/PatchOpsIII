@@ -694,6 +694,30 @@ def _resp_paths_only(ctx, rx):
     return bool(d["resp_diff"]) and all(re.search(rx, ln) for ln in d["resp_diff"]) and not (d["only_legacy"] or d["only_port"] or d["changed"])
 
 
+# Differences that are each explained by a different allowlisted feature of the same case (e.g. a lenient-vdf localconfig AND a hand-edited
+# settings file in one status): every response line must be explained by an explainer whose case feature is present, no file may differ.
+def _explainers():
+    return [
+        ("vdf-lenient-localconfig", lambda ctx: any(t.lstrip("\ufeff \t\r\n").startswith("{ this is not vdf }") or re.search(r"(?m)^[ \t]*\}\}[ \t]*$", t)
+                                                    for t in _fx_writes(ctx, "localconfig.vdf", "lc.real")), r"/(currentLaunchOptions|activeLaunchProfile|launchProfiles)"),
+        ("settings-hand-edited-types", lambda ctx: any("enhanced_dump_source" in (t or "") for t in _fx_writes(ctx, "electron-settings.json")), r"/enhanced/dumpSource"),
+    ]
+
+
+def _combined_explained(ctx):
+    d = ctx.div
+    if not d["resp_diff"] or d["only_legacy"] or d["only_port"] or d["changed"]:
+        return False
+    ex = _explainers()
+    used = set()
+    for ln in d["resp_diff"]:
+        hit = [eid for eid, pred, rx in ex if re.search(rx, ln) and pred(ctx)]
+        if not hit:
+            return False
+        used.update(hit)
+    return len(used) > 1
+
+
 ALLOWLIST = [
     ("vdf-string-and-section", "port rejects a VDF key used as both string and section (documented in steam/vdf.rs); "
      "only for Steam-writing ops after a perturbation tagged vdf-string-section-clash",
@@ -710,9 +734,13 @@ ALLOWLIST = [
      lambda ctx: _legacy_500(ctx) and any(re.search(r'"?LaunchOptions"?\s*\n\s*\{', t) for t in _fx_writes(ctx, "localconfig.vdf", "lc.real"))),
     ("legacy-500-browse-root", "legacy: browse of '/' raises (HTTP 500); the port lists the root (what the directory browser's root button needs)",
      lambda ctx: _legacy_500(ctx) and ctx.step.get("op") == "browse" and KNOWN["browse_root"][1](ctx.case)),
-    ("legacy-500-game-directory", "legacy: game-directory with a path beyond PATH_MAX / a >255-byte component (Path.is_dir -> ENAMETOOLONG) or an unwritable "
-     "app data dir (settings save) raises (HTTP 500); the port answers ok:false with the reason",
-     lambda ctx: ctx.step.get("op") == "game-directory" and _legacy_500(ctx) and (KNOWN["longpath"][1](ctx.case) or KNOWN["settings_unwritable"][1](ctx.case))),
+    ("legacy-500-game-directory", "legacy: game-directory with a path beyond PATH_MAX / a >255-byte component (Path.is_dir -> ENAMETOOLONG) or below a directory "
+     "without search permission (EACCES) raises (HTTP 500); the port answers ok:false with the reason",
+     lambda ctx: ctx.step.get("op") == "game-directory" and _legacy_500(ctx) and (KNOWN["longpath"][1](ctx.case) or any(
+         st.get("fx") == "chmod" and isinstance(st.get("mode"), int) and st["mode"] & 0o111 == 0 for st in ctx.case["steps"]))),
+    ("legacy-500-settings-save", "legacy: an unwritable app data dir / a settings path that is a directory makes the settings writers (game-directory, "
+     "enhanced-validate, release-channel, ...) raise (HTTP 500); the port answers ok:false with the errno text",
+     lambda ctx: _legacy_500(ctx) and KNOWN["settings_unwritable"][1](ctx.case)),
     # ---- deliberate differences -------------------------------------------------------------------------------------------------------
     ("vdf-lenient-localconfig", "python-vdf is line-oriented and lenient (a '{ garbage }' file parses to {}, a line '}}' closes one level); the port refuses to "
      "parse such a localconfig.vdf and therefore never rewrites it (launch-options/workshop-install log 'the file was left unchanged'); state building stays tolerant",
@@ -725,6 +753,8 @@ ALLOWLIST = [
     ("settings-hand-edited-types", "electron-settings.json edited by hand with a non-string enhanced_dump_source: legacy echoes the raw JSON value in "
      "state.enhanced.dumpSource, the port shows ''",
      lambda ctx: any("enhanced_dump_source" in (t or "") for t in _fx_writes(ctx, "electron-settings.json")) and _resp_paths_only(ctx, r"/enhanced/dumpSource")),
+    ("combined-explained-differences", "one response whose differences are each explained by a different allowlisted feature present in the case "
+     "(vdf-lenient-localconfig + settings-hand-edited-types)", _combined_explained),
     ("null-args-body-op", "args:null for an op whose body model has only optional fields: legacy answers 422, the port treats null as {} (bench/OPS.md section 1: absent args = {})",
      lambda ctx: (ctx.div.get("legacy_error") or "").startswith("validation:") and not ctx.div.get("port_error")
      and isinstance(ctx.step.get("args"), dict) and "$rawargs" in ctx.step["args"]),
