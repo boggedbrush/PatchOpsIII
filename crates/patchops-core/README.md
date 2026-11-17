@@ -130,7 +130,10 @@ with a narrow matcher):
 | `null-args-body-op` | `args: null` for an all-optional body model: 422 | treated as `{}` | `bench/OPS.md` section 1: absent args = `{}` |
 | `vdf-string-and-section` | python-vdf lets a key be a string and a section | refuses the file | documented in `steam/vdf.rs` |
 
-Not replicated on purpose: the legacy parsed `"a"\n"b" "c"` (a key whose value is on the next line) as an error and accepts
-lines that merely *start* like VDF; the port's tokenizer accepts the first and refuses the second (see `vdf-lenient-localconfig`).
-Where both refuse a file the line number in the message is python-vdf's (continuation lines of multi-line quoted values do not
-advance its counter; the port subtracts them), verified on 16 inputs against vdf 3.4.
+Steam VDF files: `steam::vdf::python_syntax_error` is a port of python-vdf 3.4's line-oriented `parse` (verdict, message and
+line number only; differential-tested against the real library on 46000 generated texts, `python_syntax_error_matches_python_vdf`,
+run with `PYVDF_CASES=<json>` and `--ignored`). `vdf::load_file` (every op that rewrites `localconfig.vdf` / `config.vdf`) and
+`vdf::parse_checked` (state building) refuse what python-vdf refuses, with its wording (`vdf.parse: <msg> (<file>, line N)`). The
+port's own tokenizer still decides the structure, and it is stricter than python-vdf in one direction: a file python-vdf accepts
+leniently (`{ garbage }` -> `{}`, a line `}}`) is refused too (`vdf-lenient-localconfig` above); such a file is never rewritten, the
+op answers `ok:false` and logs `vdf: <reason> (localconfig.vdf); the file was left unchanged because PatchOpsIII cannot parse it safely`.

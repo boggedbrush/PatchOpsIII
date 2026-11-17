@@ -207,6 +207,11 @@ pub fn py_strip(s: &str) -> &str {
     s.trim_matches(py_isspace)
 }
 
+/// Python `str.lstrip()` (no argument).
+pub fn py_lstrip(s: &str) -> &str {
+    s.trim_start_matches(py_isspace)
+}
+
 /// Python `str.rstrip()` (no argument).
 pub fn py_rstrip(s: &str) -> &str {
     s.trim_end_matches(py_isspace)

@@ -250,7 +250,7 @@ fn copy_tree(src: &Path, dst: &Path) -> std::io::Result<()> {
 
 /// Legacy `_write_compatibilitytool_manifest`.
 pub fn write_compat_manifest(path: &Path, tool_name: &str) -> Result<(), String> {
-    let mut data = std::fs::read(path).ok().and_then(|b| String::from_utf8(b).ok()).and_then(|t| steam::vdf::parse(&t).ok()).unwrap_or_default();
+    let mut data = std::fs::read(path).ok().and_then(|b| String::from_utf8(b).ok()).and_then(|t| steam::vdf::parse_checked(&t).ok()).unwrap_or_default();
     let root = data.section_mut("compatibilitytools");
     let existing: Option<Obj> = root.get_obj("compat_tools").and_then(|c| c.0.first()).and_then(|(_, v)| if let Node::Obj(o) = v { Some(o.clone()) } else { None });
     let pick = |k: &str, d: &str| existing.as_ref().and_then(|o| o.get_str(k)).unwrap_or(d).to_string();

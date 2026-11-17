@@ -106,7 +106,7 @@ pub fn root_path(core: &Core) -> Option<String> {
 
 fn library_paths_from_vdf(file: &Path) -> Vec<String> {
     let Ok(text) = std::fs::read(file) else { return Vec::new() };
-    let Ok(doc) = vdf::parse(&String::from_utf8_lossy(&text)) else { return Vec::new() };
+    let Ok(doc) = vdf::parse_checked(&String::from_utf8_lossy(&text)) else { return Vec::new() };
     let Some(folders) = doc.get_obj("libraryfolders") else { return Vec::new() };
     let mut libs = Vec::new();
     for (k, v) in &folders.0 {
@@ -223,7 +223,7 @@ pub fn localconfig_path(core: &Core, user_id: &str) -> PathBuf {
 /// the app has no `LaunchOptions` entry.
 pub fn read_launch_options(core: &Core, user_id: &str, app_id: &str) -> Option<String> {
     let bytes = std::fs::read(localconfig_path(core, user_id)).ok()?;
-    let doc = vdf::parse(&String::from_utf8(bytes).ok()?).ok()?;
+    let doc = vdf::parse_checked(&String::from_utf8(bytes).ok()?).ok()?;
     let v = doc
         .get_path(&["UserLocalConfigStore", "Software", "Valve", "Steam", "apps", app_id, "LaunchOptions"])
         .and_then(|n| match n {
@@ -266,7 +266,7 @@ pub fn workshop_item_state(core: &Core, app_id: &str, workshop_id: &str) -> Work
         }
         let acf = Path::new(&lib).join("steamapps").join("workshop").join(format!("appworkshop_{app_id}.acf"));
         if let Ok(bytes) = std::fs::read(&acf) {
-            if let Ok(doc) = vdf::parse(&String::from_utf8_lossy(&bytes)) {
+            if let Ok(doc) = vdf::parse_checked(&String::from_utf8_lossy(&bytes)) {
                 if let Some(vdf::Node::Obj(w)) = doc.get("AppWorkshop") {
                     if contains_workshop_id(w, workshop_id) {
                         subscribed = true;

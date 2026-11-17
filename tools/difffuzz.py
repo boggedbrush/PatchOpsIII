@@ -701,11 +701,13 @@ ALLOWLIST = [
     # ---- legacy crashes (HTTP 500): the port answers sensibly, nothing to replicate -------------------------------------------------
     ("legacy-500-numeric-config", "legacy: int(float('inf'|'nan'|'1e999')) in the state builder raises OverflowError/ValueError (HTTP 500); the port keeps "
      "its tolerant defaults (crates/patchops-core/README.md, 'Intentional differences')",
-     lambda ctx: _legacy_500(ctx) and (KNOWN["legacy500_inf"][1](ctx.case) or any(re.search(r"[eE][+-]?\d{3,}", n) for n in _raw_nums(ctx.case)))),
+     lambda ctx: _legacy_500(ctx) and (KNOWN["legacy500_inf"][1](ctx.case) or any(re.search(r"[eE][+-]?\d{3,}", n) for n in _raw_nums(ctx.case))
+                                       or any(re.search(r"(?i)inf|nan|e\+?\d{3,}", t) for t in _fx_writes(ctx, "config.real")))),
     ("legacy-500-t7-conf", "legacy: t7patch.conf that is a directory or not valid UTF-8 makes check_t7_patch_status raise (HTTP 500); the port reads what it can",
-     lambda ctx: _legacy_500(ctx) and KNOWN["t7_nonfile"][1](ctx.case)),
+     lambda ctx: _legacy_500(ctx) and (KNOWN["t7_nonfile"][1](ctx.case) or any(
+         st.get("fx") == "write" and str(st.get("path", "")).endswith("t7real.conf") and isinstance(st.get("data"), dict) for st in ctx.case["steps"]))),
     ("legacy-500-launchoptions-section", "legacy: LaunchOptions stored as a VDF section makes the state builder raise (HTTP 500); the port treats it as 'no launch options'",
-     lambda ctx: _legacy_500(ctx) and any(re.search(r'"LaunchOptions"\s*\n\s*\{', t) for t in _fx_writes(ctx, "localconfig.vdf", "lc.real"))),
+     lambda ctx: _legacy_500(ctx) and any(re.search(r'"?LaunchOptions"?\s*\n\s*\{', t) for t in _fx_writes(ctx, "localconfig.vdf", "lc.real"))),
     ("legacy-500-browse-root", "legacy: browse of '/' raises (HTTP 500); the port lists the root (what the directory browser's root button needs)",
      lambda ctx: _legacy_500(ctx) and ctx.step.get("op") == "browse" and KNOWN["browse_root"][1](ctx.case)),
     ("legacy-500-game-directory", "legacy: game-directory with a path beyond PATH_MAX / a >255-byte component (Path.is_dir -> ENAMETOOLONG) or an unwritable "

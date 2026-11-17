@@ -1,0 +1,62 @@
+{
+ "id": "vdf-error-line-continuation",
+ "title": "workshop-install on a localconfig.vdf whose first line is a key followed by a // comment: python-vdf (line oriented) says 'expected openning bracket (line 2)', the port's tokenizer said 'unclosed parenthasis or quotes (EOF)'",
+ "right_side": "legacy",
+ "severity": "wrong error text in the log",
+ "culprit": "steam/vdf.rs derived python's message from the port's own tokenizer",
+ "suggested_fix": "port the line-oriented python-vdf algorithm for the verdict (message + line); fixed: vdf::python_syntax_error, differential-tested against vdf 3.4 on 46000 generated texts",
+ "notes": "status: fixed (found by the fresh seed-7002 campaign)",
+ "signature": [
+  "workshop-install",
+  "fs:APPDATA/PatchOpsIII.log"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/vdf-error-line-continuation.json",
+ "observed": {
+  "step_idx": 1,
+  "op": "workshop-install",
+  "resp_diff": [],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log"
+  ],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": "<TS> - Info: Steam was not running.\n<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/localconfig_backup.vdf\n<TS> - Error: Error updating launch options: vdf.parse: expected openning bracket (localconfig.vdf, line 2)\n<TS> - Success: Config restored from backup\n<TS> - Info: Setting launch options...\n<TS> - Info: Opening Steam...\n<TS> - Success: Steam launched successfully\n",
+    "port": "<TS> - Info: Steam was not running.\n<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/localconfig_backup.vdf\n<TS> - Error: Error updating launch options: vdf.parse: unclosed parenthasis or quotes (EOF) (localconfig.vdf, line 2)\n<TS> - Success: Config restored from backup\n<TS> - Info: Setting launch options...\n<TS> - Info: Opening Steam...\n<TS> - Success: Steam launched successfully\n",
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:2f7fe54d328051ae3c747eeb8fbcfcec9452ec755bfee75b2652d41c2099e243",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:4cb258ee768969657f078595b0ec618613c1658bea53c60391e930c4bd3ec68e",
+     "mode": "0644"
+    }
+   }
+  }
+ },
+ "case": {
+  "version": 1,
+  "seed": 7002,
+  "index": 1584,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "write",
+    "root": "userdata",
+    "path": "config/localconfig.vdf",
+    "data": "\"LastPlayed\" // trailing \"1700000000\"\n\"LaunchOptions\" \" \ud83d\ude42\fWINEDLLOVERRIDES='dsound=n,b'\\t+set fs_game 2942053577\"\n"
+   },
+   {
+    "op": "workshop-install",
+    "args": {
+     "profileId": "ultimate"
+    }
+   }
+  ]
+ }
+}
