@@ -14,7 +14,7 @@ use super::{state_reply, Args, Group};
 use crate::context::Core;
 use crate::error::{AppError, AppResult, OpError};
 use crate::net::{no_progress, Net, ProgressFn};
-use crate::pyfmt::io_error_text;
+use crate::pyfmt::{io_error_text, py_strip, universal_newlines};
 use crate::state::{State, StateCx};
 
 pub const OPS: &[&str] = &["t7-config", "t7-install", "t7-uninstall"];
@@ -109,7 +109,7 @@ pub fn set_t7_config(
     let conf = game_dir.join("t7patch.conf");
 
     if let Some(name) = gamertag {
-        let plain = name.trim();
+        let plain = py_strip(name);
         if !conf.exists() {
             return Err(AppError::new("t7patch.conf was not found. Install T7 Patch before updating the gamertag."));
         }
@@ -124,7 +124,7 @@ pub fn set_t7_config(
     }
 
     if let Some(password) = network_password {
-        let password = password.trim();
+        let password = py_strip(password);
         if !conf.exists() {
             return Err(AppError::new("t7patch.conf was not found. Install T7 Patch before changing the network password."));
         }
@@ -159,12 +159,8 @@ pub fn update_t7patch_conf(core: &Core, game_dir: &Path, edit: &ConfEdit) {
             return;
         }
     };
-    // A read-only conf must fail like the in-place write did (rename would replace it).
-    let written = std::fs::OpenOptions::new()
-        .write(true)
-        .open(&conf)
-        .and_then(|_| crate::fsutil::atomic_write(&conf, edit_conf(&text, edit).as_bytes()));
-    if let Err(e) = written {
+    // `atomic_write` fails on a read-only conf exactly like the in-place `open(conf, "w")` did.
+    if let Err(e) = crate::fsutil::atomic_write(&conf, edit_conf(&text, edit).as_bytes()) {
         core.log.error(conf_error_text(&e, &conf));
         return;
     }
@@ -197,7 +193,7 @@ fn conf_error_text(e: &std::io::Error, conf: &Path) -> String {
 fn read_conf_text(conf: &Path) -> Result<String, String> {
     let bytes = std::fs::read(conf).map_err(|e| conf_error_text(&e, conf))?;
     let text = String::from_utf8(bytes).map_err(|e| format!("Error updating config: {}", utf8_error_text(e.as_bytes(), e.utf8_error())))?;
-    Ok(text.replace("\r\n", "\n").replace('\r', "\n"))
+    Ok(universal_newlines(&text))
 }
 
 /// Python's `UnicodeDecodeError` text for the common cases.
@@ -393,25 +389,35 @@ pub fn t7_state(cx: &StateCx) -> T7State {
     let conf = game.join("t7patch.conf");
     st.conf_exists = conf.exists();
     if let Ok(bytes) = std::fs::read(&conf) {
-        for line in String::from_utf8_lossy(&bytes).split_inclusive('\n') {
-            let value = |l: &str| l.trim().split_once('=').map(|(_, v)| v.to_string()).unwrap_or_default();
-            if line.starts_with("playername=") {
-                st.gamertag = value(line);
-                if st.gamertag.starts_with('^') && st.gamertag.chars().count() > 2 {
-                    st.color_code = st.gamertag.chars().take(2).collect();
-                    st.plain_name = st.gamertag.chars().skip(2).collect();
-                } else {
-                    st.plain_name = st.gamertag.clone();
-                }
-            } else if line.starts_with("networkpassword=") {
-                st.network_password = value(line);
-            } else if line.starts_with("isfriendsonly=") {
-                st.friends_only = value(line) == "1";
-            }
-        }
+        // `open(conf, "r")` + `for line in f`: universal newlines (a lone `\r` ends a line too). The legacy decodes
+        // strictly and answers HTTP 500 on invalid UTF-8; the replacement characters here are the tolerant answer.
+        apply_conf_text(&mut st, &String::from_utf8_lossy(&bytes));
     }
     st.mode = t7_mode(game);
     st
+}
+
+/// Legacy `check_t7_patch_status`: the last `playername=` / `networkpassword=` / `isfriendsonly=` line wins; a
+/// `playername=` line resets both the colour code and the plain name.
+fn apply_conf_text(st: &mut T7State, text: &str) {
+    let text = universal_newlines(text);
+    for line in text.split_inclusive('\n') {
+        let value = |l: &str| py_strip(l).split_once('=').map(|(_, v)| v.to_string()).unwrap_or_default();
+        if line.starts_with("playername=") {
+            st.gamertag = value(line);
+            if st.gamertag.starts_with('^') && st.gamertag.chars().count() > 2 {
+                st.color_code = st.gamertag.chars().take(2).collect();
+                st.plain_name = st.gamertag.chars().skip(2).collect();
+            } else {
+                st.color_code = String::new();
+                st.plain_name = st.gamertag.clone();
+            }
+        } else if line.starts_with("networkpassword=") {
+            st.network_password = value(line);
+        } else if line.starts_with("isfriendsonly=") {
+            st.friends_only = value(line) == "1";
+        }
+    }
 }
 
 fn t7_mode(game: &std::path::Path) -> String {
@@ -478,5 +484,58 @@ mod tests {
         let cont = vec![0xE2, b'A'];
         let e = std::str::from_utf8(&cont).unwrap_err();
         assert_eq!(utf8_error_text(&cont, e), "'utf-8' codec can't decode byte 0xe2 in position 0: invalid continuation byte");
+    }
+
+    fn fresh() -> T7State {
+        T7State {
+            installed: false,
+            conf_exists: true,
+            gamertag: String::new(),
+            plain_name: String::new(),
+            color_code: String::new(),
+            network_password: String::new(),
+            friends_only: false,
+            mode: "Unknown".into(),
+        }
+    }
+
+    #[test]
+    fn state_parse_resets_colour_on_every_playername_line() {
+        let mut st = fresh();
+        apply_conf_text(&mut st, "playername=^1Bench\nplayername=Bench\n");
+        assert_eq!((st.gamertag.as_str(), st.color_code.as_str(), st.plain_name.as_str()), ("Bench", "", "Bench"));
+        let mut st = fresh();
+        apply_conf_text(&mut st, "playername=Bench\nplayername=^2Zed\nplayername=^3\n");
+        assert_eq!((st.color_code.as_str(), st.plain_name.as_str()), ("", "^3"));
+    }
+
+    #[test]
+    fn state_parse_uses_universal_newlines_and_python_strip() {
+        let mut st = fresh();
+        apply_conf_text(&mut st, "playername=Bench\r# comment\rnetworkpassword=\u{1c}pw\u{a0}\r\nisfriendsonly=1\r");
+        assert_eq!(st.gamertag, "Bench");
+        // the whole LINE is stripped (`line.strip().split("=", 1)[1]`), so only the trailing U+00A0 goes
+        assert_eq!(st.network_password, "\u{1c}pw");
+        assert!(st.friends_only);
+        // U+001C..U+001F are whitespace for `str.strip()`; a trailing CR inside CRLF is not part of the value
+        let mut st = fresh();
+        apply_conf_text(&mut st, "playername=A\u{1f}\r\n");
+        assert_eq!(st.gamertag, "A");
+    }
+
+    #[test]
+    fn conf_text_reading_translates_lone_cr() {
+        let d = std::env::temp_dir().join(format!("patchops-t7conf-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let p = d.join("t7patch.conf");
+        std::fs::write(&p, b"playername=Bench\r# comment\rx=1\r\n").unwrap();
+        assert_eq!(read_conf_text(&p).unwrap(), "playername=Bench\n# comment\nx=1\n");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn gamertag_with_line_breaks_is_written_verbatim_like_legacy() {
+        // legacy: f"playername={name}\n" with the raw name; the extra line shows up on the next read
+        assert_eq!(edit_conf("a=1\n", &name("^1x\ny")), "playername=^1x\ny\na=1\n");
     }
 }

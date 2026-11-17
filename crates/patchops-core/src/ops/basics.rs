@@ -271,10 +271,10 @@ pub fn set_game_directory(core: &Core, path: &str) -> AppResult<State> {
     Ok(State::build(core))
 }
 
-/// `channel` is trimmed + lower-cased; must be `stable` or `beta`.
+/// `channel` is `strip()`ped (Python whitespace) + lower-cased; must be `stable` or `beta`.
 pub fn set_release_channel(core: &Core, channel: &str) -> AppResult<State> {
     let _op = core.lock_ops();
-    let channel = channel.trim().to_lowercase();
+    let channel = crate::pyfmt::py_strip(channel).to_lowercase();
     if channel != "stable" && channel != "beta" {
         return Err(AppError::new("Release channel must be beta or stable."));
     }
@@ -307,9 +307,9 @@ fn format_payload(version: &str, body: &str) -> String {
     static LABEL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     let label = LABEL.get_or_init(|| {
         let (release, machine) = crate::clock::uname();
-        format!("{} {} ({})", crate::paths::system_name(), release, machine).trim().to_string()
+        crate::pyfmt::py_strip(&format!("{} {} ({})", crate::paths::system_name(), release, machine)).to_string()
     });
-    let body = body.trim();
+    let body = crate::pyfmt::py_strip(body);
     format!(
         "PatchOpsIII {} - {} logs:\n```\n{}\n```",
         version,
@@ -413,6 +413,27 @@ mod log_payload_tests {
         assert!(text.len() < 600 * 1024, "{}", text.len());
         assert!(text.ends_with("yyyy\n```"));
         assert!(c.paths.log.with_extension("log.1").exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn payload_follows_python_read_text_and_strip() {
+        let (c, root) = core("pytext");
+        std::fs::create_dir_all(c.paths.log.parent().unwrap()).unwrap();
+        std::fs::write(&c.paths.log, b"\x1c a\r\nb\r c \x1f\n").unwrap();
+        assert!(log_payload(&c).ends_with(":\n```\na\nb\n c\n```"), "{}", log_payload(&c));
+        // invalid UTF-8: the legacy `read_text` raised and the body became empty
+        std::fs::write(&c.paths.log, b"fine\n\xfe\xff\n").unwrap();
+        assert!(log_payload(&c).ends_with(":\n```\n(no log entries found)\n```"), "{}", log_payload(&c));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn release_channel_is_stripped_like_python() {
+        let (c, root) = core("channel");
+        assert!(set_release_channel(&c, "\u{1c}Beta\u{a0}\u{1f}").is_ok());
+        assert_eq!(c.settings().release_channel(), "beta");
+        assert!(set_release_channel(&c, "\u{200b}beta").is_err());
         let _ = std::fs::remove_dir_all(root);
     }
 }

@@ -43,7 +43,7 @@ impl Settings {
 
     /// `stable` (default) or `beta`.
     pub fn release_channel(&self) -> &'static str {
-        match self.get_str("release_channel").map(|s| s.trim().to_lowercase()).as_deref() {
+        match self.get_str("release_channel").map(|s| crate::pyfmt::py_strip(s).to_lowercase()).as_deref() {
             Some("beta") => "beta",
             _ => "stable",
         }

@@ -88,7 +88,7 @@ pub struct ValidateReply {
 /// source in the settings and validate it (directory or zip).
 pub fn validate_enhanced(core: &Core, dump_source: &str) -> AppResult<ValidateReply> {
     let _op = core.lock_ops();
-    let source = dump_source.trim();
+    let source = crate::pyfmt::py_strip(dump_source);
     if source.is_empty() {
         return Ok(ValidateReply { ok: true, valid: false, message: "Select a dump source first.".into(), state: State::build(core) });
     }

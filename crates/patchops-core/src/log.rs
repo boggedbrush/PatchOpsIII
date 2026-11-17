@@ -529,8 +529,9 @@ impl FileLog {
         std::fs::metadata(&self.path).ok().map(|m| (m.len(), m.modified().ok()))
     }
 
-    /// Formatted payload for the current file contents; `make` receives the log text (lossy
-    /// UTF-8, untrimmed) and is only called on a cache miss. One `stat` per call validates the
+    /// Formatted payload for the current file contents; `make` receives the log text as Python's
+    /// `read_text(encoding="utf-8")` yields it (universal newlines; a file that is not valid UTF-8 gives an
+    /// empty text, the legacy swallowed the decode error; untrimmed) and is only called on a cache miss. One `stat` per call validates the
     /// cache against external writers (elevated child, second instance).
     pub fn payload(&self, make: impl FnOnce(&str) -> String) -> Arc<str> {
         let mut inner = self.lock();
@@ -547,7 +548,7 @@ impl FileLog {
                 return text.clone();
             }
         }
-        let body = std::fs::read(&self.path).map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default();
+        let body = std::fs::read(&self.path).ok().and_then(|b| String::from_utf8(b).ok()).map(|t| crate::pyfmt::universal_newlines(&t)).unwrap_or_default();
         let text: Arc<str> = make(&body).into();
         inner.payload = key.map(|k| (k, text.clone()));
         text
@@ -853,6 +854,21 @@ mod tests {
         assert_eq!(fs::metadata(&p).unwrap().len(), 0);
         log2.log_file_only(Category::Info, "after");
         assert!(fs::read_to_string(&p).unwrap().ends_with("Info: after\n"));
+        drop(log);
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn payload_text_follows_python_read_text() {
+        let d = tmp("pytext");
+        let p = d.join("a.log");
+        // `read_text(encoding="utf-8")`: universal newlines (CRLF and lone CR become LF) ...
+        fs::write(&p, b"one\r\ntwo\rthree\n").unwrap();
+        let log = Logger::new(p.clone());
+        assert_eq!(&*log.file().payload(|b| format!("[{b}]")), "[one\ntwo\nthree\n]");
+        // ... and invalid UTF-8 raised in the legacy, which then used an empty body
+        fs::write(&p, b"ok line\n\xfe\xff\n").unwrap();
+        assert_eq!(&*log.file().payload(|b| format!("[{b}]")), "[]");
         drop(log);
         let _ = fs::remove_dir_all(&d);
     }

@@ -19,8 +19,9 @@ pub const LOCALCONFIG_BACKUP: &str = "localconfig_backup.vdf";
 
 // ---- merge algorithm ------------------------------------------------------------------------
 
+/// Python's `\s` for `str` patterns (and what `str.strip()` removes): includes U+001C..U+001F.
 fn is_ws(c: char) -> bool {
-    c.is_whitespace()
+    crate::pyfmt::py_isspace(c)
 }
 
 /// Byte ranges of every `\+set\s+fs_game\s+\S+` match (leftmost, non-overlapping).
@@ -125,8 +126,8 @@ pub fn merge_launch_options(current: &str, requested: &str, preserve_fs_game: bo
         Vec::new()
     };
 
-    let cleaned_current = remove_ranges(current, &fs_game_matches(current)).trim().to_string();
-    let cleaned_launch = remove_ranges(requested, &fs_game_matches(requested)).trim().to_string();
+    let cleaned_current = crate::pyfmt::py_strip(&remove_ranges(current, &fs_game_matches(current))).to_string();
+    let cleaned_launch = crate::pyfmt::py_strip(&remove_ranges(requested, &fs_game_matches(requested))).to_string();
 
     let has_current_wine = cleaned_current.contains(WINE_OVERRIDE);
     let has_current_command = cleaned_current.contains(COMMAND_MARKER);

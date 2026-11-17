@@ -227,8 +227,7 @@ pub fn select_update_asset(release: &Value, windows: bool) -> Option<UpdateAsset
 /// Legacy `_version_sort_key`: `(numeric base padded to 3, 1 for a final release / 0 for a
 /// pre-release, last number in the pre-release suffix)`; compared as a tuple.
 pub fn version_sort_key(value: &str) -> (Vec<u128>, u8, u128) {
-    let normalized = value.trim().trim_start_matches(['v', 'V']);
-    // Python `str.strip()` also strips unicode whitespace; `trim` does as well.
+    let normalized = crate::pyfmt::py_strip(value).trim_start_matches(['v', 'V']);
     let bytes = normalized.as_bytes();
     let mut end = 0;
     let mut base: Vec<u128> = Vec::new();

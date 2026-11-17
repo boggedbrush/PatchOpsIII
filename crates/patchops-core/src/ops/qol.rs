@@ -63,18 +63,12 @@ fn remove(path: &Path) -> Result<(), String> {
     std::fs::remove_file(path).map_err(|e| io_error_text(&e, Some(path)))
 }
 
-/// Entries of `dir` whose name ends with `suffix`, skipping hidden names (Python `Path.glob("*<suffix>")`).
-fn glob_suffix(dir: &Path, suffix: &str) -> Result<Vec<PathBuf>, String> {
-    let rd = std::fs::read_dir(dir).map_err(|e| io_error_text(&e, Some(dir)))?;
-    let mut out = Vec::new();
-    for entry in rd {
-        let entry = entry.map_err(|e| io_error_text(&e, Some(dir)))?;
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if !name.starts_with('.') && name.ends_with(suffix) {
-            out.push(entry.path());
-        }
-    }
-    Ok(out)
+/// Entries of `dir` whose name ends with `suffix`: Python `Path.glob("*<suffix>")`. Hidden names match (`*` also
+/// matches a leading dot, so a file named `.mkv` is found), files and directories alike, and every `OSError`
+/// (a directory that is a regular file, no read permission) is swallowed by `glob`: it yields nothing.
+fn glob_suffix(dir: &Path, suffix: &str) -> Vec<PathBuf> {
+    let Ok(rd) = std::fs::read_dir(dir) else { return Vec::new() };
+    rd.flatten().filter(|e| e.file_name().to_string_lossy().ends_with(suffix)).map(|e| e.path()).collect()
 }
 
 // ---- shared restore helpers (reset-to-stock) ------------------------------------------------
@@ -140,7 +134,7 @@ pub fn set_intro_skip(core: &Core, enabled: bool) -> AppResult<State> {
 /// Backup every `*.mkv` without an existing backup; returns how many were renamed.
 fn skip_intro_files(video: &Path) -> Result<usize, String> {
     let mut changed = 0;
-    for mkv in glob_suffix(video, ".mkv")? {
+    for mkv in glob_suffix(video, ".mkv") {
         let backup_path = backup::patchops_path(&mkv);
         if !backup_path.exists() {
             rename(&mkv, &backup_path)?;
@@ -152,8 +146,8 @@ fn skip_intro_files(video: &Path) -> Result<usize, String> {
 
 /// Restore every backup whose original name is free; returns how many were renamed.
 fn unskip_intro_files(video: &Path) -> Result<usize, String> {
-    let mut backups = glob_suffix(video, &format!(".mkv{}", backup::PATCHOPS_SUFFIX))?;
-    backups.extend(glob_suffix(video, &format!(".mkv{}", backup::LEGACY_SUFFIX))?);
+    let mut backups = glob_suffix(video, &format!(".mkv{}", backup::PATCHOPS_SUFFIX));
+    backups.extend(glob_suffix(video, &format!(".mkv{}", backup::LEGACY_SUFFIX)));
     let mut changed = 0;
     for backup_file in backups {
         let name = backup_file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -306,6 +300,31 @@ mod tests {
         assert!(video.join("a.mkv").exists() && video.join("b.mkv").exists());
         let msgs: Vec<String> = core.log.recent(10).into_iter().map(|e| e.message).collect();
         assert_eq!(msgs, ["All intro videos skipped.", "Intro videos were already skipped.", "Intro videos restored."]);
+        let _ = std::fs::remove_dir_all(core.paths.home.parent().unwrap());
+    }
+
+    #[test]
+    fn all_intros_glob_matches_dotfiles_and_ignores_a_video_that_is_a_file() {
+        let (core, game) = setup("dot");
+        let video = game.join("video");
+        touch(&video.join(".mkv"));
+        touch(&video.join(".hidden.mkv"));
+        std::fs::create_dir(video.join("dir.mkv")).unwrap();
+        set_all_intros_skip(&core, true).unwrap();
+        assert!(video.join(".mkv.patchops.bak").exists() && video.join(".hidden.mkv.patchops.bak").exists());
+        assert!(video.join("dir.mkv.patchops.bak").is_dir(), "directories match `*.mkv` as well");
+        assert!(!set_all_intros_skip(&core, false).unwrap().qol.all_intros);
+        assert!(video.join(".mkv").exists() && video.join(".hidden.mkv").exists());
+        // `video` exists but is a regular file: legacy `glob` yields nothing, the op answers ok
+        std::fs::remove_dir_all(&video).unwrap();
+        touch(&video);
+        assert!(set_all_intros_skip(&core, true).is_ok());
+        assert!(set_all_intros_skip(&core, false).is_ok());
+        let msgs: Vec<String> = core.log.recent(2).into_iter().map(|e| e.message).collect();
+        assert_eq!(msgs, ["Intro videos were already skipped.", "No intro video backups were found."]);
+        // `video` missing entirely is still an error
+        std::fs::remove_file(&video).unwrap();
+        assert_eq!(set_all_intros_skip(&core, true).unwrap_err().message, "Video directory was not found.");
         let _ = std::fs::remove_dir_all(core.paths.home.parent().unwrap());
     }
 

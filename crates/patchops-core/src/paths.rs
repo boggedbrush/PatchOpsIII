@@ -163,7 +163,7 @@ fn originals_dir_for(
 pub fn app_version() -> String {
     for name in ["PATCHOPSIII_VERSION_OVERRIDE", "PATCHOPSIII_VERSION"] {
         if let Ok(v) = std::env::var(name) {
-            let v = v.trim();
+            let v = crate::pyfmt::py_strip(&v);
             if !v.is_empty() {
                 return v.to_string();
             }

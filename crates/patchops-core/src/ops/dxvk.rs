@@ -553,4 +553,55 @@ mod tests {
         assert_eq!(set_dxvk_config(&core, DxvkSettings::default()).unwrap_err().message, "Game directory is not set.");
         let _ = std::fs::remove_dir_all(root);
     }
+
+    fn read_with(name: &str, conf: &[u8]) -> (DxvkSettings, String) {
+        let (core, game) = setup(name);
+        std::fs::write(game.join("dxvk.conf"), conf).unwrap();
+        let s = read_settings(&core, Some(&game.to_string_lossy()));
+        (s, core.log.read_file())
+    }
+
+    #[test]
+    fn read_settings_splits_lines_like_python_splitlines() {
+        // form feed, vertical tab, U+0085, U+2028 and lone CR all end a line; U+001F does not
+        let (s, log) = read_with("splitlines", "\tdxvk.tearFree=\u{c}dxvk.gplAsyncCache=\u{b}dxgi.maxFrameRate=30\u{2028}dxvk.numCompilerThreads=4\rdxvk.hud=x\u{85}dxgi.maxFrameLatency=2\u{1f}x".as_bytes());
+        assert_eq!(s.tear_free, "");
+        assert!(!s.gpl_async_cache);
+        assert_eq!((s.max_frame_rate.to_i64(), s.num_compiler_threads.to_i64(), s.max_frame_latency.to_i64()), (30, 4, 1));
+        assert!(s.hud_enabled);
+        assert!(log.contains("invalid literal for int() with base 10: '2\\x1fx'"), "{log}");
+    }
+
+    #[test]
+    fn read_settings_parses_ints_like_python_int() {
+        let (s, log) = read_with("pyint", "dxgi.maxFrameRate= 1_0 \ndxvk.numCompilerThreads=\u{ff11}\u{ff12}\ndxgi.maxFrameLatency=99999999999999999999999\n".as_bytes());
+        assert_eq!(s.max_frame_rate.to_string(), "10");
+        assert_eq!(s.num_compiler_threads.to_string(), "12");
+        assert_eq!(s.max_frame_latency.to_string(), "99999999999999999999999");
+        assert_eq!(log, "");
+    }
+
+    #[test]
+    fn read_settings_error_text_escapes_non_printable_like_repr() {
+        let (s, log) = read_with("repr", "dxgi.maxFrameRate=60.5\u{200b}x\ndxgi.maxFrameLatency=7\n".as_bytes());
+        assert_eq!(s.max_frame_rate.to_i64(), 0);
+        assert_eq!(s.max_frame_latency.to_i64(), 1, "parsing stops at the first bad value");
+        assert!(log.ends_with("Warning: Failed to read dxvk.conf: invalid literal for int() with base 10: '60.5\\u200bx'\n"), "{log}");
+    }
+
+    #[test]
+    fn read_settings_logs_an_unreadable_conf() {
+        let (core, game) = setup("confdir");
+        std::fs::create_dir(game.join("dxvk.conf")).unwrap();
+        let s = read_settings(&core, Some(&game.to_string_lossy()));
+        assert_eq!(s, DxvkSettings::default());
+        let log = core.log.read_file();
+        let want = format!("Warning: Failed to read dxvk.conf: [Errno 21] Is a directory: '{}'\n", game.join("dxvk.conf").display());
+        assert!(log.ends_with(&want), "{log}");
+        // a missing conf stays silent
+        std::fs::remove_dir(game.join("dxvk.conf")).unwrap();
+        let before = core.log.read_file();
+        read_settings(&core, Some(&game.to_string_lossy()));
+        assert_eq!(core.log.read_file(), before);
+    }
 }

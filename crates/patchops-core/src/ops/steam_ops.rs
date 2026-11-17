@@ -141,7 +141,7 @@ pub fn launch_profiles_state(cx: &StateCx) -> Vec<LaunchProfile> {
             id: "default".into(),
             label: "Default (None)".into(),
             option: String::new(),
-            active: current.trim().is_empty(),
+            active: crate::pyfmt::py_strip(current).is_empty(),
             installed: true,
             subscribed: true,
             state: "Ready".into(),
