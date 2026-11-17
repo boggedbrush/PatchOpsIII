@@ -4,6 +4,8 @@ use patchops_core::paths::Paths;
 use patchops_core::{ops, Core, OpError};
 use serde_json::{json, Value};
 
+// Test fixture: a failure to create the temp dir should fail the test, not be handled.
+#[allow(clippy::unwrap_used)]
 fn core() -> (Core, std::path::PathBuf) {
     let root = std::env::temp_dir().join(format!("patchops-core-test-{}-{:?}", std::process::id(), std::thread::current().id()));
     let _ = std::fs::remove_dir_all(&root);

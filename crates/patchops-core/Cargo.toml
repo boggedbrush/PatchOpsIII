@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 description = "Pure application logic for PatchOpsIII (no GUI dependencies)"
 
+[lints]
+workspace = true
+
 [dependencies]
 flate2 = { version = "1.1.11", default-features = false, features = ["rust_backend"] }
 crc32fast = "1.5.5"

@@ -61,6 +61,9 @@ impl Obj {
         }
     }
     /// Get-or-create a section (replacing a string value with a section, like the parser).
+    // `get` and `get_mut` both find the first entry with `key`, and `set` leaves an `Obj` there,
+    // so the final match cannot take the fallback arm.
+    #[allow(clippy::unreachable, reason = "set() above guarantees an Obj under this key")]
     pub fn section_mut(&mut self, key: &str) -> &mut Obj {
         if !matches!(self.get(key), Some(Node::Obj(_))) {
             self.set(key, Node::Obj(Obj::default()));

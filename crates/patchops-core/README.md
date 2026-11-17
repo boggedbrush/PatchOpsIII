@@ -5,6 +5,8 @@ Pure logic of the PatchOpsIII port: no GUI, no async runtime, blocking `std` I/O
 (pure-Rust miniz_oxide) for the network installers. Contract: `bench/OPS.md`; reference behaviour: the legacy Python
 (`backend/api.py`, `utils.py`, ...) and `bench/golden/`.
 
+Rule: no `unwrap`/`expect`/`panic!`/`unreachable!`/`todo!` in non-test code, and every `unsafe` block has a `// SAFETY:` comment; CI's clippy step (`-D warnings`) enforces both via `[workspace.lints.clippy]`.
+
 ## Map
 `context::Core` (paths, log, cached settings, Steam cache) · `ops/` (one file per group, `ops::dispatch`) ·
 `state::State` (assembly point; each group owns its sub-struct + builder) · `args` validation in `ops/args.rs` ·

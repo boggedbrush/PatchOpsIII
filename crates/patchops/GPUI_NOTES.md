@@ -511,6 +511,7 @@ in the re-seed callback.
 * New op or new busy key: add the `Action` variant + `busy_key` + `exec` arm in `actions.rs` (one place).
 * Env aids for screenshots: `PATCHOPS_BOOT_DELAY_MS`, `PATCHOPS_BOOT_FAIL=1` (startup screens), `PATCHOPS_TRACE_STARTUP=1`.
 * Keyboard: Tab / Shift-Tab focus, Ctrl-Tab / Ctrl-Shift-Tab and Ctrl-1..6 switch tabs, F5 refreshes, Ctrl-Q quits.
+* Rule: no `unwrap`/`expect`/`panic!` in non-test code (handle `Err`/`None`, log with `eprintln!`); every `unsafe` block has a `// SAFETY:` comment. CI's clippy step enforces both (`[workspace.lints.clippy]`).
 
 
 ---

@@ -1,0 +1,4 @@
+# Test code may unwrap, expect and panic; the deny list lives in [workspace.lints.clippy] (Cargo.toml).
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true

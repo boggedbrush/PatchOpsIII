@@ -548,7 +548,9 @@ pub fn open_external_url(url: &str) -> Result<(), String> {
     }
 }
 
-#[cfg(all(test, target_os = "linux"))]
+// Two attributes (not `all(test, ..)`) so clippy's `allow-*-in-tests` recognises this as test code.
+#[cfg(test)]
+#[cfg(target_os = "linux")]
 mod tests {
     use super::*;
     use std::process::Child;
