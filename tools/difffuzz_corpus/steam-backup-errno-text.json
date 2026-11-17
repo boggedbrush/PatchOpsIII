@@ -1,0 +1,66 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "steam",
+  "steps": [
+   {
+    "fx": "rm",
+    "root": "userdata",
+    "path": "config/localconfig.vdf"
+   },
+   {
+    "fx": "mkdir",
+    "root": "userdata",
+    "path": "config/localconfig.vdf"
+   },
+   {
+    "op": "launch-options",
+    "args": {}
+   }
+  ]
+ },
+ "id": "steam-backup-errno-text",
+ "title": "localconfig.vdf is a directory: the backup step fails; legacy logs Python's '[Errno 21] Is a directory: <path>', the port logs a Rust copy error ('...neither a regular file nor a symlink to a regular file')",
+ "right_side": "legacy",
+ "severity": "wrong error text (log only)",
+ "culprit": "backup.rs / steam/launch_options.rs backup step (fsutil::copy2 -> fs::copy error)",
+ "suggested_fix": "format the io::Error with pyfmt::io_error_text(e, Some(src)) and map the 'not a regular file' case to EISDIR",
+ "notes": "",
+ "signature": [
+  "launch-options",
+  "resp:/maintenance/logPayload|fs:APPDATA/PatchOpsIII.log"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/steam-backup-errno-text.json",
+ "observed": {
+  "step_idx": 2,
+  "op": "launch-options",
+  "resp_diff": [
+   "  ~ /result/state/maintenance/logPayload: legacy=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n<TS> - Info: Steam was not running.\\n<TS> - Error: Failed to create backup: [Errno 21] Is a directory: '<SB>/home/.steam/steam/userdata/12345678/config/localconfig.vdf'\\n<TS> - Error: Aborting due to backup failure\\n<TS> - Info: Setting launch options...\\n port=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n<TS> - Info: Steam was not running.\\n<TS> - Error: Failed to create backup: the source path is neither a regular file nor a symlink to a regular file\\n<TS> - Error: Aborting due to backup failure\\n<TS> - Info: Setting launch options...\\n<TS> - Info: Openin"
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log"
+  ],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": "<TS> - Info: Steam was not running.\n<TS> - Error: Failed to create backup: [Errno 21] Is a directory: '<SB>/home/.steam/steam/userdata/12345678/config/localconfig.vdf'\n<TS> - Error: Aborting due to backup failure\n<TS> - Info: Setting launch options...\n<TS> - Info: Opening Steam...\n<TS> - Success: Steam launched successfully\n",
+    "port": "<TS> - Info: Steam was not running.\n<TS> - Error: Failed to create backup: the source path is neither a regular file nor a symlink to a regular file\n<TS> - Error: Aborting due to backup failure\n<TS> - Info: Setting launch options...\n<TS> - Info: Opening Steam...\n<TS> - Success: Steam launched successfully\n",
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:abb988bd458db1140d61b6772656e8136fe42aa197af22a0ef05c55ae2c57a2c",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:1717dea52b86dc9b8995f08be75185030d7af3c69577738bad233be261b000ce",
+     "mode": "0644"
+    }
+   }
+  }
+ }
+}

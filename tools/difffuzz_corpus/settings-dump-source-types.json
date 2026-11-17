@@ -1,0 +1,45 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "write",
+    "root": "appdata",
+    "path": "electron-settings.json",
+    "data": "{\"enhanced_dump_source\": 5}"
+   },
+   {
+    "op": "status",
+    "args": {}
+   }
+  ]
+ },
+ "id": "settings-dump-source-types",
+ "title": "electron-settings.json with enhanced_dump_source of a non-string type: legacy echoes the raw JSON value in state.enhanced.dumpSource, port shows ''",
+ "right_side": "legacy (but only reachable by hand-editing the settings file; low value)",
+ "severity": "wrong response",
+ "culprit": "state.rs / ops/enhanced.rs enhanced_state (get_str)",
+ "suggested_fix": "pass the raw Value through (or document as a deliberate hardening)",
+ "notes": "",
+ "signature": [
+  "status",
+  "resp:/enhanced/dumpSource"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/settings-dump-source-types.json",
+ "observed": {
+  "step_idx": -1,
+  "op": "status",
+  "resp_diff": [
+   "  ~ /result/enhanced/dumpSource: legacy=5 port=\"\""
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {}
+ }
+}

@@ -1,0 +1,62 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "steam",
+  "steps": [
+   {
+    "fx": "chmod",
+    "root": "userdata",
+    "path": "config/localconfig.vdf",
+    "mode": 292
+   },
+   {
+    "op": "launch-options",
+    "args": {}
+   }
+  ]
+ },
+ "id": "launch-options-readonly-localconfig",
+ "title": "localconfig.vdf with mode 0444: legacy and port both fail to write, but they fail at different steps (backup vs write) and log different lines",
+ "right_side": "legacy",
+ "severity": "wrong error text (log lines) ",
+ "culprit": "steam/launch_options.rs set_launch_options + backup.rs (backup copy of a read-only file / restore path)",
+ "suggested_fix": "mirror legacy order: copy2 backup first (this succeeds for a read-only source), then open(config,'w') fails -> log 'Error updating launch options: [Errno 13] ...' and restore the backup (which itself fails on the read-only target: legacy logs that too)",
+ "notes": "",
+ "signature": [
+  "launch-options",
+  "resp:/maintenance/logPayload|fs:APPDATA/PatchOpsIII.log"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/launch-options-readonly-localconfig.json",
+ "observed": {
+  "step_idx": 1,
+  "op": "launch-options",
+  "resp_diff": [
+   "  ~ /result/state/maintenance/logPayload: legacy=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n<TS> - Info: Steam was not running.\\n<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/localconfig_backup.vdf\\n<TS> - Info: Setting launch options to: WINEDLLOVERRIDES=\\\"dsound=n,b\\\" %command%\\n<TS> - Error: Error updating port=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n<TS> - Info: Steam was not running.\\n<TS> - Error: Failed to create backup: [Errno 13] Permission denied: '<SB>/home/.steam/steam/userdata/12345678/config/localconfig.vdf'\\n<TS> - Error: Aborting due to backup failure\\n<TS> - Info: Setting launch options.."
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log"
+  ],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": "<TS> - Info: Steam was not running.\n<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/localconfig_backup.vdf\n<TS> - Info: Setting launch options to: WINEDLLOVERRIDES=\"dsound=n,b\" %command%\n<TS> - Error: Error updating launch options: [Errno 13] Permission denied: '<SB>/home/.steam/steam/userdata/12345678/config/localconfig.vdf'\n<TS> - Error: Failed to restore backup from <SB>/home/.local/share/PatchOpsIII/backups/localconfig_backup.vdf: [Errno 13] Permission denied: '<SB>/home/.steam/steam/userdata/12345678/config/localconfig.vdf'\n<TS> - Info: Setting launch options...\n<TS> - Info: Opening Steam...\n<TS> - Success: Steam launched successfully\n",
+    "port": "<TS> - Info: Steam was not running.\n<TS> - Error: Failed to create backup: [Errno 13] Permission denied: '<SB>/home/.steam/steam/userdata/12345678/config/localconfig.vdf'\n<TS> - Error: Aborting due to backup failure\n<TS> - Info: Setting launch options...\n<TS> - Info: Opening Steam...\n<TS> - Success: Steam launched successfully\n",
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:893cf9928f579714a6cacd888b8fad6fc66eebca0f0456862e45a0f304824675",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:593d086dec722766e6c9b89355a739dddd9a3ea09aa5684222e487ea5cfd458a",
+     "mode": "0644"
+    }
+   }
+  }
+ }
+}

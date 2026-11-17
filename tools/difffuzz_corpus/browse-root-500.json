@@ -1,0 +1,43 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "op": "browse",
+    "args": {
+     "path": "/"
+    }
+   }
+  ]
+ },
+ "id": "browse-root-500",
+ "title": "browse of '/': legacy raises (HTTP 500), port answers",
+ "right_side": "port (legacy crash)",
+ "severity": "legacy bug (500)",
+ "culprit": "n/a (legacy api.py _directory_entries)",
+ "suggested_fix": "none",
+ "notes": "",
+ "signature": [
+  "browse",
+  "resp:/envelope_ok"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/browse-root-500.json",
+ "observed": {
+  "step_idx": 0,
+  "op": "browse",
+  "resp_diff": [
+   "  ~ /envelope_ok: legacy=false port=true",
+   "  - /error_class: \"internal\"",
+   "  + /result: {\"path\": \"/\", \"parent\": null, \"hasGameExecutable\": false, \"roots\": [{\"label\": \"/\", \"path\": \"/\"}], \"shortcuts\": [{\"label\": \"Home\", \"path\": \"<SB>/home\"}, {\"label\": \"Desktop\", \"path\": \"<SB>/home/Desktop\"}, {\"label\": \"Downloads\", \"path\": \"<SB>/home/Downloads\"}, {\"label\": \"Detected BO3 folder\", \"path\": \""
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [],
+  "legacy_error": "internal: HTTP 500: Internal Server Error",
+  "port_error": null,
+  "files": {}
+ }
+}

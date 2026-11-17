@@ -1,0 +1,54 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "mkdir",
+    "root": "appdata",
+    "path": "."
+   },
+   {
+    "fx": "chmod",
+    "root": "appdata",
+    "path": ".",
+    "mode": 365
+   },
+   {
+    "op": "game-directory",
+    "args": {
+     "path": "{alt}/"
+    }
+   }
+  ]
+ },
+ "id": "game-directory-appdata-readonly-500",
+ "title": "app data dir not writable: game-directory settings save raises in legacy (HTTP 500), port answers ok:false with the errno text",
+ "right_side": "port (legacy crash)",
+ "severity": "legacy bug (500)",
+ "culprit": "n/a (legacy api.py set_game_directory has no try/except)",
+ "suggested_fix": "none",
+ "notes": "",
+ "signature": [
+  "game-directory",
+  "resp:/envelope_ok"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/game-directory-appdata-readonly-500.json",
+ "observed": {
+  "step_idx": 2,
+  "op": "game-directory",
+  "resp_diff": [
+   "  ~ /envelope_ok: legacy=false port=true",
+   "  - /error_class: \"internal\"",
+   "  + /result: {\"ok\": false, \"error\": \"[Errno 13] Permission denied: '<SB>/home/.local/share/PatchOpsIII/electron-settings.json'\"}"
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [],
+  "legacy_error": "internal: HTTP 500: Internal Server Error",
+  "port_error": null,
+  "files": {}
+ }
+}

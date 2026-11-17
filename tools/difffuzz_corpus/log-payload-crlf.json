@@ -1,0 +1,45 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "write",
+    "root": "appdata",
+    "path": "PatchOpsIII.log",
+    "data": "2025-01-02 03:04:05 - Info: old\r\n2025-01-02 03:04:05 - Info: old2\r\n"
+   },
+   {
+    "op": "logs/payload",
+    "args": {}
+   }
+  ]
+ },
+ "id": "log-payload-crlf",
+ "title": "pre-existing log with CRLF: Python read_text() (universal newlines) yields LF in logs/payload and state; port keeps CR",
+ "right_side": "legacy",
+ "severity": "wrong response (payload text)",
+ "culprit": "log.rs FileLog::payload / ops/basics.rs format_payload",
+ "suggested_fix": "translate \\r\\n and \\r to \\n when building the payload",
+ "notes": "",
+ "signature": [
+  "status",
+  "resp:/maintenance/logPayload"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/log-payload-crlf.json",
+ "observed": {
+  "step_idx": -1,
+  "op": "status",
+  "resp_diff": [
+   "  ~ /result/maintenance/logPayload: legacy=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n<TS> - Info: old\\n<TS> - Info: old2\\n```\" port=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n<TS> - Info: old\\r\\n<TS> - Info: old2\\n```\""
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {}
+ }
+}

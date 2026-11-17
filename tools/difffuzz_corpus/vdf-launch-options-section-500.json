@@ -1,0 +1,47 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "write",
+    "root": "userdata",
+    "path": "config/localconfig.vdf",
+    "data": "\"UserLocalConfigStore\"\n{\n\"Software\"\n{\n\"Valve\"\n{\n\"Steam\"\n{\n\"apps\"\n{\n\"311210\"\n{\n\"LaunchOptions\"\n{\n\"a\"\t\"b\"\n}\n}\n}\n}\n}\n}\n}\n"
+   },
+   {
+    "op": "status",
+    "args": {}
+   }
+  ]
+ },
+ "id": "vdf-launch-options-section-500",
+ "title": "LaunchOptions stored as a section: legacy status raises (HTTP 500), port answers",
+ "right_side": "port (legacy crash)",
+ "severity": "legacy bug (500)",
+ "culprit": "n/a (legacy api.py _launch_profiles on a dict)",
+ "suggested_fix": "none",
+ "notes": "",
+ "signature": [
+  "status",
+  "resp:/envelope_ok"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/vdf-launch-options-section-500.json",
+ "observed": {
+  "step_idx": -1,
+  "op": "status",
+  "resp_diff": [
+   "  ~ /envelope_ok: legacy=false port=true",
+   "  - /error_class: \"internal\"",
+   "  + /result: {\"appVersion\": \"bench\", \"platform\": \"Linux\", \"gameDir\": \"<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III\", \"gameDetected\": true, \"configExists\": true, \"steamUserId\": \"12345678\", \"logPath\": \"<SB>/home/.local/share/PatchOpsIII/PatchOpsIII.log\", \"presets\": [\"Smooth Preset\", \"Low-Lat"
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [],
+  "legacy_error": "internal: HTTP 500: Internal Server Error",
+  "port_error": null,
+  "files": {}
+ }
+}

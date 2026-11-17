@@ -1,0 +1,82 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "op": "vram-target",
+    "args": {
+     "limited": false,
+     "target": "80.0"
+    }
+   }
+  ]
+ },
+ "id": "int-from-numeric-string",
+ "title": "int field given the string '80.0': pydantic v2 lax mode accepts it (int-valued float string), the port rejects it (validation) and the op is not run",
+ "right_side": "legacy",
+ "severity": "wrong response (validation vs ok) + file/log differences",
+ "culprit": "ops/args.rs Args::int_range",
+ "suggested_fix": "accept what pydantic accepts for int: ints, bool? (no: bool is rejected in lax int? check), floats with zero fraction, numeric strings incl. '80.0', ' 80 ' (surrounding whitespace allowed), '+80', '8_0'",
+ "notes": "",
+ "signature": [
+  "vram-target",
+  "resp:/envelope_ok|fs:APPDATA,APPDATA/PatchOpsIII.log,GAME/players/config.ini"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/int-from-numeric-string.json",
+ "observed": {
+  "step_idx": 0,
+  "op": "vram-target",
+  "resp_diff": [
+   "  ~ /envelope_ok: legacy=true port=false",
+   "  + /error_class: \"validation\"",
+   "  - /result: {\"ok\": true, \"state\": {\"appVersion\": \"bench\", \"platform\": \"Linux\", \"gameDir\": \"<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III\", \"gameDetected\": true, \"configExists\": true, \"steamUserId\": \"12345678\", \"logPath\": \"<SB>/home/.local/share/PatchOpsIII/PatchOpsIII.log\", \"presets\": [\"Sm"
+  ],
+  "only_legacy": [
+   "home/.local/share/PatchOpsIII",
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log"
+  ],
+  "only_port": [],
+  "changed": [
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini"
+  ],
+  "legacy_error": null,
+  "port_error": "validation: target: Input should be a valid integer",
+  "files": {
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini": {
+    "legacy": "// Black Ops III configuration (bench fixture)\nAATechnique = \"SMAA 1x\" // anti-aliasing technique\nActorShadows = \"1\" // actor shadows\nBackbufferCount = \"2\" // back buffers\nCorpseCount = \"32\" // corpses\nDisableDynamicLightShadows = \"0\" // dynamic light shadows\nDisableDynamicSunShadows = \"0\" // dynamic sun shadows\nDrawFPS = \"0\" // FPS counter\nFOV = \"80\" // field of view\n// FOV = \"70\" (commented out, must not be matched)\nFullScreenMode = \"1\" // 0=Windowed,1=Fullscreen,2=Fullscreen Windowed\nGamma = \"1.0\" // gamma (not managed by PatchOpsIII)\n\n\nMaxFPS = \"165\" // Maximum FPS cap\nMaxFrameLatency = \"1\" // frame latency\nMeshQuality = \"0\" // mesh quality\nMotionBlur = \"On\" // motion blur\nMotionBlurQuality = \"High\" // motion blur quality\nOIT = \"0\" // order independent transparency\nRefreshRate = \"59.940\" // refresh rate\nRestrictGraphicsOptions = \"1\" // restrict graphics options\nResolutionPercent = \"100\" // render resolution percent\n  SerializeRender = \"0\" // 0 to 2 (leading spaces)\nShadowFiltering = \"0\" // shadow filtering\nSmoothFramerate = \"0\" // smooth framerate\nSpotShadowTextureSize = \"2048\" // spot shadows\nStreamMinResident = \"0\" // 0 or 1\nTextureFilter = \"1\" // aniso\nTextureQuality = \"0\" // texture quality\nVideoMemory = \"1\" // 0.75 to 1\nVsync = \"1\" // Vertical sync\nVsyncMode = \"adaptive\" // different key sharing the prefix \"Vsync\"\nWindowSize = \"1920x1080\" // any text\nDrawFPS = \"0\" // duplicate key line, both occurrences get rewritten\n// caf latin-1 byte in a comment MARK\n",
+    "port": null,
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:3bc999988e0ebda5eee5c70c9f1cabfebe344cd3d87e0dd3ed8b391b2cbd0f8f",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "bin:368e535e9d75747dab824c956af3847ac2b9f744f7402f89407f32ff2de0ad1a",
+     "size": 1528,
+     "mode": "0644"
+    }
+   },
+   "home/.local/share/PatchOpsIII": {
+    "legacy_meta": {
+     "t": "d",
+     "mode": "0755"
+    },
+    "port_meta": null
+   },
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": "<TS> - Success: Enabled full VRAM usage.\n",
+    "port": null,
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:fa0082eea7b53f4415509b50233dc7be81f95bf509ac6400ccc6c1526847d9cb",
+     "mode": "0644"
+    },
+    "port_meta": null
+   }
+  }
+ }
+}

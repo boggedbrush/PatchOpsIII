@@ -1,0 +1,48 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "write",
+    "root": "userdata",
+    "path": "config/localconfig.vdf",
+    "data": "\"UserLocalConfigStore\"\n{\n\t\"Software\"\n\t{\n\t\t\"Valve\"\n\t\t{\n\t\t\t\"Steam\"\n\t\t\t{\n\t\t\t\t\"apps\"\n\t\t\t\t{\n\t\t\t\t\t\"311210\"\n\t\t\t\t\t{\n\t\t\t\t\t\t\"LaunchOptions\"\t\t\"+set fs_game 2994481309\"\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n}}\n"
+   },
+   {
+    "op": "status",
+    "args": {}
+   }
+  ]
+ },
+ "id": "vdf-double-closing-brace",
+ "title": "localconfig.vdf whose last line is '}}': python-vdf only looks at the first character of a line, so it parses; the port rejects the file (currentLaunchOptions null, launch profile 'default')",
+ "right_side": "legacy",
+ "severity": "wrong response (currentLaunchOptions/activeLaunchProfile) and, for launch-options, the port refuses to edit a file python-vdf edits",
+ "culprit": "steam/vdf.rs parse (token based, stricter than the line-oriented python-vdf)",
+ "suggested_fix": "port python-vdf's line algorithm literally: lstrip each line; skip empty and '/'-lines; line[0]=='{' skips the whole line; line[0]=='}' pops one level and ignores the rest of the line; else match the key/value regex (unquoted keys/values, quoted values continuing over lines, `[cond]` handled by the value regex); errors only at EOF / extra '}' / missing '{'",
+ "notes": "",
+ "signature": [
+  "status",
+  "resp:/activeLaunchProfile"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/vdf-double-closing-brace.json",
+ "observed": {
+  "step_idx": -1,
+  "op": "status",
+  "resp_diff": [
+   "  ~ /result/activeLaunchProfile: legacy=\"all_around\" port=\"default\"",
+   "  ~ /result/currentLaunchOptions: legacy=\"+set fs_game 2994481309\" port=null",
+   "  ~ /result/launchProfiles[0]/active: legacy=false port=true",
+   "  ~ /result/launchProfiles[2]/active: legacy=true port=false"
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {}
+ }
+}

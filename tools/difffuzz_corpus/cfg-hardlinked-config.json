@@ -1,0 +1,64 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "hardlink",
+    "root": "game",
+    "path": "players/config.link",
+    "to": "{game_dir}/players/config.ini"
+   },
+   {
+    "op": "config",
+    "args": {
+     "key": "FOV",
+     "value": 90
+    }
+   }
+  ]
+ },
+ "id": "cfg-hardlinked-config",
+ "title": "config.ini with a second hard link: the port breaks the link (the other name keeps the old content)",
+ "right_side": "legacy (in-place write keeps both names identical)",
+ "severity": "wrong file content on disk",
+ "culprit": "fsutil.rs atomic_write",
+ "suggested_fix": "same as cfg-symlinked-config",
+ "notes": "",
+ "signature": [
+  "config",
+  "fs:GAME/players/config.link"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/cfg-hardlinked-config.json",
+ "observed": {
+  "step_idx": 1,
+  "op": "config",
+  "resp_diff": [],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.link"
+  ],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.link": {
+    "legacy": "// Black Ops III configuration (bench fixture)\nAATechnique = \"SMAA 1x\" // anti-aliasing technique\nActorShadows = \"1\" // actor shadows\nBackbufferCount = \"2\" // back buffers\nCorpseCount = \"32\" // corpses\nDisableDynamicLightShadows = \"0\" // dynamic light shadows\nDisableDynamicSunShadows = \"0\" // dynamic sun shadows\nDrawFPS = \"0\" // FPS counter\nFOV = \"90\" // Managed by PatchOpsIII\n// FOV = \"70\" (commented out, must not be matched)\nFullScreenMode = \"1\" // 0=Windowed,1=Fullscreen,2=Fullscreen Windowed\nGamma = \"1.0\" // gamma (not managed by PatchOpsIII)\n\n\nMaxFPS = \"165\" // Maximum FPS cap\nMaxFrameLatency = \"1\" // frame latency\nMeshQuality = \"0\" // mesh quality\nMotionBlur = \"On\" // motion blur\nMotionBlurQuality = \"High\" // motion blur quality\nOIT = \"0\" // order independent transparency\nRefreshRate = \"59.940\" // refresh rate\nRestrictGraphicsOptions = \"1\" // restrict graphics options\nResolutionPercent = \"100\" // render resolution percent\n  SerializeRender = \"0\" // 0 to 2 (leading spaces)\nShadowFiltering = \"0\" // shadow filtering\nSmoothFramerate = \"0\" // smooth framerate\nSpotShadowTextureSize = \"2048\" // spot shadows\nStreamMinResident = \"0\" // 0 or 1\nTextureFilter = \"1\" // aniso\nTextureQuality = \"0\" // texture quality\nVideoMemory = \"0.75\" // 0.75 to 1\nVsync = \"1\" // Vertical sync\nVsyncMode = \"adaptive\" // different key sharing the prefix \"Vsync\"\nWindowSize = \"1920x1080\" // any text\nDrawFPS = \"0\" // duplicate key line, both occurrences get rewritten\n// caf latin-1 byte in a comment MARK\n",
+    "port": null,
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:92a67c53af962c9ae69c0a9463313167b0ac94e7a39195cd590271c9bd030aaa",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "bin:368e535e9d75747dab824c956af3847ac2b9f744f7402f89407f32ff2de0ad1a",
+     "size": 1528,
+     "mode": "0644"
+    }
+   }
+  }
+ }
+}

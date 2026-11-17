@@ -1,0 +1,60 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "steam",
+  "steps": [
+   {
+    "fx": "write",
+    "root": "steam",
+    "path": "config/config.vdf",
+    "data": "}{ not vdf"
+   },
+   {
+    "op": "enhanced-uninstall",
+    "args": {}
+   }
+  ]
+ },
+ "id": "vdf-parse-error-text",
+ "title": "enhanced-uninstall on a config.vdf with an unbalanced '}': legacy logs python-vdf's SyntaxError text ('vdf.parse: one too many closing parenthasis (config.vdf, line 1)'), the port logs its own wording",
+ "right_side": "legacy",
+ "severity": "wrong error text (log only)",
+ "culprit": "steam/vdf.rs ParseError texts (+ callers in enhanced/linux.rs)",
+ "suggested_fix": "use python-vdf's messages `vdf.parse: <msg> (<file name>, line <n>)` (messages: 'one too many closing parenthasis', 'unclosed parenthasis or quotes (EOF)', 'expected openning bracket', 'unexpected EOF (open quote for value?)', 'unexpected EOF (open key quote?)')",
+ "notes": "the sentence ' The earliest copy PatchOpsIII saw is kept at <path>.' the port appends is a known intentional addition and is normalised away by difffuzz TEXT_NORMALISERS",
+ "signature": [
+  "enhanced-uninstall",
+  "fs:APPDATA/PatchOpsIII.log"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/vdf-parse-error-text.json",
+ "observed": {
+  "step_idx": 1,
+  "op": "enhanced-uninstall",
+  "resp_diff": [],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log"
+  ],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": "<TS> - Success: Dump files uninstalled.\n<TS> - Warning: No BO3 Enhanced files were removed or restored (none tracked).\n<TS> - Info: Steam was not running.\n<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/steam_config_backup.vdf\n<TS> - Error: Failed to clear compatibility mapping: vdf.parse: one too many closing parenthasis (config.vdf, line 1)\n<TS> - Success: Config restored from backup\n<TS> - Info: No BO3 Enhanced launch override found; leaving launch options unchanged.\n<TS> - Info: Compatibility tool 'BO3 Enhanced' was already absent.\n<TS> - Info: Setting launch options...\n<TS> - Info: Opening Steam...\n<TS> - Success: Steam launched successfully\n<TS> - Warning: Linux BO3 Enhanced cleanup was only partially applied. Review previous log entries.\n<TS> - Error: BO3 Enhanced uninstall failed: BO3 Enhanced files were removed, but Linux compatibility cleanup was incomplete.\n",
+    "port": "<TS> - Success: Dump files uninstalled.\n<TS> - Warning: No BO3 Enhanced files were removed or restored (none tracked).\n<TS> - Info: Steam was not running.\n<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/steam_config_backup.vdf\n<TS> - Error: Failed to clear compatibility mapping: one too many closing braces\n<TS> - Success: Config restored from backup\n<TS> - Info: No BO3 Enhanced launch override found; leaving launch options unchanged.\n<TS> - Info: Compatibility tool 'BO3 Enhanced' was already absent.\n<TS> - Info: Setting launch options...\n<TS> - Info: Opening Steam...\n<TS> - Success: Steam launched successfully\n<TS> - Warning: Linux BO3 Enhanced cleanup was only partially applied. Review previous log entries.\n<TS> - Error: BO3 Enhanced uninstall failed: BO3 Enhanced files were removed, but Linux compatibility cleanup was incomplete.\n",
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:29d0e9d8337030243e99e97a8d52e4e67e974118d37e0fd943d1abf5caca9b6f",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:867e18ff0a8f7c1f3b001130a642a98a8a97c1ff12d909fa61ecd16c7232d895",
+     "mode": "0644"
+    }
+   }
+  }
+ }
+}

@@ -1,0 +1,67 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "write",
+    "root": "game",
+    "path": "dxvk.conf",
+    "data": "dxgi.maxFrameRate=1_0\n"
+   },
+   {
+    "op": "status",
+    "args": {}
+   }
+  ]
+ },
+ "id": "dxvk-conf-int-underscore",
+ "title": "Python int() accepts '1_0' (=10), unicode digits and big ints; Rust i64::parse does not",
+ "right_side": "legacy",
+ "severity": "wrong response (dxvk.settings.maxFrameRate 10 vs 0) + wrong log text",
+ "culprit": "ops/dxvk.rs read_settings (v.parse::<i64>())",
+ "suggested_fix": "implement Python int(str) grammar (strip, sign, underscores between digits, Unicode Nd digits, arbitrary size -> int(i64) clamp via int())",
+ "notes": "",
+ "signature": [
+  "status",
+  "resp:/dxvk/settings/maxFrameRate|fs:APPDATA,APPDATA/PatchOpsIII.log"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/dxvk-conf-int-underscore.json",
+ "observed": {
+  "step_idx": -1,
+  "op": "status",
+  "resp_diff": [
+   "  ~ /result/dxvk/settings/maxFrameRate: legacy=10 port=0",
+   "  ~ /result/maintenance/logPayload: legacy=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n(no log entries found)\\n```\" port=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n<TS> - Warning: Failed to read dxvk.conf: invalid literal for int() with base 10: '1_0'\\n```\""
+  ],
+  "only_legacy": [],
+  "only_port": [
+   "home/.local/share/PatchOpsIII",
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log"
+  ],
+  "changed": [],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "home/.local/share/PatchOpsIII": {
+    "legacy_meta": null,
+    "port_meta": {
+     "t": "d",
+     "mode": "0755"
+    }
+   },
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": null,
+    "port": "<TS> - Warning: Failed to read dxvk.conf: invalid literal for int() with base 10: '1_0'\n",
+    "legacy_meta": null,
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:2f52eb1a2a2c46edda886c1b8ca158410ceb971bfd7c167f5596c27ba74865c2",
+     "mode": "0644"
+    }
+   }
+  }
+ }
+}

@@ -1,0 +1,46 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "write",
+    "root": "game",
+    "path": "t7patch.conf",
+    "data": "playername=Bench\r# comment\r"
+   },
+   {
+    "op": "status",
+    "args": {}
+   }
+  ]
+ },
+ "id": "t7-conf-lone-cr",
+ "title": "t7patch.conf with lone CR line endings: Python universal newlines split lines, the port does not",
+ "right_side": "legacy (gamertag 'Bench')",
+ "severity": "wrong response (gamertag 'Bench\\r# comment')",
+ "culprit": "ops/t7.rs t7_state (split_inclusive('\\n')) and edit_conf",
+ "suggested_fix": "normalise \\r\\n and lone \\r to \\n before splitting (the same normalize_newlines used for config.ini)",
+ "notes": "",
+ "signature": [
+  "status",
+  "resp:/t7/gamertag"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/t7-conf-lone-cr.json",
+ "observed": {
+  "step_idx": -1,
+  "op": "status",
+  "resp_diff": [
+   "  ~ /result/t7/gamertag: legacy=\"Bench\" port=\"Bench\\r# comment\"",
+   "  ~ /result/t7/plainName: legacy=\"Bench\" port=\"Bench\\r# comment\""
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {}
+ }
+}

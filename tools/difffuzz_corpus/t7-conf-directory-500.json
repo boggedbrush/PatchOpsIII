@@ -1,0 +1,46 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "mkdir",
+    "root": "game",
+    "path": "t7patch.conf"
+   },
+   {
+    "op": "status",
+    "args": {}
+   }
+  ]
+ },
+ "id": "t7-conf-directory-500",
+ "title": "t7patch.conf is a directory: the legacy status raises (HTTP 500), the port answers",
+ "right_side": "port (legacy crash: unguarded open() in t7_patch.check_t7_patch_status)",
+ "severity": "legacy bug (500 on every state-returning op)",
+ "culprit": "n/a (legacy)",
+ "suggested_fix": "none for the port; keep the tolerant behaviour; document as intentional if desired",
+ "notes": "",
+ "signature": [
+  "status",
+  "resp:/envelope_ok"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/t7-conf-directory-500.json",
+ "observed": {
+  "step_idx": -1,
+  "op": "status",
+  "resp_diff": [
+   "  ~ /envelope_ok: legacy=false port=true",
+   "  - /error_class: \"internal\"",
+   "  + /result: {\"appVersion\": \"bench\", \"platform\": \"Linux\", \"gameDir\": \"<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III\", \"gameDetected\": true, \"configExists\": true, \"steamUserId\": \"12345678\", \"logPath\": \"<SB>/home/.local/share/PatchOpsIII/PatchOpsIII.log\", \"presets\": [\"Smooth Preset\", \"Low-Lat"
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [],
+  "legacy_error": "internal: HTTP 500: Internal Server Error",
+  "port_error": null,
+  "files": {}
+ }
+}

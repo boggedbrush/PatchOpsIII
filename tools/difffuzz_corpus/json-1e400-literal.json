@@ -1,0 +1,84 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "op": "config",
+    "args": {
+     "key": "Max",
+     "value": {
+      "$raw": "1e400"
+     }
+    }
+   }
+  ]
+ },
+ "id": "json-1e400-literal",
+ "title": "a JSON number literal out of f64 range (1e400) makes the port reject the whole request line (reply has id null)",
+ "right_side": "legacy (Python json.loads gives inf and the op runs; str(inf) is written)",
+ "severity": "wrong response (validation error instead of op result); the reply carries id:null so an id-matching client waits forever",
+ "culprit": "rpc.rs handle_line (serde_json::from_str fails with 'number out of range') ",
+ "suggested_fix": "low priority; at minimum echo the request id (parse {id} leniently) so clients do not hang; optionally accept out-of-range numbers as inf",
+ "notes": "",
+ "signature": [
+  "config",
+  "resp:/envelope_ok|fs:APPDATA,APPDATA/PatchOpsIII.log,GAME/players/config.ini"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/json-1e400-literal.json",
+ "observed": {
+  "step_idx": 0,
+  "op": "config",
+  "resp_diff": [
+   "  ~ /envelope_ok: legacy=true port=false",
+   "  + /error_class: \"validation\"",
+   "  - /result: {\"ok\": true, \"state\": {\"appVersion\": \"bench\", \"platform\": \"Linux\", \"gameDir\": \"<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III\", \"gameDetected\": true, \"configExists\": true, \"steamUserId\": \"12345678\", \"logPath\": \"<SB>/home/.local/share/PatchOpsIII/PatchOpsIII.log\", \"presets\": [\"Sm"
+  ],
+  "only_legacy": [
+   "home/.local/share/PatchOpsIII",
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log"
+  ],
+  "only_port": [],
+  "changed": [
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini"
+  ],
+  "legacy_error": null,
+  "port_error": "validation: bad json: number out of range at line 1 column 55",
+  "files": {
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini": {
+    "legacy": "// Black Ops III configuration (bench fixture)\nAATechnique = \"SMAA 1x\" // anti-aliasing technique\nActorShadows = \"1\" // actor shadows\nBackbufferCount = \"2\" // back buffers\nCorpseCount = \"32\" // corpses\nDisableDynamicLightShadows = \"0\" // dynamic light shadows\nDisableDynamicSunShadows = \"0\" // dynamic sun shadows\nDrawFPS = \"0\" // FPS counter\nFOV = \"80\" // field of view\n// FOV = \"70\" (commented out, must not be matched)\nFullScreenMode = \"1\" // 0=Windowed,1=Fullscreen,2=Fullscreen Windowed\nGamma = \"1.0\" // gamma (not managed by PatchOpsIII)\n\n\nMaxFPS = \"165\" // Maximum FPS cap\nMaxFrameLatency = \"1\" // frame latency\nMeshQuality = \"0\" // mesh quality\nMotionBlur = \"On\" // motion blur\nMotionBlurQuality = \"High\" // motion blur quality\nOIT = \"0\" // order independent transparency\nRefreshRate = \"59.940\" // refresh rate\nRestrictGraphicsOptions = \"1\" // restrict graphics options\nResolutionPercent = \"100\" // render resolution percent\n  SerializeRender = \"0\" // 0 to 2 (leading spaces)\nShadowFiltering = \"0\" // shadow filtering\nSmoothFramerate = \"0\" // smooth framerate\nSpotShadowTextureSize = \"2048\" // spot shadows\nStreamMinResident = \"0\" // 0 or 1\nTextureFilter = \"1\" // aniso\nTextureQuality = \"0\" // texture quality\nVideoMemory = \"0.75\" // 0.75 to 1\nVsync = \"1\" // Vertical sync\nVsyncMode = \"adaptive\" // different key sharing the prefix \"Vsync\"\nWindowSize = \"1920x1080\" // any text\nDrawFPS = \"0\" // duplicate key line, both occurrences get rewritten\n// caf latin-1 byte in a comment MARK\nMax = \"in...[1529 chars]",
+    "port": null,
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:07a1c1f38375484bc21035cee1cb87766022468aac0445031e250bf11434f3c8",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "bin:368e535e9d75747dab824c956af3847ac2b9f744f7402f89407f32ff2de0ad1a",
+     "size": 1528,
+     "mode": "0644"
+    }
+   },
+   "home/.local/share/PatchOpsIII": {
+    "legacy_meta": {
+     "t": "d",
+     "mode": "0755"
+    },
+    "port_meta": null
+   },
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": "<TS> - Success: Set Max to inf.\n",
+    "port": null,
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:fe31fe9ff317df7178da53ef0b3dad33bee7d44235c3a6a57098ca3da303c0bc",
+     "mode": "0644"
+    },
+    "port_meta": null
+   }
+  }
+ }
+}

@@ -1,0 +1,46 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "write",
+    "root": "game",
+    "path": "dxvk.conf",
+    "data": "\tdxvk.tearFree=\fdxvk.gplAsyncCache=\f"
+   },
+   {
+    "op": "status",
+    "args": {}
+   }
+  ]
+ },
+ "id": "dxvk-conf-splitlines",
+ "title": "dxvk.conf lines separated by form feed: Python splitlines() splits on \\x0c, the port only on \\n/\\r",
+ "right_side": "legacy",
+ "severity": "wrong response (dxvk.settings)",
+ "culprit": "ops/dxvk.rs read_settings (text.split(['\\n','\\r']))",
+ "suggested_fix": "split on the Python str.splitlines() set: \\n \\r \\r\\n \\v \\f \\x1c \\x1d \\x1e \\x85 U+2028 U+2029",
+ "notes": "",
+ "signature": [
+  "status",
+  "resp:/dxvk/settings/gplAsyncCache"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/dxvk-conf-splitlines.json",
+ "observed": {
+  "step_idx": -1,
+  "op": "status",
+  "resp_diff": [
+   "  ~ /result/dxvk/settings/gplAsyncCache: legacy=false port=true",
+   "  ~ /result/dxvk/settings/tearFree: legacy=\"\" port=\"dxvk.gplAsyncCache=\""
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {}
+ }
+}

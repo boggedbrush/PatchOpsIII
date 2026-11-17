@@ -1,0 +1,74 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "symlink",
+    "root": "mod",
+    "path": "linkdir",
+    "to": "{game_dir}/video"
+   },
+   {
+    "op": "mod-files/clear",
+    "args": {}
+   }
+  ]
+ },
+ "id": "mod-files-clear-symlinked-dir",
+ "title": "a symlink to a directory inside BO3 Mod Files: legacy shutil.rmtree refuses ('Cannot call rmtree on a symbolic link') and keeps it, the port deletes the link",
+ "right_side": "ambiguous: the legacy outcome is an error (arguably a legacy bug), the port outcome (unlink the link, never touch the target) is the friendlier one; target contents are safe either way",
+ "severity": "wrong response (ok vs error) + one file differs",
+ "culprit": "ops/basics.rs clear_mod_files",
+ "suggested_fix": "decide; if parity is wanted replicate the error text `[Errno None] None: PosixPath(...)`",
+ "notes": "",
+ "signature": [
+  "mod-files/clear",
+  "resp:/error|fs:APPDATA/BON Mod Files/linkdir,APPDATA/PatchOpsIII.log"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/mod-files-clear-symlinked-dir.json",
+ "observed": {
+  "step_idx": 1,
+  "op": "mod-files/clear",
+  "resp_diff": [
+   "  - /result/error: \"[Errno None] None: PosixPath('<SB>/home/.local/share/PatchOpsIII/BO3 Mod Files/linkdir')\"",
+   "  ~ /result/ok: legacy=false port=true",
+   "  + /result/state: {\"appVersion\": \"bench\", \"platform\": \"Linux\", \"gameDir\": \"<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III\", \"gameDetected\": true, \"configExists\": true, \"steamUserId\": \"12345678\", \"logPath\": \"<SB>/home/.local/share/PatchOpsIII/PatchOpsIII.log\", \"presets\": [\"Smooth Preset\", \"Low-Lat"
+  ],
+  "only_legacy": [
+   "home/.local/share/PatchOpsIII/BO3 Mod Files/linkdir"
+  ],
+  "only_port": [],
+  "changed": [
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log"
+  ],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": "<TS> - Error: Failed to clear mod files: [Errno None] None: PosixPath('<SB>/home/.local/share/PatchOpsIII/BO3 Mod Files/linkdir')\n",
+    "port": "<TS> - Success: Cleared mod files in <SB>/home/.local/share/PatchOpsIII/BO3 Mod Files\n",
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:5e8e8caf44e89f276e6f71b38e495e4216e936692771e717ddbcadec7179e29e",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:5ba1a44d6bf58f7115248060962b75fefe3b16890f3bc45227de4eed437aeb89",
+     "mode": "0644"
+    }
+   },
+   "home/.local/share/PatchOpsIII/BO3 Mod Files/linkdir": {
+    "legacy_meta": {
+     "t": "l",
+     "to": "<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/video",
+     "mode": "0777"
+    },
+    "port_meta": null
+   }
+  }
+ }
+}

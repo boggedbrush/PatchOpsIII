@@ -1,0 +1,78 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "steam",
+  "steps": [
+   {
+    "fx": "chmod",
+    "root": "userdata",
+    "path": "config",
+    "mode": 365
+   },
+   {
+    "op": "launch-options",
+    "args": {}
+   }
+  ]
+ },
+ "id": "launch-options-readonly-config-dir",
+ "title": "userdata/<id>/config is a read-only directory (0555) but localconfig.vdf is writable: legacy edits in place and succeeds, the port cannot create its temp file",
+ "right_side": "legacy",
+ "severity": "wrong file content on disk (localconfig.vdf not updated) + wrong response (ok:false)",
+ "culprit": "fsutil.rs atomic_write via steam/launch_options.rs",
+ "suggested_fix": "same as cfg-readonly-parent-dir (fallback to in-place write)",
+ "notes": "",
+ "signature": [
+  "launch-options",
+  "resp:/ok|fs:APPDATA/PatchOpsIII.log,STEAM/userdata/N/config/localconfig.vdf"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/launch-options-readonly-config-dir.json",
+ "observed": {
+  "step_idx": 1,
+  "op": "launch-options",
+  "resp_diff": [
+   "  ~ /result/ok: legacy=true port=false",
+   "  ~ /result/state/maintenance/logPayload: legacy=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n<TS> - Info: Steam was not running.\\n<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/localconfig_backup.vdf\\n<TS> - Info: Setting launch options to: WINEDLLOVERRIDES=\\\"dsound=n,b\\\" %command%\\n<TS> - Info: Setting launch  port=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n<TS> - Info: Steam was not running.\\n<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/localconfig_backup.vdf\\n<TS> - Info: Setting launch options to: WINEDLLOVERRIDES=\\\"dsound=n,b\\\" %command%\\n<TS> - Error: Error updating"
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log",
+   "home/.steam/steam/userdata/12345678/config/localconfig.vdf"
+  ],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": "<TS> - Info: Steam was not running.\n<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/localconfig_backup.vdf\n<TS> - Info: Setting launch options to: WINEDLLOVERRIDES=\"dsound=n,b\" %command%\n<TS> - Info: Setting launch options...\n<TS> - Info: Opening Steam...\n<TS> - Success: Steam launched successfully\n",
+    "port": "<TS> - Info: Steam was not running.\n<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/localconfig_backup.vdf\n<TS> - Info: Setting launch options to: WINEDLLOVERRIDES=\"dsound=n,b\" %command%\n<TS> - Error: Error updating launch options: [Errno 13] Permission denied: '<SB>/home/.steam/steam/userdata/12345678/config/localconfig.vdf'\n<TS> - Success: Config restored from backup\n<TS> - Info: Setting launch options...\n<TS> - Info: Opening Steam...\n<TS> - Success: Steam launched successfully\n",
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:29f5e7756c167180618eafafacfcad58fb5c96d1cd2e1010e211134979dfa045",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:cb9b8a7790ab8a28733f9144e66e7dda2775ff835439a5850ec853da9dd092d0",
+     "mode": "0644"
+    }
+   },
+   "home/.steam/steam/userdata/12345678/config/localconfig.vdf": {
+    "legacy": "\"UserLocalConfigStore\"\n{\n\t\"Software\"\n\t{\n\t\t\"Valve\"\n\t\t{\n\t\t\t\"Steam\"\n\t\t\t{\n\t\t\t\t\"apps\"\n\t\t\t\t{\n\t\t\t\t\t\"220\"\n\t\t\t\t\t{\n\t\t\t\t\t\t\"LaunchOptions\" \"-novid\"\n\t\t\t\t\t}\n\t\t\t\t\t\"311210\"\n\t\t\t\t\t{\n\t\t\t\t\t\t\"LastPlayed\" \"1700000000\"\n\t\t\t\t\t\t\"LaunchOptions\" \"WINEDLLOVERRIDES=\\\"dsound=n,b\\\" %command%\"\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n\t\"friends\"\n\t{\n\t\t\"PersonaName\" \"BenchUser\"\n\t}\n}\n",
+    "port": "\"UserLocalConfigStore\"\n{\n\t\"Software\"\n\t{\n\t\t\"Valve\"\n\t\t{\n\t\t\t\"Steam\"\n\t\t\t{\n\t\t\t\t\"apps\"\n\t\t\t\t{\n\t\t\t\t\t\"220\"\n\t\t\t\t\t{\n\t\t\t\t\t\t\"LaunchOptions\"\t\t\"-novid\"\n\t\t\t\t\t}\n\t\t\t\t\t\"311210\"\n\t\t\t\t\t{\n\t\t\t\t\t\t\"LastPlayed\"\t\t\"1700000000\"\n\t\t\t\t\t\t\"LaunchOptions\"\t\t\"WINEDLLOVERRIDES=\\\"dsound=n,b\\\" %command%\"\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n\t\"friends\"\n\t{\n\t\t\"PersonaName\"\t\t\"BenchUser\"\n\t}\n}\n",
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:7ab0bb914ef9282fe78607d31be5c85abd7834e8f10a44a7386592c7281f44ad",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:1f5550c224ba69baa71e0557a0afb673a557390c2af2dbd8b25d8664740d6c30",
+     "mode": "0644"
+    }
+   }
+  }
+ }
+}

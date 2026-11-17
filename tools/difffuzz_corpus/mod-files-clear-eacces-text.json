@@ -1,0 +1,66 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "named",
+    "name": "place_mod_junk"
+   },
+   {
+    "fx": "chmod",
+    "root": "mod",
+    "path": "sub/nested",
+    "mode": 365
+   },
+   {
+    "op": "mod-files/clear",
+    "args": {}
+   }
+  ]
+ },
+ "id": "mod-files-clear-eacces-text",
+ "title": "mod-files/clear with an unwritable nested dir: legacy error names the nested path (PosixPath('...') repr), port names the parent",
+ "right_side": "legacy",
+ "severity": "wrong error text (response + log)",
+ "culprit": "ops/basics.rs clear_mod_files (std::fs::remove_dir_all error path)",
+ "suggested_fix": "emulate shutil.rmtree: first error is raised by os.unlink/rmdir of the failing entry; format as `[Errno 13] Permission denied: PosixPath('...')` only for the top-level item (Python passes the Path object there), plain repr string for nested",
+ "notes": "",
+ "signature": [
+  "mod-files/clear",
+  "resp:/error|fs:APPDATA/PatchOpsIII.log"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/mod-files-clear-eacces-text.json",
+ "observed": {
+  "step_idx": 2,
+  "op": "mod-files/clear",
+  "resp_diff": [
+   "  ~ /result/error: legacy=\"[Errno 13] Permission denied: '<SB>/home/.local/share/PatchOpsIII/BO3 Mod Files/sub/nested'\" port=\"[Errno 13] Permission denied: '<SB>/home/.local/share/PatchOpsIII/BO3 Mod Files/sub'\""
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log"
+  ],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": "<TS> - Error: Failed to clear mod files: [Errno 13] Permission denied: '<SB>/home/.local/share/PatchOpsIII/BO3 Mod Files/sub/nested'\n",
+    "port": "<TS> - Error: Failed to clear mod files: [Errno 13] Permission denied: '<SB>/home/.local/share/PatchOpsIII/BO3 Mod Files/sub'\n",
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:e35712ecbfd533ef4580ceca4850ab67e3f9938f7a2419a9a4df5a79c627fda0",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:750e75c23a264c01f6364c0c34dfcffbbffe667fab899b648a78033bf606a41a",
+     "mode": "0644"
+    }
+   }
+  }
+ }
+}

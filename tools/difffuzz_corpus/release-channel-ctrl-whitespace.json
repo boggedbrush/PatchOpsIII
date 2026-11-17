@@ -1,0 +1,75 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "op": "release-channel",
+    "args": {
+     "channel": "\u001cbeta"
+    }
+   }
+  ]
+ },
+ "id": "release-channel-ctrl-whitespace",
+ "title": "Python str.strip() also strips U+001C..U+001F; Rust trim() does not",
+ "right_side": "legacy",
+ "severity": "wrong response (ok:false) and settings not written",
+ "culprit": "ops/basics.rs set_release_channel (channel.trim())",
+ "suggested_fix": "use a py_strip helper (config_ini::py_isspace exists) for every Python .strip(): release channel, t7 gamertag/networkPassword, status parsing",
+ "notes": "",
+ "signature": [
+  "release-channel",
+  "resp:/error|fs:APPDATA,APPDATA/PatchOpsIII.log,APPDATA/electron-settings.json"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/release-channel-ctrl-whitespace.json",
+ "observed": {
+  "step_idx": 0,
+  "op": "release-channel",
+  "resp_diff": [
+   "  + /result/error: \"Release channel must be beta or stable.\"",
+   "  ~ /result/ok: legacy=true port=false",
+   "  - /result/state: {\"appVersion\": \"bench\", \"platform\": \"Linux\", \"gameDir\": \"<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III\", \"gameDetected\": true, \"configExists\": true, \"steamUserId\": \"12345678\", \"logPath\": \"<SB>/home/.local/share/PatchOpsIII/PatchOpsIII.log\", \"presets\": [\"Smooth Preset\", \"Low-Lat"
+  ],
+  "only_legacy": [
+   "home/.local/share/PatchOpsIII",
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log",
+   "home/.local/share/PatchOpsIII/electron-settings.json"
+  ],
+  "only_port": [],
+  "changed": [],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "home/.local/share/PatchOpsIII": {
+    "legacy_meta": {
+     "t": "d",
+     "mode": "0755"
+    },
+    "port_meta": null
+   },
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": "<TS> - Success: Release channel set to Beta.\n",
+    "port": null,
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:bf09a055f960e1ab2ed064c72b471c62fe3ea784a3461ffc270fae20dc30fa34",
+     "mode": "0644"
+    },
+    "port_meta": null
+   },
+   "home/.local/share/PatchOpsIII/electron-settings.json": {
+    "legacy": "{\n  \"release_channel\": \"beta\"\n}",
+    "port": null,
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:0d1d03028c2bea74c2d03b6d6284b5f731bfd95fddd42a7eb91b9675f074668d",
+     "mode": "0644"
+    },
+    "port_meta": null
+   }
+  }
+ }
+}

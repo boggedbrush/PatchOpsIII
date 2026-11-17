@@ -1,0 +1,77 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "op": "config",
+    "args": {
+     "key": "WindowSize",
+     "value": {
+      "$raw": "123456789.12345679"
+     }
+    }
+   }
+  ]
+ },
+ "id": "cfg-float-roundtrip",
+ "title": "serde_json default float parser is not correctly rounded: 123456789.12345679 becomes 123456789.1234568",
+ "right_side": "legacy (repr(float) round-trips)",
+ "severity": "wrong file content on disk",
+ "culprit": "Cargo features of serde_json (no `float_roundtrip`) used by config_ini.rs ConfigValue::from_json",
+ "suggested_fix": "enable serde_json's `float_roundtrip` feature (no new crate, so no `cargo update`)",
+ "notes": "",
+ "signature": [
+  "config",
+  "resp:/graphics/resolution|fs:APPDATA/PatchOpsIII.log,GAME/players/config.ini"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/cfg-float-roundtrip.json",
+ "observed": {
+  "step_idx": 0,
+  "op": "config",
+  "resp_diff": [
+   "  ~ /result/state/graphics/resolution: legacy=\"123456789.12345679\" port=\"123456789.1234568\"",
+   "  ~ /result/state/maintenance/logPayload: legacy=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n<TS> - Success: Set WindowSize to 123456789.12345679.\\n```\" port=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n<TS> - Success: Set WindowSize to 123456789.1234568.\\n```\""
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini",
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log"
+  ],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini": {
+    "legacy": "// Black Ops III configuration (bench fixture)\nAATechnique = \"SMAA 1x\" // anti-aliasing technique\nActorShadows = \"1\" // actor shadows\nBackbufferCount = \"2\" // back buffers\nCorpseCount = \"32\" // corpses\nDisableDynamicLightShadows = \"0\" // dynamic light shadows\nDisableDynamicSunShadows = \"0\" // dynamic sun shadows\nDrawFPS = \"0\" // FPS counter\nFOV = \"80\" // field of view\n// FOV = \"70\" (commented out, must not be matched)\nFullScreenMode = \"1\" // 0=Windowed,1=Fullscreen,2=Fullscreen Windowed\nGamma = \"1.0\" // gamma (not managed by PatchOpsIII)\n\n\nMaxFPS = \"165\" // Maximum FPS cap\nMaxFrameLatency = \"1\" // frame latency\nMeshQuality = \"0\" // mesh quality\nMotionBlur = \"On\" // motion blur\nMotionBlurQuality = \"High\" // motion blur quality\nOIT = \"0\" // order independent transparency\nRefreshRate = \"59.940\" // refresh rate\nRestrictGraphicsOptions = \"1\" // restrict graphics options\nResolutionPercent = \"100\" // render resolution percent\n  SerializeRender = \"0\" // 0 to 2 (leading spaces)\nShadowFiltering = \"0\" // shadow filtering\nSmoothFramerate = \"0\" // smooth framerate\nSpotShadowTextureSize = \"2048\" // spot shadows\nStreamMinResident = \"0\" // 0 or 1\nTextureFilter = \"1\" // aniso\nTextureQuality = \"0\" // texture quality\nVideoMemory = \"0.75\" // 0.75 to 1\nVsync = \"1\" // Vertical sync\nVsyncMode = \"adaptive\" // different key sharing the prefix \"Vsync\"\nWindowSize = \"123456789.12345679\" // Managed by PatchOpsIII\nDrawFPS = \"0\" // duplicate key line, both occurrences get rewritten\n// caf latin-1 byte in a...[1514 chars]",
+    "port": "// Black Ops III configuration (bench fixture)\nAATechnique = \"SMAA 1x\" // anti-aliasing technique\nActorShadows = \"1\" // actor shadows\nBackbufferCount = \"2\" // back buffers\nCorpseCount = \"32\" // corpses\nDisableDynamicLightShadows = \"0\" // dynamic light shadows\nDisableDynamicSunShadows = \"0\" // dynamic sun shadows\nDrawFPS = \"0\" // FPS counter\nFOV = \"80\" // field of view\n// FOV = \"70\" (commented out, must not be matched)\nFullScreenMode = \"1\" // 0=Windowed,1=Fullscreen,2=Fullscreen Windowed\nGamma = \"1.0\" // gamma (not managed by PatchOpsIII)\n\n\nMaxFPS = \"165\" // Maximum FPS cap\nMaxFrameLatency = \"1\" // frame latency\nMeshQuality = \"0\" // mesh quality\nMotionBlur = \"On\" // motion blur\nMotionBlurQuality = \"High\" // motion blur quality\nOIT = \"0\" // order independent transparency\nRefreshRate = \"59.940\" // refresh rate\nRestrictGraphicsOptions = \"1\" // restrict graphics options\nResolutionPercent = \"100\" // render resolution percent\n  SerializeRender = \"0\" // 0 to 2 (leading spaces)\nShadowFiltering = \"0\" // shadow filtering\nSmoothFramerate = \"0\" // smooth framerate\nSpotShadowTextureSize = \"2048\" // spot shadows\nStreamMinResident = \"0\" // 0 or 1\nTextureFilter = \"1\" // aniso\nTextureQuality = \"0\" // texture quality\nVideoMemory = \"0.75\" // 0.75 to 1\nVsync = \"1\" // Vertical sync\nVsyncMode = \"adaptive\" // different key sharing the prefix \"Vsync\"\nWindowSize = \"123456789.1234568\" // Managed by PatchOpsIII\nDrawFPS = \"0\" // duplicate key line, both occurrences get rewritten\n// caf latin-1 byte in a ...[1513 chars]",
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:8ea86154617696fcd67640d7fb297de9ff62ba6cc99ade335ad16d14b8062c95",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:767b1da40dbb66de8ebe62a7f740231b620179a3d72120bd3ad1f9148d16eca4",
+     "mode": "0644"
+    }
+   },
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": "<TS> - Success: Set WindowSize to 123456789.12345679.\n",
+    "port": "<TS> - Success: Set WindowSize to 123456789.1234568.\n",
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:af3d7d2ec87e268790c6d9d577db17205be386006b1268bc3190e7495e1f3569",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:f18120c4f73838d3156f4c94b7ea340199fd3f6f7417e329d61fef8ddd50976e",
+     "mode": "0644"
+    }
+   }
+  }
+ }
+}

@@ -1,0 +1,45 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "write",
+    "root": "game",
+    "path": "t7patch.conf",
+    "data": "playername=^1Bench\nplayername=Bench\n"
+   },
+   {
+    "op": "status",
+    "args": {}
+   }
+  ]
+ },
+ "id": "t7-colorcode-stale",
+ "title": "second playername= line without a ^ prefix: legacy resets colorCode, port keeps the earlier one",
+ "right_side": "legacy",
+ "severity": "wrong response (t7.colorCode)",
+ "culprit": "ops/t7.rs t7_state (color_code never reset)",
+ "suggested_fix": "set st.color_code = String::new() in the else branch",
+ "notes": "",
+ "signature": [
+  "status",
+  "resp:/t7/colorCode"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/t7-colorcode-stale.json",
+ "observed": {
+  "step_idx": -1,
+  "op": "status",
+  "resp_diff": [
+   "  ~ /result/t7/colorCode: legacy=\"\" port=\"^1\""
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {}
+ }
+}

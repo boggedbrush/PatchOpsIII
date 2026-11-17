@@ -1,0 +1,62 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "write",
+    "root": "game",
+    "path": "dxvk.conf",
+    "data": "dxgi.maxFrameRate=60.5​x\n"
+   },
+   {
+    "op": "status",
+    "args": {}
+   }
+  ]
+ },
+ "id": "dxvk-conf-repr-nonprintable",
+ "title": "Python repr() escapes non-printable characters (U+200B -> \\u200b) in the logged int() error; Rust repr_str prints them raw",
+ "right_side": "legacy",
+ "severity": "wrong error text (log)",
+ "culprit": "pyfmt.rs repr_str",
+ "suggested_fix": "escape chars that are not str.isprintable(): \\xNN, \\uNNNN, \\UNNNNNNNN (categories Cc, Cf, Cs, Co, Cn, Zl, Zp, Zs except ' ')",
+ "notes": "",
+ "signature": [
+  "status",
+  "resp:/maintenance/logPayload|fs:APPDATA/PatchOpsIII.log"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/dxvk-conf-repr-nonprintable.json",
+ "observed": {
+  "step_idx": -1,
+  "op": "status",
+  "resp_diff": [
+   "  ~ /result/maintenance/logPayload: legacy=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n<TS> - Warning: Failed to read dxvk.conf: invalid literal for int() with base 10: '60.5\\\\u200bx'\\n```\" port=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n<TS> - Warning: Failed to read dxvk.conf: invalid literal for int() with base 10: '60.5\\u200bx'\\n```\""
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log"
+  ],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": "<TS> - Warning: Failed to read dxvk.conf: invalid literal for int() with base 10: '60.5\\u200bx'\n",
+    "port": "<TS> - Warning: Failed to read dxvk.conf: invalid literal for int() with base 10: '60.5​x'\n",
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:784d63a4c2ba25d691f7009f4a465de091d362c6bc83d722c980b43e4297d22e",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:325460ebb412820a9835939173cea040c72122d433d29a672b3c06cdce82a9c2",
+     "mode": "0644"
+    }
+   }
+  }
+ }
+}

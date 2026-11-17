@@ -1,0 +1,71 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "rm",
+    "root": "game",
+    "path": "video"
+   },
+   {
+    "fx": "write",
+    "root": "game",
+    "path": "video",
+    "data": "i am a file"
+   },
+   {
+    "op": "all-intros-skip",
+    "args": {
+     "enabled": true
+    }
+   }
+  ]
+ },
+ "id": "all-intros-skip-video-is-file",
+ "title": "video is a regular file: legacy glob finds nothing and answers ok, the port fails with ENOTDIR",
+ "right_side": "legacy",
+ "severity": "wrong response (ok:false [Errno 20] vs ok:true)",
+ "culprit": "ops/qol.rs all_intros (read_dir error is surfaced)",
+ "suggested_fix": "treat a non-directory like an empty directory (Path.glob on a file yields nothing); same for the restore branch",
+ "notes": "",
+ "signature": [
+  "all-intros-skip",
+  "resp:/error|fs:APPDATA/PatchOpsIII.log"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/all-intros-skip-video-is-file.json",
+ "observed": {
+  "step_idx": 2,
+  "op": "all-intros-skip",
+  "resp_diff": [
+   "  + /result/error: \"[Errno 20] Not a directory: '<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/video'\"",
+   "  ~ /result/ok: legacy=true port=false",
+   "  - /result/state: {\"appVersion\": \"bench\", \"platform\": \"Linux\", \"gameDir\": \"<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III\", \"gameDetected\": true, \"configExists\": true, \"steamUserId\": \"12345678\", \"logPath\": \"<SB>/home/.local/share/PatchOpsIII/PatchOpsIII.log\", \"presets\": [\"Smooth Preset\", \"Low-Lat"
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log"
+  ],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": "<TS> - Success: Intro videos were already skipped.\n",
+    "port": "<TS> - Error: Failed to update intro videos: [Errno 20] Not a directory: '<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/video'\n",
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:d8c6e9a6818322bd8bdb0522895651cfaba3952ad53be9bef9e0ad5e5095a0eb",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:d35bb257a4ff13edde568e618dbea9b2ecc7777efda1631905d2a06d96365c50",
+     "mode": "0644"
+    }
+   }
+  }
+ }
+}

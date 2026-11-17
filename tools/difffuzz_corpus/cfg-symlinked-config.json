@@ -1,0 +1,84 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "write",
+    "root": "game",
+    "path": "players/config.real",
+    "data": "// real file\r\nMaxFPS = \"1\"\r\n"
+   },
+   {
+    "fx": "symlink",
+    "root": "game",
+    "path": "players/config.ini",
+    "to": "config.real"
+   },
+   {
+    "op": "config",
+    "args": {
+     "key": "FOV",
+     "value": 90
+    }
+   }
+  ]
+ },
+ "id": "cfg-symlinked-config",
+ "title": "config.ini that is a symlink: the legacy writes through it, the port replaces the symlink by a regular file",
+ "right_side": "legacy (symlink/hardlink users keep their link; target file receives the edit)",
+ "severity": "wrong file content on disk (target untouched, link destroyed)",
+ "culprit": "fsutil.rs atomic_write (temp file + rename over the path); callers: config_ini.rs write_values, ops/t7.rs, steam launch-option writer, settings",
+ "suggested_fix": "when the destination exists and is a symlink or has nlink>1, write through the resolved path / open the existing file with O_TRUNC instead of renaming over it (or fall back to in-place write on rename failure)",
+ "notes": "",
+ "signature": [
+  "config",
+  "fs:GAME/players/config.ini,GAME/players/config.real"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/cfg-symlinked-config.json",
+ "observed": {
+  "step_idx": 2,
+  "op": "config",
+  "resp_diff": [],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini",
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.real"
+  ],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini": {
+    "legacy": null,
+    "port": "// real file\nMaxFPS = \"1\"\nFOV = \"90\" // Managed by PatchOpsIII\n",
+    "legacy_meta": {
+     "t": "l",
+     "to": "config.real",
+     "mode": "0777"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:e461ada75db623ca21bc6d1fab63d9ce21139599b016d568776687d1b646dde3",
+     "mode": "0644"
+    }
+   },
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.real": {
+    "legacy": "// real file\nMaxFPS = \"1\"\nFOV = \"90\" // Managed by PatchOpsIII\n",
+    "port": "// real file\r\nMaxFPS = \"1\"\r\n",
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:e461ada75db623ca21bc6d1fab63d9ce21139599b016d568776687d1b646dde3",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:a53a085b9ad0f3b832eb827b88acef6f2a57795437389ccfd3e3d1c9104afe04",
+     "mode": "0644"
+    }
+   }
+  }
+ }
+}

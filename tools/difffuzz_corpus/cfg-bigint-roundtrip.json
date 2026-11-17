@@ -1,0 +1,79 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "op": "config",
+    "args": {
+     "key": "FOV",
+     "value": 9223372036854775808
+    }
+   },
+   {
+    "op": "status",
+    "args": {}
+   }
+  ]
+ },
+ "id": "cfg-bigint-roundtrip",
+ "title": "config value int beyond i64 is rewritten as a float; state parse saturates at i64::MAX",
+ "right_side": "legacy (Python ints are unbounded; the file must contain the exact digits, state.graphics.fov must be 9223372036854775808)",
+ "severity": "wrong file content on disk (config.ini gets 9.223372036854776e+18) + wrong response",
+ "culprit": "config_ini.rs ConfigValue::from_json (as_i64 else as_f64) + get_int/get_float (trunc() as i64) + serde_json number parsing (needs the `arbitrary_precision` feature or a string-preserving Int variant)",
+ "suggested_fix": "keep integer literals as text/i128-or-bigint in ConfigValue and parse state ints with a saturating-free path (Python int(float(x)) of huge values is itself a big int)",
+ "notes": "",
+ "signature": [
+  "config",
+  "resp:/graphics/fov|fs:APPDATA/PatchOpsIII.log,GAME/players/config.ini"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/cfg-bigint-roundtrip.json",
+ "observed": {
+  "step_idx": 0,
+  "op": "config",
+  "resp_diff": [
+   "  ~ /result/state/graphics/fov: legacy=9223372036854775808 port=9223372036854775807",
+   "  ~ /result/state/maintenance/logPayload: legacy=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n<TS> - Success: Set FOV to 9223372036854775808.\\n```\" port=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n<TS> - Success: Set FOV to 9.223372036854776e+18.\\n```\""
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini",
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log"
+  ],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini": {
+    "legacy": "// Black Ops III configuration (bench fixture)\nAATechnique = \"SMAA 1x\" // anti-aliasing technique\nActorShadows = \"1\" // actor shadows\nBackbufferCount = \"2\" // back buffers\nCorpseCount = \"32\" // corpses\nDisableDynamicLightShadows = \"0\" // dynamic light shadows\nDisableDynamicSunShadows = \"0\" // dynamic sun shadows\nDrawFPS = \"0\" // FPS counter\nFOV = \"9223372036854775808\" // Managed by PatchOpsIII\n// FOV = \"70\" (commented out, must not be matched)\nFullScreenMode = \"1\" // 0=Windowed,1=Fullscreen,2=Fullscreen Windowed\nGamma = \"1.0\" // gamma (not managed by PatchOpsIII)\n\n\nMaxFPS = \"165\" // Maximum FPS cap\nMaxFrameLatency = \"1\" // frame latency\nMeshQuality = \"0\" // mesh quality\nMotionBlur = \"On\" // motion blur\nMotionBlurQuality = \"High\" // motion blur quality\nOIT = \"0\" // order independent transparency\nRefreshRate = \"59.940\" // refresh rate\nRestrictGraphicsOptions = \"1\" // restrict graphics options\nResolutionPercent = \"100\" // render resolution percent\n  SerializeRender = \"0\" // 0 to 2 (leading spaces)\nShadowFiltering = \"0\" // shadow filtering\nSmoothFramerate = \"0\" // smooth framerate\nSpotShadowTextureSize = \"2048\" // spot shadows\nStreamMinResident = \"0\" // 0 or 1\nTextureFilter = \"1\" // aniso\nTextureQuality = \"0\" // texture quality\nVideoMemory = \"0.75\" // 0.75 to 1\nVsync = \"1\" // Vertical sync\nVsyncMode = \"adaptive\" // different key sharing the prefix \"Vsync\"\nWindowSize = \"1920x1080\" // any text\nDrawFPS = \"0\" // duplicate key line, both occurrences get rewritten\n// caf latin-1 byte i...[1517 chars]",
+    "port": "// Black Ops III configuration (bench fixture)\nAATechnique = \"SMAA 1x\" // anti-aliasing technique\nActorShadows = \"1\" // actor shadows\nBackbufferCount = \"2\" // back buffers\nCorpseCount = \"32\" // corpses\nDisableDynamicLightShadows = \"0\" // dynamic light shadows\nDisableDynamicSunShadows = \"0\" // dynamic sun shadows\nDrawFPS = \"0\" // FPS counter\nFOV = \"9.223372036854776e+18\" // Managed by PatchOpsIII\n// FOV = \"70\" (commented out, must not be matched)\nFullScreenMode = \"1\" // 0=Windowed,1=Fullscreen,2=Fullscreen Windowed\nGamma = \"1.0\" // gamma (not managed by PatchOpsIII)\n\n\nMaxFPS = \"165\" // Maximum FPS cap\nMaxFrameLatency = \"1\" // frame latency\nMeshQuality = \"0\" // mesh quality\nMotionBlur = \"On\" // motion blur\nMotionBlurQuality = \"High\" // motion blur quality\nOIT = \"0\" // order independent transparency\nRefreshRate = \"59.940\" // refresh rate\nRestrictGraphicsOptions = \"1\" // restrict graphics options\nResolutionPercent = \"100\" // render resolution percent\n  SerializeRender = \"0\" // 0 to 2 (leading spaces)\nShadowFiltering = \"0\" // shadow filtering\nSmoothFramerate = \"0\" // smooth framerate\nSpotShadowTextureSize = \"2048\" // spot shadows\nStreamMinResident = \"0\" // 0 or 1\nTextureFilter = \"1\" // aniso\nTextureQuality = \"0\" // texture quality\nVideoMemory = \"0.75\" // 0.75 to 1\nVsync = \"1\" // Vertical sync\nVsyncMode = \"adaptive\" // different key sharing the prefix \"Vsync\"\nWindowSize = \"1920x1080\" // any text\nDrawFPS = \"0\" // duplicate key line, both occurrences get rewritten\n// caf latin-1 byte...[1519 chars]",
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:aec1f2f2904f8b25a6b5268f0f401e33828a83bcfd3b3d5d4665c653be06c31f",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:61e91a542b7c22480c37451d9b1e424486b24ef3aa53fec7cbad49262aa92552",
+     "mode": "0644"
+    }
+   },
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": "<TS> - Success: Set FOV to 9223372036854775808.\n",
+    "port": "<TS> - Success: Set FOV to 9.223372036854776e+18.\n",
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:09552255deeb2ca6b45c4f55e5d410c63568058bc1aa31726a2deeb5f2d51d85",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:f9deb50c52ed5195b3af40c70449bff74ebc4660ec76d9c3ab0b084c9381638e",
+     "mode": "0644"
+    }
+   }
+  }
+ }
+}

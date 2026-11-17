@@ -1,0 +1,83 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "chmod",
+    "root": "game",
+    "path": "players",
+    "mode": 365
+   },
+   {
+    "op": "config",
+    "args": {
+     "key": "FOV",
+     "value": 90
+    }
+   }
+  ]
+ },
+ "id": "cfg-readonly-parent-dir",
+ "title": "config.ini in a directory the user cannot write (mode 0555) but whose file is writable: legacy edits in place, port fails with EACCES (cannot create the temp file)",
+ "right_side": "legacy",
+ "severity": "wrong file content on disk (nothing written) + wrong response (ok:false)",
+ "culprit": "fsutil.rs atomic_write",
+ "suggested_fix": "fall back to an in-place open(O_TRUNC)+write when the temp file cannot be created",
+ "notes": "",
+ "signature": [
+  "config",
+  "resp:/error|fs:APPDATA/PatchOpsIII.log,GAME/players/config.ini"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/cfg-readonly-parent-dir.json",
+ "observed": {
+  "step_idx": 1,
+  "op": "config",
+  "resp_diff": [
+   "  + /result/error: \"[Errno 13] Permission denied: '<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini'\"",
+   "  ~ /result/ok: legacy=true port=false",
+   "  - /result/state: {\"appVersion\": \"bench\", \"platform\": \"Linux\", \"gameDir\": \"<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III\", \"gameDetected\": true, \"configExists\": true, \"steamUserId\": \"12345678\", \"logPath\": \"<SB>/home/.local/share/PatchOpsIII/PatchOpsIII.log\", \"presets\": [\"Smooth Preset\", \"Low-Lat"
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini",
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log"
+  ],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini": {
+    "legacy": "// Black Ops III configuration (bench fixture)\nAATechnique = \"SMAA 1x\" // anti-aliasing technique\nActorShadows = \"1\" // actor shadows\nBackbufferCount = \"2\" // back buffers\nCorpseCount = \"32\" // corpses\nDisableDynamicLightShadows = \"0\" // dynamic light shadows\nDisableDynamicSunShadows = \"0\" // dynamic sun shadows\nDrawFPS = \"0\" // FPS counter\nFOV = \"90\" // Managed by PatchOpsIII\n// FOV = \"70\" (commented out, must not be matched)\nFullScreenMode = \"1\" // 0=Windowed,1=Fullscreen,2=Fullscreen Windowed\nGamma = \"1.0\" // gamma (not managed by PatchOpsIII)\n\n\nMaxFPS = \"165\" // Maximum FPS cap\nMaxFrameLatency = \"1\" // frame latency\nMeshQuality = \"0\" // mesh quality\nMotionBlur = \"On\" // motion blur\nMotionBlurQuality = \"High\" // motion blur quality\nOIT = \"0\" // order independent transparency\nRefreshRate = \"59.940\" // refresh rate\nRestrictGraphicsOptions = \"1\" // restrict graphics options\nResolutionPercent = \"100\" // render resolution percent\n  SerializeRender = \"0\" // 0 to 2 (leading spaces)\nShadowFiltering = \"0\" // shadow filtering\nSmoothFramerate = \"0\" // smooth framerate\nSpotShadowTextureSize = \"2048\" // spot shadows\nStreamMinResident = \"0\" // 0 or 1\nTextureFilter = \"1\" // aniso\nTextureQuality = \"0\" // texture quality\nVideoMemory = \"0.75\" // 0.75 to 1\nVsync = \"1\" // Vertical sync\nVsyncMode = \"adaptive\" // different key sharing the prefix \"Vsync\"\nWindowSize = \"1920x1080\" // any text\nDrawFPS = \"0\" // duplicate key line, both occurrences get rewritten\n// caf latin-1 byte in a comment MARK\n",
+    "port": null,
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:92a67c53af962c9ae69c0a9463313167b0ac94e7a39195cd590271c9bd030aaa",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "bin:368e535e9d75747dab824c956af3847ac2b9f744f7402f89407f32ff2de0ad1a",
+     "size": 1528,
+     "mode": "0644"
+    }
+   },
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": "<TS> - Success: Set FOV to 90.\n",
+    "port": "<TS> - Error: [Errno 13] Permission denied: '<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/players/config.ini'\n",
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:000da2257c8af7e79f3300c7e874f703cc14238bfa2e1473db57ea34c1b1d292",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:9f370b3eecdcbbc0d34eed5068db2991a6f12afc4dc41f4b5932c9db71f823e4",
+     "mode": "0644"
+    }
+   }
+  }
+ }
+}

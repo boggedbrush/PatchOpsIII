@@ -1,0 +1,45 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "write",
+    "root": "userdata",
+    "path": "config/localconfig.vdf",
+    "data": "{ this is not vdf }\n"
+   },
+   {
+    "op": "status",
+    "args": {}
+   }
+  ]
+ },
+ "id": "vdf-garbage-launch-options",
+ "title": "localconfig.vdf that is not VDF: python-vdf parses leniently to {} (currentLaunchOptions ''), the port's parser errors (null)",
+ "right_side": "legacy",
+ "severity": "wrong response (currentLaunchOptions '' vs null)",
+ "culprit": "steam/launch_options.rs / steam/mod.rs read_launch_options + steam/vdf.rs parse (strictness)",
+ "suggested_fix": "decide per garbage class: mimic python-vdf's recovery (it skips unmatched tokens) or map parse errors to Some(\"\") only where python-vdf returns {} ",
+ "notes": "",
+ "signature": [
+  "status",
+  "resp:/currentLaunchOptions"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/vdf-garbage-launch-options.json",
+ "observed": {
+  "step_idx": -1,
+  "op": "status",
+  "resp_diff": [
+   "  ~ /result/currentLaunchOptions: legacy=\"\" port=null"
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {}
+ }
+}

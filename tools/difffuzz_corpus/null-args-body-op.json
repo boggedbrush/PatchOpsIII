@@ -1,0 +1,43 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "op": "t7-config",
+    "args": {
+     "$rawargs": "null"
+    }
+   }
+  ]
+ },
+ "id": "null-args-body-op",
+ "title": "request with args:null for an op whose pydantic body model has only optional fields: legacy 422, port treats null as {}",
+ "right_side": "legacy (but OPS.md §1 says absent args = {}; JSON null is an edge the contract does not define)",
+ "severity": "wrong response (envelope class)",
+ "culprit": "ops/args.rs Args::new (Null => {})",
+ "suggested_fix": "contract decision: keep (document) or reject null for ops with a body model",
+ "notes": "",
+ "signature": [
+  "t7-config",
+  "resp:/envelope_ok"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/null-args-body-op.json",
+ "observed": {
+  "step_idx": 0,
+  "op": "t7-config",
+  "resp_diff": [
+   "  ~ /envelope_ok: legacy=false port=true",
+   "  - /error_class: \"validation\"",
+   "  + /result: {\"ok\": true, \"state\": {\"appVersion\": \"bench\", \"platform\": \"Linux\", \"gameDir\": \"<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III\", \"gameDetected\": true, \"configExists\": true, \"steamUserId\": \"12345678\", \"logPath\": \"<SB>/home/.local/share/PatchOpsIII/PatchOpsIII.log\", \"presets\": [\"Sm"
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [],
+  "legacy_error": "validation: {\"detail\":[{\"type\":\"model_attributes_type\",\"loc\":[\"body\"],\"msg\":\"Input should be a valid dictionary or object to extract fields from\",\"input\":null}]}",
+  "port_error": null,
+  "files": {}
+ }
+}

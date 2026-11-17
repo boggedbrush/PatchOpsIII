@@ -1,0 +1,61 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "rm",
+    "root": "userdata_root",
+    "path": "12345678"
+   },
+   {
+    "op": "status",
+    "args": {}
+   }
+  ]
+ },
+ "id": "no-steam-user-warning-multiplicity",
+ "title": "with no Steam user dir the legacy state builder logs 'No Steam user ID found!' three times per state, the port once",
+ "right_side": "legacy",
+ "severity": "wrong error text (log line count differs: file content and logPayload)",
+ "culprit": "state.rs State::build (single find_user_id call) / steam/mod.rs find_user_id",
+ "suggested_fix": "call find_user_id once per legacy call site (steamUserId, _current_launch_options, enhanced status) or replicate the warning count",
+ "notes": "",
+ "signature": [
+  "status",
+  "resp:/maintenance/logPayload|fs:APPDATA/PatchOpsIII.log"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/no-steam-user-warning-multiplicity.json",
+ "observed": {
+  "step_idx": -1,
+  "op": "status",
+  "resp_diff": [
+   "  ~ /result/maintenance/logPayload: legacy=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n<TS> - Warning: No Steam user ID found!\\n<TS> - Warning: No Steam user ID found!\\n<TS> - Warning: No Steam user ID found!\\n```\" port=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n<TS> - Warning: No Steam user ID found!\\n```\""
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log"
+  ],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": "<TS> - Warning: No Steam user ID found!\n<TS> - Warning: No Steam user ID found!\n<TS> - Warning: No Steam user ID found!\n",
+    "port": "<TS> - Warning: No Steam user ID found!\n",
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:f2185a77ba5f36feb601c60c155be62559d7e1fd89224a20b366095b56f42b74",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:715ed9452527e65c47fff912d844aee13bd7f3e2a50e1fb9a04c3fd8e5987d2e",
+     "mode": "0644"
+    }
+   }
+  }
+ }
+}

@@ -1,0 +1,45 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "write",
+    "root": "game",
+    "path": "players/config.ini",
+    "data": "RefreshRate = \"１２\"\r\n"
+   },
+   {
+    "op": "status",
+    "args": {}
+   }
+  ]
+ },
+ "id": "state-unicode-digits",
+ "title": "config.ini numbers parsed with Python float(): unicode digits are accepted (１２ = 12), Rust parse::<f64> rejects them",
+ "right_side": "legacy",
+ "severity": "wrong response (graphics.refreshRate 12.0 vs 60.0)",
+ "culprit": "config_ini.rs parse_float / get_int / get_float",
+ "suggested_fix": "implement Python float() grammar: strip (py whitespace), underscores between digits, unicode Nd digits, inf/nan words",
+ "notes": "",
+ "signature": [
+  "status",
+  "resp:/graphics/refreshRate"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/state-unicode-digits.json",
+ "observed": {
+  "step_idx": -1,
+  "op": "status",
+  "resp_diff": [
+   "  ~ /result/graphics/refreshRate: legacy=12.0 port=60.0"
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {}
+ }
+}

@@ -1,0 +1,47 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "write",
+    "root": "appdata",
+    "path": "PatchOpsIII.log",
+    "data": {
+     "b64": "MjAyNS0wMS0wMiAwMzowNDowNSAtIEluZm86IG9sZAr+/wo="
+    }
+   },
+   {
+    "op": "logs/payload",
+    "args": {}
+   }
+  ]
+ },
+ "id": "log-payload-invalid-utf8",
+ "title": "pre-existing log with invalid UTF-8: legacy payload is '(no log entries found)' (read_text raises, caught), port shows U+FFFD",
+ "right_side": "legacy (arguably a legacy quirk; the contract is the behaviour)",
+ "severity": "wrong response",
+ "culprit": "log.rs FileLog::payload (lossy decode)",
+ "suggested_fix": "strict utf-8 decode; on error use an empty body",
+ "notes": "",
+ "signature": [
+  "status",
+  "resp:/maintenance/logPayload"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/log-payload-invalid-utf8.json",
+ "observed": {
+  "step_idx": -1,
+  "op": "status",
+  "resp_diff": [
+   "  ~ /result/maintenance/logPayload: legacy=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n(no log entries found)\\n```\" port=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n<TS> - Info: old\\n\\ufffd\\ufffd\\n```\""
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {}
+ }
+}

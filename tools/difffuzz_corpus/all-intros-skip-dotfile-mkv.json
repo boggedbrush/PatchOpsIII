@@ -1,0 +1,72 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "write",
+    "root": "game",
+    "path": "video/.mkv",
+    "data": ".mkv"
+   },
+   {
+    "op": "all-intros-skip",
+    "args": {
+     "enabled": true
+    }
+   }
+  ]
+ },
+ "id": "all-intros-skip-dotfile-mkv",
+ "title": "a video file named '.mkv': Python Path.glob('*.mkv') matches dot-files, the port's glob_suffix skips them",
+ "right_side": "legacy",
+ "severity": "wrong file content on disk (file not renamed) + wrong state (qol.allIntros)",
+ "culprit": "ops/qol.rs glob_suffix (`!name.starts_with('.')`)",
+ "suggested_fix": "drop the dot-file exclusion (pathlib.glob, unlike glob.glob, matches hidden files); also applies to the *.patchops.bak / *.bak restore globs",
+ "notes": "",
+ "signature": [
+  "all-intros-skip",
+  "resp:/qol/allIntros|fs:GAME/video/.mkv,GAME/video/.mkv.patchops.bak"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/all-intros-skip-dotfile-mkv.json",
+ "observed": {
+  "step_idx": 1,
+  "op": "all-intros-skip",
+  "resp_diff": [
+   "  ~ /result/state/qol/allIntros: legacy=true port=false"
+  ],
+  "only_legacy": [
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/video/.mkv.patchops.bak"
+  ],
+  "only_port": [
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/video/.mkv"
+  ],
+  "changed": [],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/video/.mkv.patchops.bak": {
+    "legacy": ".mkv",
+    "port": null,
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:b0cc7f4fefe384a2ddffeb2207bb33d08694ca04afed6b8266a716be207f40f9",
+     "mode": "0644"
+    },
+    "port_meta": null
+   },
+   "games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/video/.mkv": {
+    "legacy": null,
+    "port": ".mkv",
+    "legacy_meta": null,
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:b0cc7f4fefe384a2ddffeb2207bb33d08694ca04afed6b8266a716be207f40f9",
+     "mode": "0644"
+    }
+   }
+  }
+ }
+}

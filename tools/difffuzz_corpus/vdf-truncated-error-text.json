@@ -1,0 +1,62 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "steam",
+  "steps": [
+   {
+    "fx": "write",
+    "root": "userdata",
+    "path": "config/localconfig.vdf",
+    "data": "\"UserLocalConfigStore\"\n"
+   },
+   {
+    "op": "workshop-install",
+    "args": {
+     "profileId": "all_around"
+    }
+   }
+  ]
+ },
+ "id": "vdf-truncated-error-text",
+ "title": "localconfig.vdf containing only a key line: python-vdf raises 'vdf.parse: unclosed parenthasis or quotes (EOF) (localconfig.vdf, line 1)', the port logs 'missing value for key ...'",
+ "right_side": "legacy",
+ "severity": "wrong error text (log only)",
+ "culprit": "steam/vdf.rs ParseError texts",
+ "suggested_fix": "see vdf-parse-error-text",
+ "notes": "",
+ "signature": [
+  "workshop-install",
+  "fs:APPDATA/PatchOpsIII.log"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/vdf-truncated-error-text.json",
+ "observed": {
+  "step_idx": 1,
+  "op": "workshop-install",
+  "resp_diff": [],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log"
+  ],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": "<TS> - Info: Steam was not running.\n<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/localconfig_backup.vdf\n<TS> - Error: Error updating launch options: vdf.parse: unclosed parenthasis or quotes (EOF) (localconfig.vdf, line 1)\n<TS> - Success: Config restored from backup\n<TS> - Info: Setting launch options...\n<TS> - Info: Opening Steam...\n<TS> - Success: Steam launched successfully\n",
+    "port": "<TS> - Info: Steam was not running.\n<TS> - Success: Config backup created at <SB>/home/.local/share/PatchOpsIII/backups/localconfig_backup.vdf\n<TS> - Error: Error updating launch options: missing value for key \"UserLocalConfigStore\"\n<TS> - Success: Config restored from backup\n<TS> - Info: Setting launch options...\n<TS> - Info: Opening Steam...\n<TS> - Success: Steam launched successfully\n",
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:c7227bfb7bdf8d789f1a7e59a05110332b8acbac7fc05db49f4ad2a5055e2197",
+     "mode": "0644"
+    },
+    "port_meta": {
+     "t": "f",
+     "sha256": "txt:7ea382e34c6f6e8a897c80bfd9a40423969e836f6ad80212b9e3eedff82a515b",
+     "mode": "0644"
+    }
+   }
+  }
+ }
+}

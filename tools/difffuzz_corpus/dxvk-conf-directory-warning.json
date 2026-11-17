@@ -1,0 +1,65 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "mkdir",
+    "root": "game",
+    "path": "dxvk.conf"
+   },
+   {
+    "op": "status",
+    "args": {}
+   }
+  ]
+ },
+ "id": "dxvk-conf-directory-warning",
+ "title": "dxvk.conf is a directory: legacy logs 'Failed to read dxvk.conf: [Errno 21] Is a directory', port logs nothing",
+ "right_side": "legacy",
+ "severity": "wrong error text (missing log line)",
+ "culprit": "ops/dxvk.rs read_settings (`let Ok(bytes) = fs::read(..) else { return s }`)",
+ "suggested_fix": "log the Warning with io_error_text(e, Some(path)) for read errors other than NotFound",
+ "notes": "",
+ "signature": [
+  "status",
+  "resp:/maintenance/logPayload|fs:APPDATA,APPDATA/PatchOpsIII.log"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/dxvk-conf-directory-warning.json",
+ "observed": {
+  "step_idx": -1,
+  "op": "status",
+  "resp_diff": [
+   "  ~ /result/maintenance/logPayload: legacy=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n<TS> - Warning: Failed to read dxvk.conf: [Errno 21] Is a directory: '<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/dxvk.conf'\\n```\" port=\"PatchOpsIII bench - <PLATFORM> logs:\\n```\\n(no log entries found)\\n```\""
+  ],
+  "only_legacy": [
+   "home/.local/share/PatchOpsIII",
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log"
+  ],
+  "only_port": [],
+  "changed": [],
+  "legacy_error": null,
+  "port_error": null,
+  "files": {
+   "home/.local/share/PatchOpsIII": {
+    "legacy_meta": {
+     "t": "d",
+     "mode": "0755"
+    },
+    "port_meta": null
+   },
+   "home/.local/share/PatchOpsIII/PatchOpsIII.log": {
+    "legacy": "<TS> - Warning: Failed to read dxvk.conf: [Errno 21] Is a directory: '<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III/dxvk.conf'\n",
+    "port": null,
+    "legacy_meta": {
+     "t": "f",
+     "sha256": "txt:a46bff829d405095ab4a6586c217fc28e9333fd32b631158eb77daf3f8c18201",
+     "mode": "0644"
+    },
+    "port_meta": null
+   }
+  }
+ }
+}

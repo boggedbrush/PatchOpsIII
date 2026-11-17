@@ -1,0 +1,47 @@
+{
+ "case": {
+  "version": 1,
+  "seed": 0,
+  "index": 0,
+  "profile": "fast",
+  "steps": [
+   {
+    "fx": "write",
+    "root": "game",
+    "path": "players/config.ini",
+    "data": "FOV=\"-1e999\"\n"
+   },
+   {
+    "op": "status",
+    "args": {}
+   }
+  ]
+ },
+ "id": "state-config-inf-500",
+ "title": "numeric config value 1e999 / inf: legacy status raises OverflowError (HTTP 500), port answers",
+ "right_side": "port (legacy crash: int(float('-inf')) is not caught by `except (TypeError, ValueError)`)",
+ "severity": "legacy bug (500)",
+ "culprit": "n/a (legacy api.py _config_int)",
+ "suggested_fix": "none; keep the tolerant port behaviour",
+ "notes": "",
+ "signature": [
+  "status",
+  "resp:/envelope_ok"
+ ],
+ "replay": "python3 tools/difffuzz.py --replay tools/difffuzz_corpus/state-config-inf-500.json",
+ "observed": {
+  "step_idx": -1,
+  "op": "status",
+  "resp_diff": [
+   "  ~ /envelope_ok: legacy=false port=true",
+   "  - /error_class: \"internal\"",
+   "  + /result: {\"appVersion\": \"bench\", \"platform\": \"Linux\", \"gameDir\": \"<SB>/games/SteamLibrary/steamapps/common/Call of Duty Black Ops III\", \"gameDetected\": true, \"configExists\": true, \"steamUserId\": \"12345678\", \"logPath\": \"<SB>/home/.local/share/PatchOpsIII/PatchOpsIII.log\", \"presets\": [\"Smooth Preset\", \"Low-Lat"
+  ],
+  "only_legacy": [],
+  "only_port": [],
+  "changed": [],
+  "legacy_error": "internal: HTTP 500: Internal Server Error",
+  "port_error": null,
+  "files": {}
+ }
+}
