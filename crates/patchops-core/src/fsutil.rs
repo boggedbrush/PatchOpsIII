@@ -130,13 +130,39 @@ fn write_via_temp(dest: &Path, bytes: &[u8], existing: Option<&fs::Metadata>) ->
     res
 }
 
+/// `shutil.copy2`: contents, then mtime, then permission bits (in that order, so a read-only source gives a
+/// read-only copy that was still writable while it was filled). On failure also says which path Python would
+/// name in the `OSError`: `src` when it cannot be opened (missing, a directory, no read permission), `dst` otherwise.
+pub fn copy2_named<'a>(src: &'a Path, dst: &'a Path) -> Result<(), (io::Error, &'a Path)> {
+    let mut input = fs::File::open(src).map_err(|e| (e, src))?;
+    let meta = input.metadata().map_err(|e| (e, src))?;
+    if meta.is_dir() {
+        // `open(dir, "rb")` raises IsADirectoryError; on unix `File::open` of a directory succeeds
+        #[cfg(unix)]
+        return Err((io::Error::from_raw_os_error(libc::EISDIR), src));
+        #[cfg(not(unix))]
+        return Err((io::Error::new(io::ErrorKind::PermissionDenied, "Is a directory"), src));
+    }
+    #[cfg(unix)]
+    if let Ok(d) = fs::metadata(dst) {
+        use std::os::unix::fs::MetadataExt;
+        if d.dev() == meta.dev() && d.ino() == meta.ino() {
+            // shutil.SameFileError; truncating the destination would empty the source
+            return Err((io::Error::new(io::ErrorKind::InvalidInput, format!("{src:?} and {dst:?} are the same file")), dst));
+        }
+    }
+    let mut out = fs::OpenOptions::new().write(true).create(true).truncate(true).open(dst).map_err(|e| (e, dst))?;
+    io::copy(&mut input, &mut out).map_err(|e| (e, dst))?;
+    if let Ok(mtime) = meta.modified() {
+        let _ = out.set_modified(mtime);
+    }
+    drop(out);
+    fs::set_permissions(dst, meta.permissions()).map_err(|e| (e, dst))
+}
+
 /// Copy contents, permissions and mtime (like Python `shutil.copy2`).
 pub fn copy2(src: &Path, dst: &Path) -> io::Result<()> {
-    fs::copy(src, dst)?; // copies contents + permission bits
-    let mtime = fs::metadata(src)?.modified()?;
-    let f = fs::OpenOptions::new().write(true).open(dst)?;
-    f.set_modified(mtime)?;
-    Ok(())
+    copy2_named(src, dst).map_err(|(e, _)| e)
 }
 
 /// Copy `src` over `dst` with `shutil.copy2` semantics, crash-safe where possible: a symlinked `dst`
@@ -417,6 +443,34 @@ mod tests {
         fs::set_permissions(d.join("game"), fs::Permissions::from_mode(0o755)).unwrap();
         r.unwrap();
         assert_eq!(fs::read(d.join("game/x.exe")).unwrap(), b"NEW");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copy2_of_a_read_only_file_makes_a_read_only_copy_and_names_the_failing_path() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = dir("copy2ro");
+        let (src, dst, adir, nope, dst2) = (d.join("src"), d.join("dst"), d.join("adir"), d.join("nope"), d.join("dst2"));
+        fs::write(&src, b"data").unwrap();
+        fs::set_permissions(&src, fs::Permissions::from_mode(0o444)).unwrap();
+        copy2_named(&src, &dst).unwrap();
+        assert_eq!(fs::read(&dst).unwrap(), b"data");
+        assert_eq!(fs::metadata(&dst).unwrap().permissions().mode() & 0o7777, 0o444);
+        // a directory source is EISDIR naming the source
+        fs::create_dir(&adir).unwrap();
+        let (e, p) = copy2_named(&adir, &dst2).unwrap_err();
+        assert_eq!((e.raw_os_error(), p), (Some(libc::EISDIR), adir.as_path()));
+        // a missing source names the source, an unwritable destination names the destination
+        let (e, p) = copy2_named(&nope, &dst2).unwrap_err();
+        assert_eq!((e.kind(), p), (io::ErrorKind::NotFound, nope.as_path()));
+        if !is_root() {
+            let (e, p) = copy2_named(&src, &dst).unwrap_err();
+            assert_eq!((e.raw_os_error(), p), (Some(libc::EACCES), dst.as_path()));
+        }
+        // the same file is refused instead of being truncated
+        assert!(copy2_named(&src, &src).is_err());
+        assert_eq!(fs::read(&src).unwrap(), b"data");
         let _ = fs::remove_dir_all(&d);
     }
 }

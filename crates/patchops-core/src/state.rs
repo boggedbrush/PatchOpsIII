@@ -68,7 +68,8 @@ impl State {
             .as_deref()
             .map(|g| crate::config_ini::read(&crate::game::config_path(std::path::Path::new(g))))
             .unwrap_or_default();
-        let steam_user_id = crate::steam::find_user_id(core);
+        // Three legacy lookups with a game directory (two without): see `find_user_id_warning_times`.
+        let steam_user_id = crate::steam::find_user_id_warning_times(core, if game_dir.is_some() { 3 } else { 2 });
         let launch_options = steam_user_id
             .as_deref()
             .and_then(|u| crate::steam::read_launch_options(core, u, crate::steam::BO3_APP_ID));

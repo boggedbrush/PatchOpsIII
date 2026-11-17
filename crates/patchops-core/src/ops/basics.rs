@@ -4,7 +4,7 @@
 //! Legacy reference: `backend/api.py` (`health`, `status`, `_browse_payload`,
 //! `set_game_directory`, `release_channel`, `_log_payload`, `logs_clear`, `_clear_mod_files`).
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -329,14 +329,61 @@ pub fn clear_logs(core: &Core) -> AppResult<State> {
     Ok(State::build(core))
 }
 
-fn wipe_dir(dir: &Path) -> Result<(), (std::io::Error, PathBuf)> {
-    std::fs::create_dir_all(dir).map_err(|e| (e, dir.to_path_buf()))?;
-    for entry in std::fs::read_dir(dir).map_err(|e| (e, dir.to_path_buf()))? {
-        let entry = entry.map_err(|e| (e, dir.to_path_buf()))?;
+/// A failure of the legacy `_clear_mod_files`, with the path named the way Python's `str(OSError)` names it.
+#[derive(Debug)]
+struct WipeError {
+    err: std::io::Error,
+    /// `'<path>'`, or `PosixPath('<path>')` where Python passed a `Path` object.
+    named: String,
+}
+
+impl WipeError {
+    fn text(&self) -> String {
+        format!("{}: {}", io_error_text(&self.err, None), self.named)
+    }
+}
+
+/// `shutil.rmtree(path)` as CPython 3.13 raises: entries are removed in directory order, the first failure
+/// stops everything. A failing file removal names the DIRECTORY that holds it, a failing sub-directory (open,
+/// list or `rmdir`) names that directory, the final `rmdir` names `path`. Only the top-level directory is a
+/// `Path` object (`PosixPath('...')`); everything below is a joined `str`. Symbolic links inside are removed
+/// as links (`entry.is_dir(follow_symlinks=False)`), never followed.
+fn py_rmtree(path: &Path, top: bool) -> Result<(), WipeError> {
+    let named = |p: &Path, is_top: bool| {
+        let r = crate::pyfmt::repr_str(&path_str(p));
+        if is_top {
+            format!("PosixPath({r})")
+        } else {
+            r
+        }
+    };
+    let fail = |err: std::io::Error| WipeError { err, named: named(path, top) };
+    let entries = std::fs::read_dir(path).map_err(fail)?.collect::<Result<Vec<_>, _>>().map_err(fail)?;
+    for entry in entries {
         let p = entry.path();
-        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        let r = if is_dir { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
-        r.map_err(|e| (e, p))?;
+        if entry.file_type().is_ok_and(|t| t.is_dir()) {
+            py_rmtree(&p, false)?;
+        } else {
+            std::fs::remove_file(&p).map_err(fail)?;
+        }
+    }
+    std::fs::remove_dir(path).map_err(fail)
+}
+
+/// Legacy `_clear_mod_files`: `mkdir(parents=True, exist_ok=True)`, then every item removed (`rmtree` for
+/// directories, `unlink` otherwise). A symbolic link to a directory is unlinked, not refused and never followed:
+/// the legacy `rmtree` raised `Cannot call rmtree on a symbolic link` there, the port only removes the link itself.
+fn wipe_dir(dir: &Path) -> Result<(), WipeError> {
+    let plain = |e: std::io::Error, p: &Path| WipeError { err: e, named: crate::pyfmt::repr_str(&path_str(p)) };
+    std::fs::create_dir_all(dir).map_err(|e| plain(e, dir))?;
+    for entry in std::fs::read_dir(dir).map_err(|e| plain(e, dir))? {
+        let entry = entry.map_err(|e| plain(e, dir))?;
+        let p = entry.path();
+        if entry.file_type().is_ok_and(|t| t.is_dir()) {
+            py_rmtree(&p, true)?;
+        } else {
+            std::fs::remove_file(&p).map_err(|e| plain(e, &p))?;
+        }
     }
     Ok(())
 }
@@ -345,8 +392,8 @@ fn wipe_dir(dir: &Path) -> Result<(), (std::io::Error, PathBuf)> {
 pub fn clear_mod_files(core: &Core) -> AppResult<State> {
     let _op = core.lock_ops();
     let dir = &core.paths.mod_files;
-    if let Err((e, p)) = wipe_dir(dir) {
-        let msg = io_error_text(&e, Some(&p));
+    if let Err(e) = wipe_dir(dir) {
+        let msg = e.text();
         core.log.error(format!("Failed to clear mod files: {msg}"));
         return Err(AppError::new(msg));
     }
@@ -358,6 +405,7 @@ pub fn clear_mod_files(core: &Core) -> AppResult<State> {
 #[cfg(test)]
 mod log_payload_tests {
     use super::*;
+    use std::path::PathBuf;
     use crate::paths::Paths;
     use serde_json::json;
 
@@ -434,6 +482,74 @@ mod log_payload_tests {
         assert!(set_release_channel(&c, "\u{1c}Beta\u{a0}\u{1f}").is_ok());
         assert_eq!(c.settings().release_channel(), "beta");
         assert!(set_release_channel(&c, "\u{200b}beta").is_err());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn mod_files_clear_names_paths_like_python_rmtree() {
+        use std::os::unix::fs::PermissionsExt;
+        let (c, root) = core("rmtree");
+        if unsafe_is_root() {
+            return; // root ignores permissions
+        }
+        let mods = &c.paths.mod_files;
+        let ro = |p: &Path| std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let rw = |p: &Path| std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // a file inside a read-only nested directory: the directory that holds it is named (a plain str)
+        std::fs::create_dir_all(mods.join("sub/nested")).unwrap();
+        std::fs::write(mods.join("sub/nested/file.bin"), b"x").unwrap();
+        ro(&mods.join("sub/nested"));
+        let e = wipe_dir(mods).unwrap_err().text();
+        assert_eq!(e, format!("[Errno 13] Permission denied: '{}'", mods.join("sub/nested").display()));
+        rw(&mods.join("sub/nested"));
+        // the top-level directory itself is a `Path` object
+        std::fs::remove_dir_all(mods.join("sub/nested")).unwrap();
+        std::fs::write(mods.join("sub/x.bin"), b"x").unwrap();
+        ro(&mods.join("sub"));
+        let e = wipe_dir(mods).unwrap_err().text();
+        assert_eq!(e, format!("[Errno 13] Permission denied: PosixPath('{}')", mods.join("sub").display()));
+        rw(&mods.join("sub"));
+        // an empty read-only sub-directory below the top level names itself
+        std::fs::remove_dir_all(mods).unwrap();
+        std::fs::create_dir_all(mods.join("a/b/c")).unwrap();
+        ro(&mods.join("a/b"));
+        let e = wipe_dir(mods).unwrap_err().text();
+        assert_eq!(e, format!("[Errno 13] Permission denied: '{}'", mods.join("a/b/c").display()));
+        rw(&mods.join("a/b"));
+        // a top-level file in a read-only root: `unlink` names the file (a plain str)
+        std::fs::remove_dir_all(mods).unwrap();
+        std::fs::create_dir_all(mods).unwrap();
+        std::fs::write(mods.join("f.bin"), b"x").unwrap();
+        ro(mods);
+        let e = wipe_dir(mods).unwrap_err().text();
+        rw(mods);
+        assert_eq!(e, format!("[Errno 13] Permission denied: '{}'", mods.join("f.bin").display()));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    fn unsafe_is_root() -> bool {
+        // SAFETY: geteuid has no preconditions and cannot fail.
+        unsafe { libc::geteuid() == 0 }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn mod_files_clear_unlinks_symlinks_and_never_touches_their_targets() {
+        let (c, root) = core("symlink");
+        let mods = &c.paths.mod_files;
+        let outside = root.join("outside");
+        std::fs::create_dir_all(outside.join("deep")).unwrap();
+        std::fs::write(outside.join("keep.txt"), b"keep").unwrap();
+        std::fs::write(outside.join("deep/keep2.txt"), b"keep").unwrap();
+        std::fs::create_dir_all(mods.join("real")).unwrap();
+        std::os::unix::fs::symlink(&outside, mods.join("linkdir")).unwrap();
+        std::os::unix::fs::symlink(&outside, mods.join("real/nested-link")).unwrap();
+        std::os::unix::fs::symlink(outside.join("keep.txt"), mods.join("linkfile")).unwrap();
+        wipe_dir(mods).unwrap();
+        assert_eq!(std::fs::read_dir(mods).unwrap().count(), 0, "all links and the real directory are gone");
+        assert!(outside.join("keep.txt").exists() && outside.join("deep/keep2.txt").exists(), "targets are untouched");
         let _ = std::fs::remove_dir_all(root);
     }
 }

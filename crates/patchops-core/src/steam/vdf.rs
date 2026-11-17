@@ -75,8 +75,26 @@ impl Obj {
     }
 }
 
+/// A parse failure. `.0` is the port's own wording; `.1` is the python-vdf 3.4 message (`vdf.parse: <msg>`) and
+/// the line number it reports, for the failures python-vdf raises too (see [`ParseError::python_text`]).
 #[derive(Debug)]
-pub struct ParseError(pub String);
+pub struct ParseError(pub String, Option<(&'static str, usize)>);
+
+impl ParseError {
+    fn plain(msg: impl Into<String>) -> ParseError {
+        ParseError(msg.into(), None)
+    }
+
+    /// python-vdf's `str(SyntaxError)`: `vdf.parse: <msg> (<file name>, line <n>)`, when python-vdf raises the
+    /// same failure; the port's own wording otherwise.
+    pub fn python_text(&self, file_name: &str) -> String {
+        match self.1 {
+            Some((msg, line)) => format!("vdf.parse: {msg} ({file_name}, line {line})"),
+            // Failures python-vdf does not have (it reads such files leniently): say plainly why nothing was written.
+            None => format!("vdf: {} ({file_name}); the file was left unchanged because PatchOpsIII cannot parse it safely", self.0),
+        }
+    }
+}
 
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -118,12 +136,19 @@ struct Lexer<'a> {
     text: &'a str,
     b: &'a [u8],
     i: usize,
+    /// Byte offset where the token last returned by `next` starts.
+    tok_start: usize,
+    /// Line breaks inside quoted tokens so far: python-vdf reads those lines as continuations of a logical line
+    /// without advancing its line counter, so they are subtracted from the line numbers it reports.
+    consumed: usize,
+    /// Offset of the opening quote of the string that ran into EOF, when that is what failed.
+    open_quote_at: Option<usize>,
 }
 
 impl<'a> Lexer<'a> {
     fn new(text: &'a str) -> Self {
         let text = text.trim_start_matches(['\u{feff}', '\u{fffe}']);
-        Lexer { text, b: text.as_bytes(), i: 0 }
+        Lexer { text, b: text.as_bytes(), i: 0, tok_start: 0, consumed: 0, open_quote_at: None }
     }
 
     /// `(is_whitespace, byte length)` of the char starting at `i` (a char boundary), with the
@@ -151,14 +176,19 @@ impl<'a> Lexer<'a> {
                     self.i += 1;
                 }
             } else if c == b'{' {
+                self.tok_start = self.i;
                 self.i += 1;
                 return Ok(Some(Tok::Open));
             } else if c == b'}' {
+                self.tok_start = self.i;
                 self.i += 1;
                 return Ok(Some(Tok::Close));
             } else if c == b'"' {
+                self.tok_start = self.i;
                 self.i += 1;
-                return self.quoted().map(|s| Some(Tok::Str(s)));
+                let s = self.quoted()?;
+                self.consumed += line_breaks(&self.text[self.tok_start..self.i]);
+                return Ok(Some(Tok::Str(s)));
             } else if c == b'[' {
                 // conditional like [$WIN32]: ignore
                 while self.i < n && self.b[self.i] != b']' {
@@ -167,6 +197,7 @@ impl<'a> Lexer<'a> {
                 self.i += 1;
             } else {
                 let start = self.i;
+                self.tok_start = start;
                 while self.i < n && !matches!(self.b[self.i], b'{' | b'}' | b'"') {
                     let (is_ws, clen) = self.char_at(self.i);
                     if is_ws {
@@ -182,8 +213,9 @@ impl<'a> Lexer<'a> {
 
     /// Body of a quoted string (opening quote already consumed).
     fn quoted(&mut self) -> Result<std::borrow::Cow<'a, str>, ParseError> {
-        let eof = || ParseError("unexpected EOF (open quote)".into());
         let start = self.i;
+        self.open_quote_at = Some(start - 1);
+        let eof = || ParseError::plain("unexpected EOF (open quote)");
         let n = self.b.len();
         // Fast path: no escapes.
         let mut j = start;
@@ -272,7 +304,7 @@ impl Sec {
                     old.insert(k, v)?;
                 }
             }
-            _ => return Err(ParseError(format!("key {key:?} is used both as a value and as a section"))),
+            _ => return Err(ParseError::plain(format!("key {key:?} is used both as a value and as a section"))),
         }
         Ok(())
     }
@@ -297,30 +329,87 @@ pub fn parse(text: &str) -> Result<Obj, ParseError> {
     Ok(parse_sec(&mut lx, 0)?.into_obj())
 }
 
+/// Python's universal-newline line breaks in `s`: `\n`, `\r\n` (one) and a lone `\r`.
+fn line_breaks(s: &str) -> usize {
+    let b = s.as_bytes();
+    b.iter().enumerate().filter(|&(i, &c)| c == b'\n' || (c == b'\r' && b.get(i + 1) != Some(&b'\n'))).count()
+}
+
+impl Lexer<'_> {
+    /// The line number python-vdf would report for the logical line holding byte `off`, given the number of
+    /// continuation lines (`consumed`) it had read by then.
+    fn py_line(&self, off: usize, consumed: usize) -> usize {
+        (1 + line_breaks(&self.text[..off.min(self.text.len())])).saturating_sub(consumed).max(1)
+    }
+
+    /// python-vdf's final `len(stack) != 1` failure: its counter then sits on the last line of the file.
+    fn py_eof_line(&self) -> usize {
+        let t = self.text;
+        let lines = line_breaks(t) + usize::from(!t.is_empty() && !t.ends_with(['\n', '\r']));
+        lines.saturating_sub(self.consumed).max(1)
+    }
+
+    fn err(&self, plain: &str, msg: &'static str, line: usize) -> ParseError {
+        ParseError(plain.to_string(), Some((msg, line)))
+    }
+}
+
 fn parse_sec(lx: &mut Lexer<'_>, depth: usize) -> Result<Sec, ParseError> {
     if depth > MAX_DEPTH {
-        return Err(ParseError("sections nested too deeply".into()));
+        return Err(ParseError::plain("sections nested too deeply"));
     }
     let top = depth == 0;
     let mut sec = Sec::default();
     loop {
-        match lx.next()? {
+        lx.open_quote_at = None;
+        let tok = match lx.next() {
+            Ok(t) => t,
+            // an unterminated quote where a key was expected
+            Err(e) => {
+                return Err(match lx.open_quote_at {
+                    Some(at) => lx.err(&e.0, "unexpected EOF (open key quote?)", lx.py_line(at, lx.consumed)),
+                    None => e,
+                })
+            }
+        };
+        match tok {
             None => {
-                return if top { Ok(sec) } else { Err(ParseError("unclosed section (EOF)".into())) };
+                return if top { Ok(sec) } else { Err(lx.err("unclosed section (EOF)", "unclosed parenthasis or quotes (EOF)", lx.py_eof_line())) };
             }
             Some(Tok::Close) => {
-                return if top { Err(ParseError("one too many closing braces".into())) } else { Ok(sec) };
+                return if top {
+                    Err(lx.err("one too many closing braces", "one too many closing parenthasis", lx.py_line(lx.tok_start, lx.consumed)))
+                } else {
+                    Ok(sec)
+                };
             }
-            Some(Tok::Open) => return Err(ParseError("unexpected opening brace".into())),
+            Some(Tok::Open) => return Err(ParseError::plain("unexpected opening brace")),
             Some(Tok::Str(key)) => {
                 let key = key.into_owned();
-                match lx.next()? {
+                let (key_at, key_consumed) = (lx.tok_start, lx.consumed);
+                lx.open_quote_at = None;
+                let next = match lx.next() {
+                    Ok(t) => t,
+                    // an unterminated quote where the value was expected: python-vdf reports the key's line
+                    Err(e) => {
+                        return Err(match lx.open_quote_at {
+                            Some(_) => lx.err(&e.0, "unexpected EOF (open quote for value?)", lx.py_line(key_at, key_consumed)),
+                            None => e,
+                        })
+                    }
+                };
+                match next {
                     Some(Tok::Open) => {
                         let child = parse_sec(lx, depth + 1)?;
                         sec.insert(key, PNode::Sec(child))?;
                     }
                     Some(Tok::Str(v)) => sec.insert(key, PNode::Str(v.into_owned()))?,
-                    _ => return Err(ParseError(format!("missing value for key {key:?}"))),
+                    // a key that opens a section (python-vdf waits for the bracket) and then the file ends
+                    None => return Err(lx.err(&format!("missing value for key {key:?}"), "unclosed parenthasis or quotes (EOF)", lx.py_eof_line())),
+                    // ... or a closing brace where the opening one was due
+                    Some(Tok::Close) => {
+                        return Err(lx.err(&format!("missing value for key {key:?}"), "expected openning bracket", lx.py_line(lx.tok_start, lx.consumed)))
+                    }
                 }
             }
         }
@@ -391,7 +480,8 @@ pub fn load_file(path: &std::path::Path) -> Result<Obj, String> {
         let byte = e.as_bytes()[at];
         format!("'utf-8' codec can't decode byte 0x{byte:02x} in position {at}: invalid start byte")
     })?;
-    parse(&text).map_err(|e| e.0)
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    parse(&text).map_err(|e| e.python_text(&name))
 }
 
 /// Write `obj` with [`dump_pretty`], atomically (temp file + rename; permission bits kept).
@@ -532,5 +622,33 @@ mod tests {
     fn bom_and_conditionals() {
         let o = parse("\u{feff}\"a\" { \"k\" \"v\" [$WIN32] }").unwrap();
         assert_eq!(o.get_path(&["a", "k"]), Some(&Node::Str("v".into())));
+    }
+
+    /// Expectations from running python-vdf 3.4 (`vdf.load` on a text-mode file named `x.vdf`) on each input.
+    const PYTHON_ERRORS: &[(&str, &str)] = &[
+        ("}{ not vdf", "vdf.parse: one too many closing parenthasis (x.vdf, line 1)"),
+        ("\"UserLocalConfigStore\"\n", "vdf.parse: unclosed parenthasis or quotes (EOF) (x.vdf, line 1)"),
+        ("\"a\"\n{\n\"b\" \"c\"\n", "vdf.parse: unclosed parenthasis or quotes (EOF) (x.vdf, line 3)"),
+        ("\"a\"\n{\n\"b\" \"c\"\n}\n}\n", "vdf.parse: one too many closing parenthasis (x.vdf, line 5)"),
+        ("\"a\"\n{\n}\n}\n", "vdf.parse: one too many closing parenthasis (x.vdf, line 4)"),
+        ("\"a\" \"b\"\n}\n", "vdf.parse: one too many closing parenthasis (x.vdf, line 2)"),
+        ("\"a\"\n}\n", "vdf.parse: expected openning bracket (x.vdf, line 2)"),
+        ("\"a\" \"unterminated\n\n", "vdf.parse: unexpected EOF (open quote for value?) (x.vdf, line 1)"),
+        ("\"a\" {\n\"k\" \"v\"\n\"open\n", "vdf.parse: unexpected EOF (open key quote?) (x.vdf, line 3)"),
+        ("\"a\" {\n\"k\" \"multi\nline\"\n", "vdf.parse: unclosed parenthasis or quotes (EOF) (x.vdf, line 2)"),
+        ("\"a\"\n{\n\"k\" \"multi\nline\"\n\"x\"\n{\n", "vdf.parse: unclosed parenthasis or quotes (EOF) (x.vdf, line 5)"),
+        ("// c\r\n\"a\"\r\n{\r\n}\r\n}\r\n", "vdf.parse: one too many closing parenthasis (x.vdf, line 5)"),
+        ("\"a\"\r{\r\"b\" \"c\"\r", "vdf.parse: unclosed parenthasis or quotes (EOF) (x.vdf, line 3)"),
+        ("\n\n}\n", "vdf.parse: one too many closing parenthasis (x.vdf, line 3)"),
+        ("\"a\"\n{\n\"b\"\n{\n\"c\" \"d\"\n}\n", "vdf.parse: unclosed parenthasis or quotes (EOF) (x.vdf, line 6)"),
+        ("\"a\" {\n\"b\" \"c\"\n", "vdf.parse: unclosed parenthasis or quotes (EOF) (x.vdf, line 2)"),
+    ];
+
+    #[test]
+    fn error_texts_follow_python_vdf() {
+        for (text, want) in PYTHON_ERRORS {
+            let got = parse(text).map(|_| "parsed".to_string()).unwrap_or_else(|e| e.python_text("x.vdf"));
+            assert_eq!(got, *want, "{text:?}");
+        }
     }
 }

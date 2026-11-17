@@ -182,9 +182,22 @@ fn pick_most_recent(users: &vdf::Obj, dir_exists: impl Fn(&str) -> bool) -> Opti
 /// all-digit directory in `userdata` (directory order).
 /// Logs file-only warnings like the legacy code when nothing is found.
 pub fn find_user_id(core: &Core) -> Option<String> {
+    find_user_id_warning_times(core, 1)
+}
+
+/// [`find_user_id`] for callers that stand for several legacy `find_steam_user_id()` calls: one lookup, but
+/// the "not found" warning is logged `times` times, as that many legacy calls did (the log file is support
+/// data and `tools/parity.py` compares it). The legacy state builder looked the user up three times when a game
+/// directory was detected (`_current_launch_options`, `steamUserId`, `_enhanced_status`) and twice otherwise.
+pub fn find_user_id_warning_times(core: &Core, times: usize) -> Option<String> {
+    let warn = |msg: &str| {
+        for _ in 0..times.max(1) {
+            core.log.log_file_only(crate::log::Category::Warning, msg);
+        }
+    };
     let dir = userdata_dir(core);
     if !dir.exists() {
-        core.log.log_file_only(crate::log::Category::Warning, "Steam userdata path not found!");
+        warn("Steam userdata path not found!");
         return None;
     }
     if let Some(id) = most_recent_user_id(&dir) {
@@ -196,7 +209,7 @@ pub fn find_user_id(core: &Core) -> Option<String> {
             .find(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
     });
     if found.is_none() {
-        core.log.log_file_only(crate::log::Category::Warning, "No Steam user ID found!");
+        warn("No Steam user ID found!");
     }
     found
 }
@@ -309,5 +322,21 @@ mod tests {
         )
         .unwrap();
         assert_eq!(find_user_id(&sb.core), Some("12345".into()));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn missing_user_warning_is_logged_once_per_legacy_lookup() {
+        let sb = crate::enhanced::testkit::Sandbox::new();
+        let ud = userdata_dir(&sb.core);
+        std::fs::create_dir_all(&ud).unwrap();
+        let count = |sb: &crate::enhanced::testkit::Sandbox, needle: &str| sb.core.log.read_file().matches(needle).count();
+        assert_eq!(find_user_id_warning_times(&sb.core, 3), None);
+        assert_eq!(count(&sb, "No Steam user ID found!"), 3);
+        assert_eq!(find_user_id(&sb.core), None);
+        assert_eq!(count(&sb, "No Steam user ID found!"), 4);
+        std::fs::remove_dir_all(&ud).unwrap();
+        assert_eq!(find_user_id_warning_times(&sb.core, 2), None);
+        assert_eq!(count(&sb, "Steam userdata path not found!"), 2);
     }
 }

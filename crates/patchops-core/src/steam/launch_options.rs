@@ -175,13 +175,13 @@ pub fn backup_file(core: &Core, config_path: &Path, backup_name: &str) -> bool {
         return false;
     }
     let dest = dir.join(backup_name);
-    match crate::fsutil::copy2(config_path, &dest) {
+    match crate::fsutil::copy2_named(config_path, &dest) {
         Ok(()) => {
             core.log.success(format!("Config backup created at {}", dest.display()));
             true
         }
-        Err(e) => {
-            core.log.error(format!("Failed to create backup: {}", io_error_text(&e, Some(config_path))));
+        Err((e, failed)) => {
+            core.log.error(format!("Failed to create backup: {}", io_error_text(&e, Some(failed))));
             false
         }
     }
@@ -194,13 +194,13 @@ pub fn restore_file(core: &Core, config_path: &Path, backup_name: &str) -> bool 
         core.log.warning("No backup file found");
         return false;
     }
-    match crate::fsutil::copy2(&src, config_path) {
+    match crate::fsutil::copy2_named(&src, config_path) {
         Ok(()) => {
             core.log.success("Config restored from backup");
             true
         }
-        Err(e) => {
-            core.log.error(format!("Failed to restore backup from {}: {}", src.display(), io_error_text(&e, Some(&src))));
+        Err((e, failed)) => {
+            core.log.error(format!("Failed to restore backup from {}: {}", src.display(), io_error_text(&e, Some(failed))));
             false
         }
     }
